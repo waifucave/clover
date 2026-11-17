@@ -29,10 +29,10 @@ const until = async (what: () => boolean, ms = 2_000): Promise<void> => {
   }
 };
 
-async function setup(drop: FakePiece[] = []): Promise<{ e: FakeEngine; client: DaemonClient; engine: MossEngine; sealed: SealedFrames }> {
+async function setup(drop: FakePiece[] = [], still?: { frameMs: number; picturePng: Uint8Array }): Promise<{ e: FakeEngine; client: DaemonClient; engine: MossEngine; sealed: SealedFrames }> {
   const h = mkdtempSync(join(tmpdir(), "ma-"));
   homes.push(h);
-  const e = await startFakeEngine({ home: h, drop });
+  const e = await startFakeEngine({ home: h, drop, ...(still ?? {}) });
   closers.push(() => e.close());
   const client = (await dial(daemonEndpoint(h)))!;
   closers.push(() => client.close());
@@ -96,6 +96,11 @@ describe("the conversation", () => {
     expect(m?.text).toBe("<img src=x onerror=alert(1)><b>hi</b>");
   });
 
+  test("a turn that ended in an error is the conversation's failed note; one that ended well is no message", () => {
+    expect(messageOf({ type: "turn_completed", seq: 7, sessionId: "s", ts: 1, stopReason: "error" })).toMatchObject({ from: "note", failed: true });
+    expect(messageOf({ type: "turn_completed", seq: 8, sessionId: "s", ts: 1, stopReason: "end_turn" })).toBeUndefined();
+  });
+
   test("the person's words arrive live in the conversation it follows", async () => {
     const { engine } = await setup();
     const got: string[] = [];
@@ -118,7 +123,30 @@ describe("a bot's own choices", () => {
   });
 });
 
+describe("a bot's live picture", () => {
+  test("a still picture's one frame, sent before picture.open's answer, is drawn (the moss unit's empty screen)", async () => {
+    // One frame, published once, and no other for an hour.
+    const { engine } = await setup([], { frameMs: 3_600_000, picturePng: Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64")) });
+    const pics = await engine.pictures("juniper");
+    if ("waiting" in pics || pics[0] === undefined) throw new Error(`no picture: ${JSON.stringify(pics)}`);
+    const got: string[] = [];
+    engine.onPictureFrame((f) => got.push(f.id));
+    expect(await engine.openPicture(pics[0].id)).toBe(true);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(got).toEqual([pics[0].id]);
+  });
+});
+
 describe("the pages' data (Plugins, Settings, a bot's Edit view)", () => {
+  test("Settings' sign-ins name each plugin in words, never the engine's table of languages (it took the window down once)", async () => {
+    const { engine } = await setup();
+    const s = await engine.settings();
+    if (s.signIns === "waiting") throw new Error("sign-ins waiting");
+    expect(s.signIns.length).toBeGreaterThan(0);
+    for (const r of s.signIns) expect(typeof r.name).toBe("string");
+    expect(s.signIns.map((r) => r.name)).toContain("Fish Audio");
+  });
+
   test("tools with their declared default, the person's value and permission; models; a bot's record; edits", async () => {
     const { engine } = await setup();
     const plugins = await engine.plugins();

@@ -79,6 +79,8 @@ export interface FakeEngine {
   /** The cards answered, and with which option. */
   answered(): { id: string; option: string; program: string }[];
   placements(): { card: string; place: CardPlacement }[];
+  /** Computer use acting on this computer: the engine then refuses every program's `card.answer`, as the real one does. */
+  setActing(acting: boolean): void;
   /** Asks every app connection a request of the engine's own (`app.ping`, `app.quit`). */
   ask(method: string, params?: unknown): Promise<unknown[]>;
   close(): Promise<void>;
@@ -95,6 +97,7 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
   rmSync(endpoint, { force: true });
   const log: { method: string; params: unknown; conn: number }[] = [];
   const answered: { id: string; option: string; program: string }[] = [];
+  let actingNow = false;
 
   const now = Date.now();
   const bots = new FakeBotRecords({ clock: realClock });
@@ -224,7 +227,8 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
           const bytes = reader.latest();
           if (bytes !== undefined) write(c, { jsonrpc: "2.0", method: "picture.frame", params: { stream, seq: seq++, format: "png", width: 1280, height: 800, data: Buffer.from(bytes).toString("base64"), at: Date.now() } });
         };
-        setTimeout(send, 50);
+        // As the real engine does: the latest frame goes out at once, before this call's own answer reaches the window.
+        send();
         c.streams.set(stream, setInterval(send, o.frameMs ?? 1_000));
         return { stream };
       }
@@ -252,6 +256,8 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         }
       }
       case "card.answer": {
+        // As the real core does for every program: no answer while computer use acts on this computer.
+        if (actingNow) return { accepted: false, reason: "computer use is acting right now" };
         const card = cards.get(String(params.id));
         if (card === undefined) return { accepted: false, reason: "no such card" };
         if (params.hash !== card.hash) return { accepted: false, reason: "the card changed" };
@@ -279,6 +285,11 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         return { ok: true };
       case "command.run":
         return { result: null };
+      // The voice point and its plugin's held command, as MOSS Voice declares them (the talk command MOSS derives).
+      case "point.active.list":
+        return { points: [{ point: "moss.voice.modes", title: "Voice", declaredBy: "moss/voice", fillers: [{ pluginId: "moss/voice", entryId: "moss-voice", name: "MOSS Voice" }], active: { pluginId: "moss/voice", entryId: "moss-voice" } }] };
+      case "command.list":
+        return { commands: [{ name: "moss.push-to-talk", pluginId: "moss/voice", description: "Hold to talk", key: "ctrl+shift+space", hold: true }] };
       case "user.send": {
         const to = params.to as { bot?: string };
         const id = to?.bot;
@@ -298,7 +309,9 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         c.attached.delete(String(params.id));
         return { ok: true };
       case "plugin.list":
-        return { plugins: PLUGINS.map((p) => ({ id: p.id, name: p.name, version: "1.0.0", enabled: p.enabled, state: "running" })) };
+        // Names as the real engine sends them: a plugin's `Text` may be a table of languages (the first as one, the rest
+        // as plain strings), which the window must never draw as it is (it once took the whole window down).
+        return { plugins: PLUGINS.map((p) => ({ id: p.id, name: p.id === "fish-audio" ? { en: p.name } : p.name, version: "1.0.0", enabled: p.enabled, state: "running" })) };
       case "tool.permissions": {
         piece("tools", method);
         const rows = tools.list();
@@ -321,6 +334,20 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         return { state: typeof params.key === "string" ? "signed-in" : "signed-out", ...(typeof params.key === "string" ? {} : { authorizeUrl: "https://example.test/authorize" }) };
       case "plugin.auth.signOut":
         return { applied: false, card: "card_signout_000001" };
+      case "bot.archived":
+        piece("bots", method);
+        return { bots: bots.archived() };
+      case "bot.remove":
+        piece("bots", method);
+        await bots.remove(String(params.id));
+        event("bots", { type: "bot_record_removed", id: String(params.id) });
+        return { ok: true };
+      case "bot.restore": {
+        piece("bots", method);
+        const v = await bots.restore(String(params.id));
+        event("bots", { type: "bot_record_changed", bot: v });
+        return { bot: v };
+      }
       case "bot.instructions.get":
         piece("bots", method);
         return { text: bots.instructions(String(params.id)) };
@@ -406,6 +433,7 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
     calls: () => [...log],
     answered: () => [...answered],
     placements: () => router.list(),
+    setActing: (acting) => { actingNow = acting; },
     ask: async (method, params = {}) => Promise.all([...conns.values()].filter((c) => c.authed).map((c) => new Promise((resolve) => {
       const id = nextReq++;
       waiting.set(id, resolve);

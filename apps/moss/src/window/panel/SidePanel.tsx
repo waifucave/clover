@@ -4,7 +4,8 @@
 //
 // The screen is a tool's live picture (§3.6): inert pixels, an <img> fed with the frames main checked (a data URL of a
 // png, jpeg or webp), with the publisher's name beside it. Nothing in it takes a pointer, a key or the focus: no button,
-// link, field or tabindex, and the image itself ignores the pointer. Taking the screen over comes later (item 106, G11).
+// link, field or tabindex, and the image itself ignores the pointer; a click or a scroll on it is only told to main, which
+// says it reached nothing (watch only) and sends nothing on. Taking the screen over comes later (item 106, G11).
 import { useEffect, useState } from "react";
 import { bridge, shortTime } from "../bridge";
 import type { BotRow, PictureRow, RoutineRow } from "../../shared/view";
@@ -62,7 +63,10 @@ export function SidePanel(props: { bot: BotRow; onClose: () => void; onSettings?
       <section className="screen ma2-screen" data-picture={picture?.id ?? "none"} aria-label={`${name}'s screen, watch only`}>
         {picture !== undefined ? (
           <>
-            <div className="screen__view" role="img" aria-label={`${name}'s screen, from ${picture.publisherName ?? picture.publisher}`} style={{ aspectRatio: `${picture.width} / ${picture.height}` }}>
+            <div
+              className="screen__view" role="img" aria-label={`${name}'s screen, from ${picture.publisherName ?? picture.publisher}`} style={{ aspectRatio: `${picture.width} / ${picture.height}` }}
+              data-watch-only onPointerDown={() => bridge().pictureInput("pointer")} onWheel={() => bridge().pictureInput("wheel")}
+            >
               {frame !== undefined ? <img src={frame} alt="" draggable={false} /> : <span className="screen__wait">Connecting…</span>}
               <span className="screen__live" aria-hidden="true">Live</span>
             </div>

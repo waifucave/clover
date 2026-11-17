@@ -68,7 +68,7 @@ async function setup(): Promise<{ e: FakeEngine; engine: MossEngine; bridge: Mos
     send: async () => ({ ok: true }), pickImages: async () => [], createBot: async () => ({ ok: false, why: "no" }), markRead: () => {},
     routines: (b) => engine.routines(b), pictures: (b) => engine.pictures(b), openPicture: (id) => engine.openPicture(id),
     closePicture: (id) => engine.closePicture(id), onPictureFrame: (fn) => engine.onPictureFrame(fn),
-    cardFrame: async () => undefined, onCardHeight: none, talk: () => {},
+    cardFrame: async () => undefined, onCardHeight: none, onCardSaid: none, talk: () => {},
     plugins: () => engine.plugins(), setAvailability: (s, t, a) => engine.setAvailability(s, t, a),
     addPlugin: (from) => engine.addPlugin("link" in from ? from : { folder: "/nowhere" }),
     settings: () => engine.settings(), botSettings: (b) => engine.botSettings(b), setBotSetting: (b, p, k, v) => engine.setBotSetting(b, p, k, v),
@@ -76,6 +76,7 @@ async function setup(): Promise<{ e: FakeEngine; engine: MossEngine; bridge: Mos
     setLevel: (c, l) => engine.setLevel(c, l), setPermission: (s, t, p) => engine.setPermission(s, t, p),
     signIn: (p, i, k) => engine.signIn(p, i, k), signOut: (p, i) => engine.signOut(p, i),
     botRecord: (id) => engine.botRecord(id), editBot: (id, patch) => engine.editBot(id, patch), models: () => engine.models(),
+    archiveBot: (id) => engine.archiveBot(id), archivedBots: () => engine.archivedBots(), restoreBot: (id) => engine.restoreBot(id), retry: (b) => engine.retry(b), pictureInput: () => {},
   };
   const used: string[] = [];
   const bridge = new Proxy(real, { get: (t, k: string) => { const f = t[k as keyof MossBridge] as unknown; return typeof f === "function" ? (...a: unknown[]) => { used.push(k); return (f as (...x: unknown[]) => unknown)(...a); } : f; } });
@@ -128,8 +129,11 @@ describe("the side panel", () => {
       fireEvent.keyDown(target, { key: "a" }); fireEvent.keyDown(target, { key: "Enter" });
     }
     await settle(150);
-    // Only the picture's own frames kept arriving: no bridge call and no engine call came from any of it.
-    expect(used.slice(before.used).filter((n) => n !== "onPictureFrame")).toEqual([]);
+    // Only the picture's own frames kept arriving, and main was told of the tries (it says "watch only" and sends nothing
+    // on): no other bridge call, and no engine call came from any of it.
+    const said = used.slice(before.used).filter((n) => n !== "onPictureFrame");
+    expect(said.length).toBeGreaterThan(0);
+    expect(said.every((n) => n === "pictureInput")).toBe(true);
     expect(e.calls().slice(before.calls).map((c) => c.method)).toEqual([]);
     r.unmount();
   });

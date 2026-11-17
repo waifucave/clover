@@ -4,15 +4,15 @@
 // over `programAnswerKeyStatement` (the device, the program `moss`, the public key, how it is held, the algorithm). The
 // engine takes the program from the connection's signed identity, never from anything MOSS says.
 //
-// Where it is kept: the OS's own store through Electron's safeStorage, in MOSS's own user data, in a packaged app; in
-// memory alone in a dev, unpackaged, headless or test run, so nothing ever brings a Keychain dialog up. No biometric or
-// passcode gate, ever. The key never goes into a log line, an error or the engine; signing reads it from memory.
+// Where it is kept (`vaultChoice`, as MOSS Code keeps its own): the OS's own store through Electron's safeStorage, in
+// MOSS's own user data, in a packaged app; in memory alone in an unpackaged (dev), headless or test run, or the acceptance's
+// kept file in its temp home. Never a plain file of a real build. No biometric or passcode gate, ever. The key never goes into a log line, an error or the engine; signing reads it from memory.
 //
 // Replacing a registered key is a sensitive change (a sealed card, `{ applied: false, card }`); MOSS's first build never
 // replaces its key, and says so if the engine already holds another one for MOSS on this device.
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, isAbsolute } from "node:path";
 import { programAnswerKeyStatement, type AnswerKeyHolder } from "@waifucave/moss-protocol";
 import { RpcCallError } from "./client";
 
@@ -54,6 +54,46 @@ export function safeStorageVault(file: string, storage: SafeStorageLike, platfor
       renameSync(tmp, file);
     },
   };
+}
+
+/** A key kept in a plain file (0600): the acceptance run's alone (`MOSS_TEST_ANSWER_KEY`, a file beside its throwaway
+ *  keychain file in a temp home, read only by a test-marked headless build), so the run can sign as an attacker holding
+ *  MOSS's key would, and a MOSS it restarts registers the same key. Never a real build's: there the key is in the OS's
+ *  store or in memory. */
+export function fileVault(file: string): KeyVault {
+  return {
+    held: "none",
+    load: () => {
+      try {
+        if (!existsSync(file)) return undefined;
+        const text = readFileSync(file, "utf8").trim();
+        return text === "" ? undefined : new Uint8Array(Buffer.from(text, "base64"));
+      } catch {
+        return undefined;
+      }
+    },
+    save: (secret) => {
+      mkdirSync(dirname(file), { recursive: true });
+      const tmp = `${file}.tmp`;
+      writeFileSync(tmp, Buffer.from(secret).toString("base64"), { mode: 0o600 });
+      renameSync(tmp, file);
+    },
+  };
+}
+
+/** Where MOSS keeps its answer key, by how it runs, as MOSS Code keeps its own (apps/desktop/src/main/index.ts
+ *  `answerKey()`); a secret is never in a plain file of a real build:
+ *  - a test-marked headless run given an absolute `MOSS_TEST_ANSWER_KEY`: that file (the acceptance's kept key, in a
+ *    throwaway temp home; a real build compiles the variable out);
+ *  - any other headless or test-marked run, and any unpackaged run (the dev app from the checkout): memory, a new key at
+ *    each start (the engine then asks for the new key on a replacement card, as for MOSS Code's dev key);
+ *  - a packaged app, dist or dev: the OS's store through safeStorage, unless Linux's store is plain text (then memory). */
+export function vaultChoice(o: { packaged: boolean; headless: boolean; testBuild: boolean; profile: "dist" | "dev"; platform: NodeJS.Platform; testKeyFile?: string; linuxPlainText?: boolean }): { kind: "file"; file: string } | { kind: "memory" } | { kind: "safe-storage" } {
+  if (o.testBuild && o.headless && o.testKeyFile !== undefined && isAbsolute(o.testKeyFile)) return { kind: "file", file: o.testKeyFile };
+  if (o.headless || o.testBuild) return { kind: "memory" };
+  if (!o.packaged) return { kind: "memory" };
+  if (o.platform === "linux" && o.linuxPlainText === true) return { kind: "memory" };
+  return { kind: "safe-storage" };
 }
 
 export type KeyState = { kind: "unregistered" } | { kind: "registered" } | { kind: "waiting"; why: string } | { kind: "refused"; why: string };

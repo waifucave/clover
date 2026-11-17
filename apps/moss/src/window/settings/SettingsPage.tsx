@@ -120,6 +120,7 @@ function General() {
         )}
         {levelNote !== undefined ? <p className="add__note" role="status">{levelNote}</p> : null}
       </Card>
+      <Archived />
       <Card title="Devices" id="devices">
         {s === undefined ? null : s.devices === "waiting" ? <Waiting what="devices" /> : s.devices.length === 0 ? <p className="muted">Only this computer.</p> : (
           <ul className="kv">{s.devices.map((d) => <li key={d.id}><span>{d.name}</span><span className="muted">{KIND_WORDS[d.kind] ?? d.kind}</span></li>)}</ul>
@@ -239,7 +240,34 @@ function BotPage(props: { bot: BotRow }) {
       <Card title="Instructions" id="instructions" note="Who the bot is, how it talks, what it cares about.">
         <Instructions bot={rec.id} name={rec.name} bytes={rec.instructionsBytes} onSave={(instructions) => edit({ instructions }, "Instructions saved.")} />
       </Card>
+      <Card title="Archive" id="archive" note={`Archiving puts ${rec.name} away: nothing is deleted. Its conversation, memory and routines come back with it from Settings.`}>
+        <button type="button" className="text-button" data-archive-bot={rec.id} onClick={() => void bridge().archiveBot(rec.id).then((ok) => { if (!ok) setNote("The engine didn't archive the bot."); })}>Archive {rec.name}</button>
+      </Card>
     </div>
+  );
+}
+
+/** The archived bots, each with Bring back (`bot.restore`: its conversation, memory and routines whole). */
+function Archived() {
+  const [bots, setBots] = useState<{ id: string; name: string }[] | "waiting" | undefined>(undefined);
+  const [note, setNote] = useState<string | undefined>(undefined);
+  const load = (): void => { void bridge().archivedBots().then((b) => setBots("waiting" in b ? "waiting" : b)); };
+  useEffect(load, []);
+  if (bots === undefined) return null;
+  return (
+    <Card title="Archived bots" id="archived" note="Bots you archived. Bringing one back brings its conversation, memory and routines with it.">
+      {bots === "waiting" ? <Waiting what="archive" /> : bots.length === 0 ? <p className="muted">None.</p> : (
+        <ul className="kv">
+          {bots.map((b) => (
+            <li key={b.id} data-archived-bot={b.id}>
+              <span>{b.name}</span>
+              <button type="button" className="text-button" onClick={() => void bridge().restoreBot(b.id).then((ok) => { setNote(ok ? `${b.name} is back.` : "The engine didn't bring the bot back."); load(); })}>Bring back</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {note !== undefined ? <p className="add__note" role="status">{note}</p> : null}
+    </Card>
   );
 }
 

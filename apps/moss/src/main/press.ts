@@ -15,11 +15,14 @@
 //      for that same press. One press answers once: taking it spends it.
 //   4. The stacking rule: the router places the card in THIS window (`pressMatchesPlacement`, from `card_placed` and
 //      `card.placement` alone: MOSS keeps no placement of its own), and the window is visible, focused and not
-//      minimised. MOSS draws nothing of its own over a pending card, so anything over the button is another window, and
-//      that the fresh reading (2) already refuses.
-//   5. No computer use is acting on this computer (`computer.acting`, fail closed: no answer, no press).
-//   6. MOSS's answer key is registered with the engine for this device (a press waits a moment for it).
-// Then the store signs (`programCardAnswerSigningInput`, program `moss`) and the engine's `card.answer` decides.
+//      minimised. MOSS draws nothing of its own over a pending card.
+//   4b. The overlap check (R12, overlap.ts): no window of one of OUR programs (MOSS, MOSS Code, the background host) lies
+//      over the press point, read from the OS's own window list; another app's window never counts. A keyboard press has
+//      no point and isn't checked here (2 still is).
+//   5. MOSS's answer key is registered with the engine for this device (a press waits a moment for it).
+// Then the store signs (`programCardAnswerSigningInput`, program `moss`) and the engine's `card.answer` decides; it also
+// refuses every program's answer while computer use acts on this computer, and MOSS says its refusal as it came (MOSS
+// asks `computer.acting` nothing of its own: a 3 s round trip there once refused a person's real press under load).
 //
 // §5.5 also names a hardware check (an event no other process posted: `eventSourceUnixProcessID`, `LLMHF_INJECTED`,
 // XTEST). Neither app has it yet; it is not built here either (the report says so).
@@ -35,6 +38,8 @@ export const REPORT_MS = 1_000;
 
 interface Down {
   at: number;
+  /** Where in the window's content it landed (CSS pixels from the content's top left), for the overlap check. */
+  point?: { x: number; y: number };
   /** The frame whose own document reported a trusted pointerdown for this press. */
   frame?: string;
   spent?: boolean;
@@ -47,9 +52,15 @@ export class PressRecord {
 
   constructor(private readonly now: () => number = Date.now) {}
 
-  /** A mouse down main saw in a window (`before-mouse-event`). */
-  mouseDown(windowId: number): void {
-    this.downs.set(windowId, { at: this.now() });
+  /** A mouse down main saw in a window (`before-mouse-event`), and where it landed in the window's content. */
+  mouseDown(windowId: number, point?: { x: number; y: number }): void {
+    this.downs.set(windowId, { at: this.now(), ...(point !== undefined ? { point } : {}) });
+  }
+
+  /** Where the window's latest mouse down landed, while it is recent (the overlap check's press point). */
+  lastPoint(windowId: number, maxMs = PRESS_MS): { x: number; y: number } | undefined {
+    const d = this.downs.get(windowId);
+    return d === undefined || this.now() - d.at > maxMs ? undefined : d.point;
   }
 
   /** A frame's document reported a trusted pointerdown (the preload's `moss:press-seen`, bound to the sender frame): it
@@ -111,22 +122,32 @@ export interface PressDeps {
   record: PressRecord;
   placementOf: (cardId: string) => CardPlacement | undefined;
   standing: (windowId: number) => WindowStanding | undefined;
-  /** `computer.acting` on the engine: undefined when it couldn't be asked. */
-  acting: () => Promise<boolean | undefined>;
   keyReady: (ms: number) => Promise<KeyState>;
   signer: AnswerSigner;
   device: () => string | undefined;
   answer: (a: { id: string; hash: string; option: string; proof: unknown; children?: readonly string[] }) => Promise<{ accepted: boolean; reason?: string }>;
   log: (line: string) => void;
+  /** The overlap check (4b): which of our programs' windows lies over this press point in that window, named (never a
+   *  title), or undefined. Absent: no window list here (the in-page reading stands alone). */
+  cover?: (windowId: number, point: { x: number; y: number } | undefined) => string | undefined;
 }
 
-export type PressResult = { accepted: true } | { accepted: false; reason: string };
+/** A press's outcome: refused, with what to tell the person (`reason`), and `covered` when a window lies over the button (as
+ *  MOSS Code's result says it). */
+export type PressResult = { accepted: true } | { accepted: false; reason: string; covered?: true };
+
+/** A refusal in the plain words MOSS shows beside the card. */
+export function refusalWords(r: { reason: string; covered?: true }): string {
+  const said = r.reason.trim();
+  const sentence = said.length === 0 ? "The press didn't count: press again." : `${said[0]!.toUpperCase()}${said.slice(1)}`;
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`;
+}
 
 /** One press's answer, from the sealed frame's own channel (checks 2 to 6; check 1 is the IPC handler's). */
 export async function answerPress(d: PressDeps, a: { token: string; option: string | undefined; senderKey: string; frame: string; windowId: number; children?: readonly string[] }): Promise<PressResult> {
-  const refuse = (why: string, say = why): PressResult => {
+  const refuse = (why: string, say = why, covered = false): PressResult => {
     d.log(`sealed: answer refused (${why})`);
-    return { accepted: false, reason: say };
+    return { accepted: false, reason: say, ...(covered ? { covered: true as const } : {}) };
   };
   const cardId = d.sealed.cardOf(a.token);
   if (cardId === undefined) return refuse("no such sealed button");
@@ -140,11 +161,10 @@ export async function answerPress(d: PressDeps, a: { token: string; option: stri
   const w = d.standing(a.windowId);
   const stacked = w === undefined ? "not MOSS's window" : stackingRule(d.placementOf(cardId), w);
   if (stacked !== undefined) return refuse(stacked);
-  // 5. Computer use, fail closed.
-  const acting = await d.acting();
-  if (acting === undefined) return refuse("the computer-use check couldn't run");
-  if (acting) return refuse("computer use is acting right now");
-  // 6. The key.
+  // 4b. The overlap check, at the click's own point.
+  const cover = d.cover?.(a.windowId, how === "click" ? d.record.lastPoint(a.windowId) : undefined);
+  if (cover !== undefined) return refuse(`a window lies over the button: ${cover}`, `${cover.startsWith("one of MOSS's own") ? "one of MOSS's own windows" : "another MOSS window"} lies over the button: move it away and press again`, true);
+  // 5. The key.
   const key = await d.keyReady(2_000);
   if (key.kind !== "registered") return refuse(`MOSS's answer key isn't registered (${key.kind === "refused" || key.kind === "waiting" ? key.why : key.kind})`, "this computer's answer key for MOSS isn't registered yet");
   const device = d.device();
@@ -162,4 +182,19 @@ export async function answerPress(d: PressDeps, a: { token: string; option: stri
   d.sealed.confirmedAnswer(out.card.id, true);
   d.log(`sealed: answer accepted for ${out.card.id} (${how})`);
   return { accepted: true };
+}
+
+/** The tallest a card's frame grows: high enough for a plugin's whole OK card, so its page never overflows its frame (a
+ *  page that overflowed kept resizing and never read as ready); the list that holds the card scrolls instead. */
+export const CARD_MAX_HEIGHT = 4_000;
+/** How much taller than its frame a card's page must say it is before the frame grows. The card's page fills at least its
+ *  frame (it is laid out as a window), so each report is about the frame's own height, a pixel or so over from rounding:
+ *  growing on those crept the frame up to its cap, and its buttons moved under the press. */
+export const CARD_GROW_SLACK = 6;
+
+/** The height to give a card's frame for its page's report, or undefined to leave it as it is (`now`: what it has). */
+export function cardHeight(now: number | undefined, reported: number): number | undefined {
+  const want = Math.max(60, Math.min(CARD_MAX_HEIGHT, Math.round(reported)));
+  if (now !== undefined && want <= now + CARD_GROW_SLACK) return undefined;
+  return want;
 }

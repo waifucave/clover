@@ -2,7 +2,7 @@
 // signature against the key MOSS registered for the `moss` program (FakeProgramAnswerKeys) and the router's placement:
 // a press counts only with the fresh visibility reading, MOSS's own press record (main saw the press and the sealed
 // frame's own trusted pointerdown named that frame), the stacking rule (placed in this window, the window in front), no
-// computer use acting, and MOSS's key registered. Each refusal is checked alone.
+// the engine's own refusal while computer use acts said as it came, and MOSS's key registered. Each refusal is checked alone.
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,7 +13,7 @@ import { memoryVault, ProgramAnswerKey } from "../src/main/answer-key";
 import { MossEngine } from "../src/main/engine";
 import { mossHello } from "../src/main/connection";
 import { PresenceReporter } from "../src/main/presence";
-import { answerPress, PressRecord, stackingRule, type PressDeps } from "../src/main/press";
+import { answerPress, cardHeight, CARD_MAX_HEIGHT, refusalWords, PressRecord, stackingRule, type PressDeps } from "../src/main/press";
 import { OWN_ELEMENT, SealedFrames } from "../src/main/sealed";
 import { FAKE_DEVICE, startFakeEngine, type FakeEngine } from "./fake-engine/engine";
 
@@ -45,7 +45,6 @@ interface Rig {
   key: ProgramAnswerKey;
   record: PressRecord;
   front: { focused: boolean };
-  acting: { value: boolean | undefined };
   deps: PressDeps;
   /** A minted `own` frame for a card, with a fresh reading and a press that landed in it. */
   press(card: string, opts?: { fresh?: boolean | "none"; pressed?: boolean; frame?: string }): string;
@@ -74,19 +73,17 @@ async function rig(opts: { register?: boolean; surface?: "moss" | "code" } = {})
   if (opts.register !== false) expect(await key.register(client, FAKE_DEVICE, () => true)).toEqual({ kind: "registered" });
   const record = new PressRecord();
   const front = { focused: true };
-  const acting = { value: false as boolean | undefined };
   const deps: PressDeps = {
     sealed, record, log: () => {},
     placementOf: (id) => engine.placementOf(id),
     standing: (w) => (w === WIN ? { window: "main", visible: true, focused: front.focused, minimized: false } : undefined),
-    acting: async () => acting.value,
     keyReady: (ms) => key.ready(ms),
     signer: key,
     device: () => FAKE_DEVICE,
     answer: (a) => client.request("card.answer", a),
   };
   return {
-    e, client, sealed, engine, key, record, front, acting, deps,
+    e, client, sealed, engine, key, record, front, deps,
     press: (card, p = {}) => {
       const made = sealed.mint(card, OWN_ELEMENT, { parent: PARENT }, WIN)!;
       if (p.fresh !== "none") sealed.noteFresh(made.token, p.fresh ?? true);
@@ -147,9 +144,9 @@ describe("a press on a card MOSS draws", () => {
     const r = await rig();
     const token = r.press("card_juniper_book");
     // The same press, spent by a first answer that something else refused: no second answer rides it.
-    r.acting.value = true;
+    r.e.setActing(true);
     expect(await go(r, token)).toMatchObject({ accepted: false, reason: "computer use is acting right now" });
-    r.acting.value = false;
+    r.e.setActing(false);
     r.sealed.noteFresh(token, true);
     expect(await go(r, token)).toMatchObject({ accepted: false, reason: "the press didn't come to this button" });
   });
@@ -164,12 +161,40 @@ describe("a press on a card MOSS draws", () => {
     expect(stackingRule({ kind: "conversation", program: "moss", window: "main" }, { window: "main", visible: true, focused: true, minimized: false })).toBeUndefined();
   });
 
-  test("refused while computer use acts, or when that can't be asked", async () => {
+  test("while computer use acts the engine refuses the answer, and MOSS says its refusal plainly; MOSS asks no computer.acting of its own", async () => {
     const r = await rig();
-    r.acting.value = true;
-    expect(await go(r, r.press("card_juniper_book"))).toMatchObject({ accepted: false, reason: "computer use is acting right now" });
-    r.acting.value = undefined;
-    expect(await go(r, r.press("card_juniper_book"))).toMatchObject({ accepted: false, reason: "the computer-use check couldn't run" });
+    const lines: string[] = [];
+    r.e.setActing(true);
+    const token = r.press("card_juniper_book");
+    expect(await answerPress({ ...r.deps, log: (l) => lines.push(l) }, { token, option: "allow_once", senderKey: SENDER, frame: FRAME, windowId: WIN })).toEqual({ accepted: false, reason: "computer use is acting right now" });
+    expect(lines.some((l) => l.includes("the engine refused the answer (computer use is acting right now)"))).toBe(true);
+    // The card waits on, and the next press once it stops answers it.
+    r.e.setActing(false);
+    expect(await go(r, r.press("card_juniper_book"))).toEqual({ accepted: true });
+    expect(r.e.calls().some((c) => c.method === "computer.acting")).toBe(false);
+  });
+
+  test("refused when one of our programs' windows lies over the click's own point (the overlap check); a key press isn't checked there", async () => {
+    const r = await rig();
+    const seen: { x: number; y: number }[] = [];
+    const cover = (_w: number, point: { x: number; y: number } | undefined) => { if (point !== undefined) seen.push(point); return point === undefined ? undefined : "another MOSS program's window (layer 3)"; };
+    const token = r.sealed.mint("card_juniper_book", OWN_ELEMENT, { parent: PARENT }, WIN)!.token;
+    r.sealed.noteFresh(token, true);
+    r.record.mouseDown(WIN, { x: 40, y: 60 });
+    r.record.frameSaw(WIN, FRAME);
+    const covered = await answerPress({ ...r.deps, cover }, { token, option: "allow_once", senderKey: SENDER, frame: FRAME, windowId: WIN });
+    expect(covered).toEqual({ accepted: false, reason: "another MOSS window lies over the button: move it away and press again", covered: true });
+    // What the person reads beside the card: what covers the button and what to do.
+    if (covered.accepted) throw new Error("taken");
+    expect(refusalWords(covered)).toBe("Another MOSS window lies over the button: move it away and press again.");
+    expect(refusalWords({ reason: "computer use is acting right now" })).toBe("Computer use is acting right now.");
+    expect(seen).toEqual([{ x: 40, y: 60 }]);
+    expect(r.e.answered()).toEqual([]);
+    // A key press: no point, so nothing over a point to find; it answers.
+    const keyed = r.sealed.mint("card_juniper_book", OWN_ELEMENT, { parent: PARENT }, WIN)!.token;
+    r.sealed.noteFresh(keyed, true);
+    r.record.keyDown(WIN, FRAME);
+    expect(await answerPress({ ...r.deps, cover }, { token: keyed, option: "allow_once", senderKey: SENDER, frame: FRAME, windowId: WIN })).toEqual({ accepted: true });
   });
 
   test("refused while MOSS's key isn't registered", async () => {
@@ -194,5 +219,19 @@ describe("a press on a card MOSS draws", () => {
     // Named as another program than the connection's, or not named: refused.
     expect(await r.client.request("card.answer", { id: card.id, hash: card.hash, option: "allow_once", proof: { via: "device", device: FAKE_DEVICE, at, signature: sig, program: "code" } })).toEqual({ accepted: false, reason: "the proof doesn't name this program" });
     expect(await r.client.request("card.answer", { id: card.id, hash: card.hash, option: "allow_once", proof: { via: "device", device: FAKE_DEVICE, at, signature: sig } })).toEqual({ accepted: false, reason: "the proof doesn't name this program" });
+  });
+});
+
+describe("a card's frame height", () => {
+  test("grows to its page's whole height, up to the cap; a report that only follows the frame (rounding) leaves it", () => {
+    expect(cardHeight(undefined, 512.4)).toBe(512);
+    expect(cardHeight(220, 1_340)).toBe(1_340);
+    // The page fills its frame: it reports the frame's own height, or a pixel over. No creep.
+    let h = 600;
+    for (let i = 0; i < 50; i++) h = cardHeight(h, h + 1) ?? h;
+    expect(h).toBe(600);
+    expect(cardHeight(600, 600)).toBeUndefined();
+    expect(cardHeight(600, 20_000)).toBe(CARD_MAX_HEIGHT);
+    expect(cardHeight(undefined, 10)).toBe(60);
   });
 });

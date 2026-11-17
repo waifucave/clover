@@ -19,4 +19,5 @@ export const NOT_ON_GITHUB: Readonly<Record<string, string>> = {
   "builder-examples": "not yet on GitHub (about 150 s of rows): the Mac's merge check runs it",
   "workshop-points": "not yet on GitHub (about 60 s of rows): the Mac's merge check runs it",
   models: "not yet on GitHub (about 90 s of rows, no app): the Mac's merge check runs it",
+  moss: "presses sealed buttons, which never read as visible on a runner until the sealed-page fix lands (lane RT); runs MOSS from source on the Mac until then, and moves to the matrix after that fix",
 };

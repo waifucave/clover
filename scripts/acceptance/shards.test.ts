@@ -9,6 +9,7 @@ import { UI_STEPS } from "./ui-steps";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
+import { MOSS_STEPS } from "./moss-step";
 import { MAIN_PARTS, expandUnitIds, mergeShards, planShards, serialUnits, slowest, unitOf, units, windowIndexes, type TimedRow } from "./shards";
 
 const row = (name: string, status: TimedRow["status"] = "PASS", seconds = 1): TimedRow => ({ n: stepNumber(FULL_STEPS, name), name, status, detail: status === "PASS" ? "ok" : "red", seconds });
@@ -50,17 +51,28 @@ describe("the split", () => {
   });
 
   test("N shards: each parallel unit in one shard, the chain first in its own, the load spread", () => {
-    expect(planShards(1)).toEqual([["chain", "window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models"]]);
+    expect(planShards(1)).toEqual([["chain", "window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss"]]);
     for (const n of [2, 3, 4, 8]) {
       const plan = planShards(n);
       expect(plan.length).toBeLessThanOrEqual(n);
-      expect(plan.flat().sort()).toEqual(["acp", "addons", "archive", "arrivals", "browser", "builder-examples", "bundled-tools", "cards", "chain", "examples", "models", "plugin-app", "release", "reopen", "window-1", "window-2", "window-3", "workshop", "workshop-points"]);
+      expect(plan.flat().sort()).toEqual(["acp", "addons", "archive", "arrivals", "browser", "builder-examples", "bundled-tools", "cards", "chain", "examples", "models", "moss", "plugin-app", "release", "reopen", "window-1", "window-2", "window-3", "workshop", "workshop-points"]);
       // The chain, the long pole, alone in the first from 2 shards (anything beside it lengthens the run).
       expect(plan[0]).toEqual(["chain"]);
     }
     // With 2 shards the chain runs alone and the rest share the other.
-    expect(planShards(2)).toEqual([["chain"], ["window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models"]]);
+    expect(planShards(2)).toEqual([["chain"], ["window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss"]]);
     expect(() => planShards(0)).toThrow();
+  });
+
+  test("the moss unit owns MOSS's rows, in their order, and none of them falls to the chain", () => {
+    const moss = units().find((u) => u.id === "moss")!;
+    expect(moss.rows).toEqual([...MOSS_STEPS]);
+    expect(moss.phase).toBe("parallel");
+    for (const name of MOSS_STEPS) expect(unitOf(name)).toBe("moss");
+    // Alone it is its home's first daemon; beside other units it runs after them (run.ts unitsRun).
+    const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
+    expect(run).toContain('if (allIds.length === 1 && allIds[0] === "moss") return mossRun(true);');
+    expect(run).toContain('if (runs("moss"))');
   });
 
   test("run.ts runs a unit's rows only where the unit is its own, and every unit has a runner", () => {

@@ -51,6 +51,7 @@ if (where === "moss-app:" && location.host === "app" && window.top === window) {
     onPictureFrame: (fn) => listen<[PictureFrameView]>("moss:picture-frame", fn),
     cardFrame: (cardId) => ipcRenderer.invoke("moss:card-frame", { cardId }),
     onCardHeight: (fn) => listen<[string, number]>("moss:card-height", fn),
+    onCardSaid: (fn) => listen<[string, string]>("moss:card-said", fn),
     talk: (phase) => ipcRenderer.send("moss:talk", { phase }),
     plugins: () => ipcRenderer.invoke("moss:plugins"),
     setAvailability: (server, tool, availability) => ipcRenderer.invoke("moss:set-availability", { server, tool, availability }),
@@ -65,6 +66,11 @@ if (where === "moss-app:" && location.host === "app" && window.top === window) {
     botRecord: (id) => ipcRenderer.invoke("moss:bot-record", { id }),
     botInstructions: (id) => ipcRenderer.invoke("moss:bot-instructions", { id }),
     editBot: (id, patch) => ipcRenderer.invoke("moss:edit-bot", { id, patch }),
+    archiveBot: (id) => ipcRenderer.invoke("moss:archive-bot", { id }),
+    archivedBots: () => ipcRenderer.invoke("moss:archived-bots"),
+    restoreBot: (id) => ipcRenderer.invoke("moss:restore-bot", { id }),
+    retry: (bot) => ipcRenderer.invoke("moss:retry", { bot }),
+    pictureInput: (kind) => ipcRenderer.send("moss:picture-input", { kind }),
     models: () => ipcRenderer.invoke("moss:models"),
   };
   contextBridge.exposeInMainWorld("moss", bridge);

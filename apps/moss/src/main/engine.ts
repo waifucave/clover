@@ -15,6 +15,7 @@ import {
 import { RpcCallError } from "./client";
 import { MAIN_WINDOW_ID } from "./identity";
 import type { SealedFrames } from "./sealed";
+import { talkCommandOf, type TalkCommand } from "./voice";
 import type {
   BotEdit, BotRecordRow, BotRow, BotSetting, CardRow, ConnectionKind, ModelRow, SettingsView, ConversationPage, Message, MossView, Piece, PieceState, PictureFrameView, PictureRow, PluginRow, RoutineRow, ToolRow,
 } from "../shared/view";
@@ -24,7 +25,7 @@ export interface EngineClient {
 }
 
 /** The areas whose events MOSS follows. */
-export const MOSS_EVENT_AREAS = ["bots", "activity", "approvals", "surfaces"] as const;
+export const MOSS_EVENT_AREAS = ["bots", "activity", "approvals", "surfaces", "plugins"] as const;
 
 /** Whether an error is the engine's "not served yet" (a method with no handler). */
 export function notServed(err: unknown): boolean {
@@ -45,6 +46,8 @@ export function messageOf(e: Record<string, unknown>): Message | undefined {
   }
   if (e.type === "assistant_message" && typeof e.text === "string" && e.text.trim() !== "") return { id, from: "bot", text: e.text, at };
   if (e.type === "agent_error" && typeof e.message === "string") return { id, from: "note", text: e.message.slice(0, 500), at };
+  // A turn that ended in an error: the conversation's note, with Try again while it is the last thing there.
+  if (e.type === "turn_completed" && e.stopReason === "error") return { id: `${id}:failed`, from: "note", text: "The turn ended with an error.", at, failed: true };
   return undefined;
 }
 
@@ -88,9 +91,14 @@ export class MossEngine {
   private sessionBot = new Map<string, string>();
   /** The live pictures this window follows: stream → picture id. */
   private streams = new Map<string, string>();
+  /** A stream's latest frame that came before `picture.open`'s answer named it (the engine sends the picture's latest frame
+   *  at once, and a still picture sends no other): kept until the answer comes, a few streams at most. */
+  private early = new Map<string, PictureFrameView & { stream: string }>();
   private emitTimer: ReturnType<typeof setTimeout> | undefined;
   /** The bot session the window follows live now. */
   private attached: string | undefined;
+  /** The voice plugin's talk command, from the plugins' declarations (voice.ts `talkCommandOf`). */
+  private talk: TalkCommand = { why: "Talking waits for the engine's voice plugin list." };
 
   constructor(private readonly sealed: SealedFrames, private readonly log: (line: string) => void = () => {}) {}
 
@@ -118,7 +126,8 @@ export class MossEngine {
       if (p === undefined || (p.kind !== "conversation" && p.kind !== "strip") || p.program !== "moss" || p.window !== MAIN_WINDOW_ID) continue;
       cards.push({ id: c.id, ...(c.bot !== undefined ? { bot: c.bot } : {}), kind: c.kind, place: p.kind });
     }
-    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}) };
+    const talk = "command" in this.talk ? { ready: true as const } : { ready: false as const, why: this.talk.why };
+    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}) };
   }
 
   onView(fn: (v: MossView) => void): () => void {
@@ -195,8 +204,30 @@ export class MossEngine {
     this.attached = undefined;
     this.placements.clear();
     await client.request("events.subscribe", { areas: MOSS_EVENT_AREAS }, 10_000).catch((err: unknown) => this.log(`engine: events.subscribe failed (${err instanceof Error ? err.message.slice(0, 120) : "error"})`));
-    await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards()]);
+    await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards(), this.loadTalk()]);
     this.changed();
+  }
+
+  /** The talk command the microphone runs now, or why there is none. */
+  talkCommand(): TalkCommand {
+    return this.talk;
+  }
+
+  /** Reads which plugin fills the voice point and its held command (again at each plugin change). */
+  private async loadTalk(): Promise<void> {
+    const client = this.client;
+    if (client === undefined) return;
+    const [points, commands] = await Promise.all([
+      client.request<{ points: { point: string; declaredBy: string; active?: { pluginId: string } }[] }>("point.active.list", {}, 10_000).catch(() => undefined),
+      client.request<{ commands: { name: string; pluginId: string; hold?: true }[] }>("command.list", {}, 10_000).catch(() => undefined),
+    ]);
+    if (client !== this.client) return;
+    const next = talkCommandOf(points?.points, commands?.commands);
+    if (JSON.stringify(next) !== JSON.stringify(this.talk)) {
+      this.talk = next;
+      this.log("command" in next ? `voice: the talk command is ${next.command} (${next.pluginId})` : `voice: no talk command (${next.why})`);
+      this.changed();
+    }
   }
 
   private async loadBots(): Promise<void> {
@@ -280,6 +311,11 @@ export class MossEngine {
           this.placements.delete(e.id);
         }
         break;
+      case "plugin_changed":
+      case "plugin_point_changed":
+        // A plugin on, off or changed may change who fills the voice point or which command holds the key.
+        void this.loadTalk();
+        return;
       case "card_placed": {
         const place = CardPlacement.safeParse(e.place);
         if (typeof e.card === "string" && place.success) this.placements.set(e.card, place.data);
@@ -303,12 +339,19 @@ export class MossEngine {
 
   private frame(params: unknown): void {
     const f = params as { stream?: unknown; seq?: unknown; format?: unknown; data?: unknown };
-    const id = typeof f?.stream === "string" ? this.streams.get(f.stream) : undefined;
-    if (id === undefined || typeof f.data !== "string" || typeof f.seq !== "number") return;
+    if (typeof f?.stream !== "string" || typeof f.data !== "string" || typeof f.seq !== "number") return;
     if (f.format !== "jpeg" && f.format !== "png" && f.format !== "webp") return;
     // Inert pixels: a data URL of the declared image type, base64 only.
     if (!/^[A-Za-z0-9+/]+={0,2}$/.test(f.data)) return;
     const url = `data:image/${f.format};base64,${f.data}`;
+    const id = this.streams.get(f.stream);
+    if (id === undefined) {
+      // Before `picture.open`'s answer: the latest one kept for it (a stream nobody opened is dropped with the oldest).
+      this.early.delete(f.stream);
+      this.early.set(f.stream, { stream: f.stream, id: "", seq: f.seq, url });
+      while (this.early.size > 4) this.early.delete(this.early.keys().next().value!);
+      return;
+    }
     for (const l of this.frameListeners) l({ id, seq: f.seq, url });
   }
 
@@ -387,6 +430,9 @@ export class MossEngine {
     const r = await this.read<{ stream: string }>("pictures", "picture.open", { id, maxFps: 10 });
     if (r === undefined) return false;
     this.streams.set(r.stream, id);
+    const first = this.early.get(r.stream);
+    this.early.delete(r.stream);
+    if (first !== undefined) for (const l of this.frameListeners) l({ id, seq: first.seq, url: first.url });
     return true;
   }
 
@@ -447,14 +493,14 @@ export class MossEngine {
       this.read<{ signedIn: boolean; user?: { name?: string; email?: string } }>("account", "account.status"),
       this.read<{ devices: { id: string; name: string; kind: string }[] }>("devices", "device.list"),
       this.read<{ computers: { name: string; level: string; self?: boolean }[] }>("devices", "computer.list"),
-      this.read<{ plugins: { id: string; name: string; enabled: boolean; parent?: string }[] }>("plugins", "plugin.list"),
+      this.read<{ plugins: { id: string; name: string | { en: string }; enabled: boolean; parent?: string }[] }>("plugins", "plugin.list"),
     ]);
     let signIns: SettingsView["signIns"] = "waiting";
     if (plugins !== undefined) {
       const rows: Exclude<SettingsView["signIns"], "waiting"> = [];
       for (const p of plugins.plugins.filter((x) => x.enabled)) {
         const r = await this.client?.request<{ auth: { index: number; method: "api-key" | "oauth-pkce" | "custom" | "core"; state: string; account?: string }[] }>("plugin.auth.list", { id: p.id }, 5_000).catch(() => undefined);
-        for (const a of r?.auth ?? []) rows.push({ pluginId: p.id, name: p.name, index: a.index, method: a.method, state: a.state, ...(a.account !== undefined ? { account: a.account } : {}) });
+        for (const a of r?.auth ?? []) rows.push({ pluginId: p.id, name: textOf(p.name), index: a.index, method: a.method, state: a.state, ...(a.account !== undefined ? { account: a.account } : {}) });
       }
       signIns = rows;
     }
@@ -530,6 +576,39 @@ export class MossEngine {
 
   async editBot(id: string, patch: BotEdit): Promise<boolean> {
     return (await this.read("bots", "bot.edit", { id, patch })) !== undefined;
+  }
+
+  /** Archives a bot (`bot.remove`, §6.1: nothing is deleted; its conversation, memory and routines stay with it). */
+  async archiveBot(id: string): Promise<boolean> {
+    const ok = (await this.read("bots", "bot.remove", { id })) !== undefined;
+    if (ok) { this.records.delete(id); this.changed(); }
+    return ok;
+  }
+
+  /** Try again on a bot's failed latest turn: the engine resends the person's own message that began it, once. */
+  async retry(bot: string): Promise<{ ok: true } | { ok: false; why: string }> {
+    const client = this.client;
+    const session = this.records.get(bot)?.mainSession;
+    if (client === undefined || session === undefined) return { ok: false, why: "MOSS isn't connected to its engine." };
+    try {
+      await client.request("session.resend", { session }, 15_000);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, why: notServed(err) ? "Trying again isn't served by this engine yet." : "It could not be sent again: send it from the composer." };
+    }
+  }
+
+  /** The archived bots, to bring one back. */
+  async archivedBots(): Promise<{ id: string; name: string }[] | { waiting: true }> {
+    const r = await this.read<{ bots: { id: string; name: string | { en: string } }[] }>("bots", "bot.archived");
+    return r === undefined ? { waiting: true } : r.bots.map((b) => ({ id: b.id, name: textOf(b.name) }));
+  }
+
+  /** Brings an archived bot back, with its conversation whole (`bot.restore`). */
+  async restoreBot(id: string): Promise<boolean> {
+    const ok = (await this.read("bots", "bot.restore", { id })) !== undefined;
+    if (ok) await this.loadBots().then(() => this.changed());
+    return ok;
   }
 
   async models(): Promise<ModelRow[] | { waiting: true }> {

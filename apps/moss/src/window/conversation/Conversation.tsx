@@ -9,9 +9,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { Face, MoodWords } from "../faces/Face";
 import { bridge, shortTime } from "../bridge";
 import { CardFrame } from "../cards/CardFrame";
-import type { BotRow, CardRow, Message } from "../../shared/view";
+import type { BotRow, CardRow, Message, MossView } from "../../shared/view";
 
-export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: ReactNode; panelOpen: boolean; onPanel: () => void }) {
+export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: ReactNode; panelOpen: boolean; onPanel: () => void; talk?: MossView["talk"] }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "waiting">("loading");
   const end = useRef<HTMLDivElement>(null);
@@ -62,17 +62,18 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
       <div className="messages" role="log" aria-live="polite">
         {state === "waiting" ? <p className="messages__note">Waiting for the engine to serve {props.bot.name}'s conversation.</p> : null}
         {state === "ready" && messages.length === 0 ? <p className="messages__note">Say hello to {props.bot.name}.</p> : null}
-        {messages.map((m, i) => <Bubble key={m.id} m={m} showTime={i === messages.length - 1 || messages[i + 1]?.from !== m.from} />)}
+        {messages.map((m, i) => <Bubble key={m.id} m={m} showTime={i === messages.length - 1 || messages[i + 1]?.from !== m.from} {...(m.failed === true && i === messages.length - 1 ? { bot: props.bot.id } : {})} />)}
         {props.cards.map((c) => <CardFrame key={c.id} card={c} />)}
         <div ref={end} />
       </div>
-      <Composer bot={props.bot} />
+      <Composer bot={props.bot} {...(props.talk !== undefined ? { talk: props.talk } : {})} />
     </main>
   );
 }
 
-function Bubble(props: { m: Message; showTime: boolean }) {
+function Bubble(props: { m: Message; showTime: boolean; /** The failed turn's note while it is the last thing: Try again. */ bot?: string }) {
   const m = props.m;
+  if (m.from === "note" && props.bot !== undefined) return <FailedNote text={m.text} bot={props.bot} />;
   if (m.from === "note") return <p className="note" data-bubble="note">{m.text}</p>;
   return (
     <div className={`bubble-row bubble-row--${m.from}`}>
@@ -94,6 +95,25 @@ function Bubble(props: { m: Message; showTime: boolean }) {
 }
 
 /** A file's kind from its name, in a word ("PDF", "Image", "File"). */
+/** A failed turn's note with Try again: one press sends the same words once more; the button goes once they are sent
+ *  (the next message is no longer this note). */
+function FailedNote(props: { text: string; bot: string }) {
+  const [state, setState] = useState<"ready" | "sending" | { why: string }>("ready");
+  const again = async (): Promise<void> => {
+    setState("sending");
+    const r = await bridge().retry(props.bot);
+    setState(r.ok ? "sending" : { why: r.why });
+  };
+  return (
+    <div className="note note--failed" data-bubble="note" data-failed>
+      <span>{props.text}</span>
+      {state === "ready" ? <button type="button" className="text-button" data-try-again onClick={() => void again()}>Try again</button> : null}
+      {state === "sending" ? <span className="muted" data-try-again-sending>Sending…</span> : null}
+      {typeof state === "object" ? <span className="composer__why" role="status">{state.why}</span> : null}
+    </div>
+  );
+}
+
 export function kindOf(name: string): string {
   const ext = /\.([A-Za-z0-9]{1,6})$/.exec(name)?.[1]?.toLowerCase();
   if (ext === undefined) return "File";
@@ -101,7 +121,7 @@ export function kindOf(name: string): string {
   return ext.toUpperCase();
 }
 
-function Composer(props: { bot: BotRow }) {
+function Composer(props: { bot: BotRow; talk?: MossView["talk"] }) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<{ id: string; name: string }[]>([]);
   const [why, setWhy] = useState<string | undefined>(undefined);
@@ -146,7 +166,9 @@ function Composer(props: { bot: BotRow }) {
         </button>
         <textarea rows={1} placeholder={`Message ${props.bot.name}`} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label={`Message ${props.bot.name}`} />
         <button
-          type="button" className={`icon-button mic${holding ? " is-on" : ""}`} aria-label="Hold to talk" title="Hold to talk (Ctrl+Shift+Space)" aria-pressed={holding}
+          type="button" className={`icon-button mic${holding ? " is-on" : ""}`} aria-label="Hold to talk" aria-pressed={holding}
+          // Without a voice plugin's talk command the button stays, dimmed, and says why (voice.ts talkCommandOf).
+          title={props.talk?.ready === false ? props.talk.why : "Hold to talk (Ctrl+Shift+Space)"} disabled={props.talk?.ready === false} data-talk={props.talk?.ready === false ? "none" : "ready"}
           onPointerDown={() => { setHolding(true); bridge().talk("down"); }} onPointerUp={release} onPointerLeave={release}
         >
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.8" width="5" height="8" rx="2.5" /><path d="M3.2 7.5a4.8 4.8 0 0 0 9.6 0M8 12.3v2" /></svg>

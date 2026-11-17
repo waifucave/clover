@@ -28,17 +28,20 @@ function view(over: Partial<MossView> = {}): MossView {
   };
 }
 
+let retried: string[] = [];
+let saidTo: ((cardId: string, words: string) => void)[] = [];
 function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBridge {
   const none = () => () => {};
   return {
     view: async () => v, onView: none, showing: () => {}, conversation: async () => page, onMessage: none,
     send: async () => ({ ok: true }), pickImages: async () => [], createBot: async () => ({ ok: false, why: "no" }), markRead: () => {},
     routines: async () => [], pictures: async () => [], openPicture: async () => false, closePicture: () => {}, onPictureFrame: none,
-    cardFrame: async () => undefined, onCardHeight: none, talk: () => {}, plugins: async () => [], setAvailability: async () => false,
+    cardFrame: async () => undefined, onCardHeight: none, onCardSaid: (fn) => { saidTo.push(fn); return () => {}; }, talk: () => {}, plugins: async () => [], setAvailability: async () => false,
     addPlugin: async () => ({ ok: false, why: "no" }), settings: async () => ({ account: "waiting", signIns: "waiting", computers: "waiting", devices: "waiting" }),
     botSettings: async () => ({ waiting: true }), setBotSetting: async () => false, setLevel: async () => false,
     setPermission: async () => false, signIn: async () => ({ ok: false, why: "no" }), signOut: async () => false,
     botRecord: async () => ({ waiting: true }), botInstructions: async () => ({ waiting: true }), editBot: async () => false, models: async () => ({ waiting: true }),
+    archiveBot: async () => false, archivedBots: async () => [], restoreBot: async () => false, retry: async (bot) => { retried.push(bot); return { ok: true }; }, pictureInput: () => {},
   };
 }
 
@@ -78,6 +81,31 @@ describe("MOSS's window", () => {
   test("a conversation the engine doesn't serve yet says so", async () => {
     const r = await draw(view(), { waiting: true });
     expect(r.container.textContent).toContain("Waiting for the engine to serve Juniper's conversation.");
+    r.unmount();
+  });
+
+  test("a failed turn shows Try again while it is the last thing; one press asks for it once, and an older failure offers none", async () => {
+    retried = [];
+    const failed = { id: "f1", from: "note" as const, text: "The turn ended with an error.", at: Date.now(), failed: true as const };
+    const r = await draw(view(), { bot: "juniper", hasMore: false, messages: [{ id: "u1", from: "user", text: "hello", at: Date.now() }, failed] });
+    const button = r.container.querySelector<HTMLButtonElement>("[data-try-again]");
+    expect(button?.textContent).toBe("Try again");
+    await act(async () => { button!.click(); await new Promise((res) => setTimeout(res, 20)); });
+    expect(retried).toEqual(["juniper"]);
+    expect(r.container.querySelector("[data-try-again]")).toBeNull();
+    r.unmount();
+    const later = await draw(view(), { bot: "juniper", hasMore: false, messages: [failed, { id: "u2", from: "user", text: "again", at: Date.now() }] });
+    expect(later.container.querySelector("[data-try-again]")).toBeNull();
+    later.unmount();
+  });
+
+  test("a refused press says why beside its card, in plain words drawn as text", async () => {
+    saidTo = [];
+    const r = await draw(view({ cards: [{ id: "card_a1b2c3", bot: "juniper", kind: "tool", place: "conversation" }] }), { bot: "juniper", hasMore: false, messages: [] });
+    await act(async () => { for (const f of saidTo) f("card_a1b2c3", "Computer use is acting right now."); await new Promise((res) => setTimeout(res, 10)); });
+    expect(r.container.querySelector("[data-card=card_a1b2c3] [data-card-said]")?.textContent).toBe("Computer use is acting right now.");
+    await act(async () => { for (const f of saidTo) f("card_zzz", "<b>not this one</b>"); await new Promise((res) => setTimeout(res, 10)); });
+    expect(r.container.querySelectorAll("[data-card-said]").length).toBe(1);
     r.unmount();
   });
 
