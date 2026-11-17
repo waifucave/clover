@@ -10,8 +10,11 @@
 //   reason, which starts it again at once in safe mode. Any other exit (the connection closed, the heartbeat ended it) is
 //   a crash: restarted after `HOST_RESTART_DELAYS_MS`, and after `HOST_CRASH_LIMIT` crashes inside `HOST_CRASH_WINDOW_MS`
 //   the next start is in safe mode, which covers the host's UI parts only.
+// * No app carrying a host is "absent" at once, but a record can be missing for a moment (an app update replacing its
+//   bundle): the engine looks again every `HOST_SOURCE_RECHECK_MS` for `HOST_SOURCE_GRACE_MS`, and when a window
+//   connects (`poke`), and only then runs headless for good.
 // * Quitting an app never stops the host: nothing here hears an app's windows at all.
-import { HOST_CRASH_LIMIT, HOST_CRASH_WINDOW_MS, HOST_RESTART_DELAYS_MS, HOST_START_TIMEOUT_MS, type HostExitReason } from "@waifucave/moss-protocol";
+import { HOST_CRASH_LIMIT, HOST_CRASH_WINDOW_MS, HOST_RESTART_DELAYS_MS, HOST_SOURCE_GRACE_MS, HOST_SOURCE_RECHECK_MS, HOST_START_TIMEOUT_MS, type HostExitReason } from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import type { HostStatus, HostSupervisor, HostWorld } from "../contracts/host-supervisor";
@@ -40,6 +43,10 @@ export class EngineHostSupervisor implements HostSupervisor {
   #onPurpose: HostExitReason | undefined;
   #restart: TimerHandle | undefined;
   #watchdog: TimerHandle | undefined;
+  #recheck: TimerHandle | undefined;
+  #absentSince: number | undefined;
+  /** Whether the host should run at all (false once the engine stopped it on purpose). */
+  #wanted = false;
 
   constructor(opts: EngineHostSupervisorOptions) {
     this.#clock = opts.clock;
@@ -57,6 +64,7 @@ export class EngineHostSupervisor implements HostSupervisor {
   }
 
   async boot(): Promise<"adopted" | "started" | "absent"> {
+    this.#wanted = true;
     const pid = this.#world.lockHolder();
     if (pid !== null) {
       this.#log(`[host] a host holds the lock (pid ${pid}): adopted, waiting for it to say it is ready`);
@@ -68,7 +76,9 @@ export class EngineHostSupervisor implements HostSupervisor {
   }
 
   ready(info: { pid: number; release: string; bundlePath: string; safeMode: boolean }): void {
+    this.#wanted = true;
     this.#disarm();
+    this.#cancelRecheck();
     this.#cancelRestart();
     this.#set({ state: info.safeMode ? "safe-mode" : "running", pid: info.pid, release: info.release, bundlePath: info.bundlePath, safeMode: info.safeMode });
   }
@@ -87,6 +97,7 @@ export class EngineHostSupervisor implements HostSupervisor {
       return;
     }
     if (reason !== undefined) {
+      this.#wanted = false;
       this.#log(`[host] the host left on purpose (${reason})`);
       this.#set({ state: "stopped" }, ["pid"]);
       return;
@@ -107,6 +118,8 @@ export class EngineHostSupervisor implements HostSupervisor {
   stop(reason: HostExitReason): void {
     this.#cancelRestart();
     this.#disarm();
+    this.#cancelRecheck();
+    if (reason !== "safe-mode") this.#wanted = false;
     this.#world.stop(reason);
     if (this.#status.state === "restarting" || this.#status.state === "absent" || this.#status.state === "stopped") {
       this.#onPurpose = undefined;
@@ -116,10 +129,16 @@ export class EngineHostSupervisor implements HostSupervisor {
     this.#onPurpose = reason;
   }
 
+  /** A window connected: with no host running for want of an app, look for one again now. */
+  poke(): void {
+    if (this.#wanted && this.#status.state === "absent") this.#start(false);
+  }
+
   /** Stops the timers (the engine is stopping); the host itself is the caller's to stop. */
   dispose(): void {
     this.#cancelRestart();
     this.#disarm();
+    this.#cancelRecheck();
   }
 
   #set(patch: Partial<HostStatus>, drop: (keyof HostStatus)[] = []): void {
@@ -132,10 +151,18 @@ export class EngineHostSupervisor implements HostSupervisor {
   #start(forceSafe: boolean): "started" | "absent" {
     const app = this.#world.source();
     if (!app) {
-      this.#log("[host] no app that carries the host is left: the engine runs headless");
+      const now = this.#clock.monotonic();
+      this.#absentSince ??= now;
+      if (this.#status.state !== "absent") this.#log("[host] no app that carries the host is on disk now: the engine runs headless, and looks again for a while");
       this.#set({ state: "absent" }, ["pid"]);
+      this.#cancelRecheck();
+      if (now - this.#absentSince < HOST_SOURCE_GRACE_MS) {
+        this.#recheck = this.#clock.setTimeout(() => { this.#recheck = undefined; if (this.#wanted) this.#start(forceSafe); }, HOST_SOURCE_RECHECK_MS);
+      }
       return "absent";
     }
+    this.#absentSince = undefined;
+    this.#cancelRecheck();
     const now = this.#clock.monotonic();
     this.#crashTimes = this.#crashTimes.filter((t) => now - t < HOST_CRASH_WINDOW_MS);
     const safeMode = forceSafe || this.#crashTimes.length >= HOST_CRASH_LIMIT;
@@ -161,6 +188,11 @@ export class EngineHostSupervisor implements HostSupervisor {
   #disarm(): void {
     if (this.#watchdog) this.#clock.clearTimeout(this.#watchdog);
     this.#watchdog = undefined;
+  }
+
+  #cancelRecheck(): void {
+    if (this.#recheck) this.#clock.clearTimeout(this.#recheck);
+    this.#recheck = undefined;
   }
 
   #cancelRestart(): void {

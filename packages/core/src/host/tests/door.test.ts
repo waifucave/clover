@@ -18,10 +18,10 @@ function conn(surface: "host" | "code" | "moss", opts: { features?: string[]; ro
   const notes: { method: string; params: unknown }[] = [];
   const c: MossConn = {
     connId: nextId++, role: opts.role ?? "app", caller: { kind: "user", client: "app" } as MossConn["caller"], features: opts.features ?? [], clientName: surface,
-    surface, areas: new Set(), follows: new Map(),
+    surface, program: surface, areas: new Set(), follows: new Map(),
     send: () => "1", notify: (method, params) => { notes.push({ method, params }); },
   };
-  return { c, notes, close: () => { for (const stop of c.follows.values()) stop(); c.follows.clear(); } };
+  return { c, notes };
 }
 
 /** A JPEG header the engine's reader takes: SOI, then a SOF0 naming the size. */
@@ -75,9 +75,9 @@ describe("the host door", () => {
       await expect(t.call(w.c, "host.exiting", { reason: "update" })).rejects.toThrow("background host's alone");
       await expect(t.call(w.c, "host.menu", { action: "quit-everything", confirmed: true })).rejects.toThrow("background host's alone");
     }
-    // A signed program, once the server puts it on the connection, wins over the surface the hello named.
+    // The program is the connection's signed one (lane RT's door), never the surface the hello named.
     const forged = conn("host");
-    (forged.c as MossConn & { program?: string }).program = "code";
+    (forged.c as { program?: string }).program = "code";
     await expect(t.call(forged.c, "host.ready", ready)).rejects.toThrow("background host's alone");
     expect(t.quits()).toBe(0);
   });
@@ -89,14 +89,14 @@ describe("the host door", () => {
     await t.call(h.c, "host.ready", ready);
     expect(t.supervisor.status()).toMatchObject({ state: "running", pid: 4321 });
     expect(t.door.hostConn()?.connId).toBe(h.c.connId);
-    h.close();
+    t.door.closed(h.c);
     expect(t.supervisor.status()).toMatchObject({ state: "restarting", crashes: 1 });
     expect(t.door.hostConn()).toBeUndefined();
     t.clock.advance(500);
     const h2 = conn("host");
     await t.call(h2.c, "host.ready", ready);
     await t.call(h2.c, "host.exiting", { reason: "update" });
-    h2.close();
+    t.door.closed(h2.c);
     expect(t.supervisor.status().state).toBe("stopped");
     expect(t.events.map((e) => e.state)).toContain("restarting");
     expect(t.events.at(-1)!.state).toBe("stopped");
@@ -204,6 +204,9 @@ describe("the browser's views and frames", () => {
     await t.call(t.h.c, "host.tab.frame", frame(100, 80));
     expect(t.code.notes.filter((n) => n.method === "picture.frame")).toHaveLength(2);
     expect(t.frames.latest("own-tab")?.seq).toBe(2);
+    // A window that goes takes its views with it; one that is still open closes its own.
+    t.door.closed(conn("code").c);
+    expect(t.asked.filter((a) => a.method === "app.tab.command").at(-1)!.params).toMatchObject({ command: { kind: "stream", on: true } });
     // The view closes: the last reader is gone, so the tab's stream stops at the host.
     await t.call(t.code.c, "browser.view.close", { stream: view.stream });
     expect(t.asked.filter((a) => a.method === "app.tab.command").at(-1)!.params).toMatchObject({ command: { kind: "stream", on: false } });

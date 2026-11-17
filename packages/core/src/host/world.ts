@@ -15,7 +15,7 @@
 //   packages install (not yet built: say so where it fails).
 // * A source checkout (not a dist build) may name its own start (`MOSS_HOST_COMMAND`, a JSON argv), which the engine
 //   runs as its child in its own process group, so a run that started the engine ends the host with it.
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { closeSync, constants, existsSync, openSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join, posix } from "node:path";
 import { APP_RECORDS_DIR, AppInstallRecord, HOST_LOCK_FILE, HOST_START_FILE, PROGRAM_IDENTIFIERS, compareReleases, type HostExitReason } from "@waifucave/moss-protocol";
@@ -76,6 +76,18 @@ export function appRecordsSource(home: string, exists: (p: string) => boolean = 
   return best;
 }
 
+/** The release an app bundle says it is (`CFBundleShortVersionString` in its Info.plist, macOS), or undefined when it
+ *  can't be read. A record's own `release` is only its word: the copy counts when the bundle agrees. */
+export function bundleRelease(bundlePath: string, read: (path: string) => Buffer = (p) => readFileSync(p)): string | undefined {
+  let raw: Buffer;
+  try { raw = read(join(bundlePath, "Contents", "Info.plist")); } catch { return undefined; }
+  let xml = raw.toString("utf8");
+  if (raw.subarray(0, 6).toString("latin1") === "bplist") {
+    try { xml = execFileSync("plutil", ["-convert", "xml1", "-o", "-", join(bundlePath, "Contents", "Info.plist")], { encoding: "utf8", timeout: 5_000 }); } catch { return undefined; }
+  }
+  return /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]*)<\/string>/.exec(xml)?.[1];
+}
+
 /** The host helper's product name per profile: the nested app's name inside each app. */
 export function hostProductName(profile: MossProfile): string {
   return profile === "dev" ? "MOSS Host Dev" : "MOSS Host";
@@ -133,6 +145,8 @@ export interface EngineHostWorldInput {
   log?(line: string): void;
   now?(): number;
   exists?(path: string): boolean;
+  /** Test seam: the release a bundle says it is (default: its Info.plist). */
+  bundleRelease?(bundlePath: string): string | undefined;
 }
 
 /** The engine's real host world. */
@@ -182,6 +196,11 @@ export function engineHostWorld(input: EngineHostWorldInput): HostWorld & HostWo
       const rec = (input.source ?? (() => appRecordsSource(input.home, exists)))();
       // An app that carries no helper (an older build) is no source: the engine then runs headless rather than retrying.
       if (rec !== undefined && input.os === "darwin" && !exists(hostHelperPath(rec.bundlePath, input.profile))) return undefined;
+      // A record says its release; the bundle must say the same, or it is not this copy (an update half way, a forged record).
+      if (rec !== undefined && input.os === "darwin" && (input.bundleRelease ?? bundleRelease)(rec.bundlePath) !== rec.release) {
+        log(`[host] ${rec.bundlePath} is not the release its record says (${rec.release}): not this copy`);
+        return undefined;
+      }
       return rec;
     },
     start(bundlePath, opts) {

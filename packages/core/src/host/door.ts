@@ -2,12 +2,11 @@
 // host's own calls (`host.ready`, `host.exiting`, `host.menu`), the windows' views of its tabs (`browser.view.*`), and
 // the `host_changed` event, over the `EngineHostSupervisor`.
 //
-// * Only the host's program calls the host's methods: the connection's signed program is `host` (`programOf`: the
-//   signed identity once lane RT puts it on the connection; until then the hello's `surface`, which is what stands in on
-//   Windows and Linux too). Every `app` connection may reach these methods by the role's allow list; this is the check.
+// * Only the host's program calls the host's methods: the connection's program is `host` (`MossConn.program`, lane RT's
+//   surface door: the signed identity on macOS, the hello's surface plus the caller check where the OS signs no running
+//   image). Every `app` connection may reach these methods by the role's allow list; this is the check.
 // * One host connection at a time: its close (its process ended, or the heartbeat ended it) is the supervisor's `exited`,
-//   a crash unless it said `host.exiting` first. The close is heard through the connection's `follows`, which the MOSS
-//   server ends at every close (until RT's router gives a close hook of its own).
+//   a crash unless it said `host.exiting` first. The daemon hands every close to `closed` (the MOSS server's `onClosed`).
 // * `browser.view.input` is the person's input: only from program `code` (MOSS Code's window, which saw the press come
 //   from the hardware), only on a stream that connection opened, and only to a code session's tab or the person's own.
 //   MOSS's window (`moss`) is watch only, and sees only bots' tabs; MOSS Code's sees no bot's tab.
@@ -23,10 +22,9 @@ export const HOST_TAB_INPUT_TIMEOUT_MS = 5_000;
 /** How long the host has to answer `host.stop` (it then exits; its close is what the supervisor waits for). */
 export const HOST_STOP_TIMEOUT_MS = 5_000;
 
-/** The program a connection is: its signed program when the server put one on it, else its surface. */
+/** The program a connection is (lane RT's door put it there at the hello); never a call's own word. */
 export function programOf(conn: MossConn): Program | undefined {
-  const signed = (conn as MossConn & { program?: Program }).program;
-  return signed ?? conn.surface;
+  return conn.program;
 }
 
 /** Which tabs a window may see: MOSS's window bots' tabs only; MOSS Code's code sessions' and the person's own. */
@@ -58,7 +56,7 @@ export interface HostDoorDeps {
   /** A tab the browser knows, by id (the MOSS Browser's `BrowserService`). */
   tab(id: string): TabView | undefined;
   /** A tab's pictures (`tab-frames.ts`); `accept` takes `host.tab.frame`. */
-  frames: TabFrames & Pick<EngineTabFrames, "accept">;
+  frames: TabFrames & Pick<EngineTabFrames, "accept" | "ownerGone">;
   log?(line: string): void;
 }
 
@@ -68,6 +66,9 @@ export interface HostDoor {
   hostConn(): MossConn | undefined;
   /** Sends the live host `host.stop`; false when none is connected. */
   stopHost(reason: HostExitReason): boolean;
+  /** A connection closed (the MOSS server's `onClosed`): the host's is its exit; a window's views and a pages owner's
+   *  streams end with it. */
+  closed(conn: MossConn): void;
   dispose(): void;
 }
 
@@ -119,7 +120,6 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
         throw new MossRpcError(ERR.RETRY, "another host connection is still live");
       }
       host = conn;
-      conn.follows.set(`host:${conn.connId}`, () => hostClosed(conn));
       deps.supervisor.ready({ pid: deps.lockPid() ?? 0, release: p.release, bundlePath: p.bundlePath, safeMode: p.safeMode });
       log(`[host] ready: ${p.parts.surfaces} surfaces, ${p.parts.background} background parts, ${p.parts.tabs.length} tabs${p.safeMode ? ", in safe mode" : ""}`);
       return { ok: true };
@@ -161,7 +161,6 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       const stream = `view-${randomUUID()}`;
       const view: ViewStream = { connId: conn.connId, tab: tab.id, program };
       views.set(stream, view);
-      conn.follows.set(`view:${stream}`, () => closeView(stream));
       // Each frame goes on as this view's own picture: the window hears its stream id, never the tab stream's.
       view.stop = deps.frames.subscribe(tab.id, (f: TabFrame) => {
         try { conn.notify("picture.frame", { stream, seq: f.seq, format: f.format, width: f.width, height: f.height, data: f.data, at: f.at }); } catch { /* it just closed */ }
@@ -172,7 +171,6 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       const p = HOST_METHODS.browserViewClose.params.parse(raw);
       const v = views.get(p.stream);
       if (v === undefined || v.connId !== conn.connId) throw new MossRpcError(ERR.INVALID_PARAMS, "no such view on this connection");
-      conn.follows.delete(`view:${p.stream}`);
       closeView(p.stream);
       return { ok: true };
     },
@@ -196,6 +194,11 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
     handlers,
     hostConn: () => host,
     stopHost,
+    closed(conn) {
+      for (const [id, v] of [...views]) if (v.connId === conn.connId) closeView(id);
+      deps.frames.ownerGone(conn.connId);
+      hostClosed(conn);
+    },
     dispose() {
       unwatch();
       for (const id of [...views.keys()]) closeView(id);

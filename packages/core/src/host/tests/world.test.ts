@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOST_LOCK_FILE, HOST_START_FILE } from "@waifucave/moss-protocol";
 import type { Runner } from "../../platform/login/live";
-import { appRecordsSource, DARWIN_O_EXLOCK, engineHostWorld, hostHelperPath, hostLockHolder, hostRequirement, parseHostCommand } from "../world";
+import { appRecordsSource, bundleRelease, DARWIN_O_EXLOCK, engineHostWorld, hostHelperPath, hostLockHolder, hostRequirement, parseHostCommand } from "../world";
 
 const root = mkdtempSync(join(tmpdir(), "moss-host-world-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -69,6 +69,12 @@ describe("the source", () => {
   });
 });
 
+test("a bundle's release is its Info.plist's CFBundleShortVersionString", () => {
+  const xml = Buffer.from('<?xml version="1.0"?><plist><dict><key>CFBundleShortVersionString</key>\n\t<string>1.111.1</string></dict></plist>');
+  expect(bundleRelease("/A/MOSS.app", () => xml)).toBe("1.111.1");
+  expect(bundleRelease("/A/MOSS.app", () => { throw new Error("gone"); })).toBeUndefined();
+});
+
 describe("starting the host", () => {
   function world(over: Partial<Parameters<typeof engineHostWorld>[0]> & { runs?: string[][]; ok?: (argv: readonly string[]) => boolean }) {
     const runs: string[][] = over.runs ?? [];
@@ -87,8 +93,11 @@ describe("starting the host", () => {
   test("an app that carries no helper is no source (the engine runs headless rather than retrying)", () => {
     const { w } = world({ source: () => app, exists: () => false });
     expect(w.source()).toBeUndefined();
-    const { w: w2 } = world({ source: () => app, exists: (p) => p === hostHelperPath(app.bundlePath, "dist") });
+    const { w: w2 } = world({ source: () => app, exists: (p) => p === hostHelperPath(app.bundlePath, "dist"), bundleRelease: () => "1.111.1" });
     expect(w2.source()?.bundlePath).toBe(app.bundlePath);
+    // The record says one release and the bundle another (an update half way, a forged record): not this copy.
+    const { w: w3 } = world({ source: () => app, exists: () => true, bundleRelease: () => "1.111.0" });
+    expect(w3.source()).toBeUndefined();
   });
 
   test("macOS: the helper's signature is checked against the host's requirement before Launch Services starts it", async () => {

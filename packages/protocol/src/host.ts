@@ -34,6 +34,11 @@ export const HOST_RESTART_DELAYS_MS = [500, 2_000, 8_000, 30_000] as const;
  *  a crash: a host that never connects, or dies before its hello, never closes a connection, so without this the engine
  *  would wait in `starting` for ever. Longer than the longest restart delay, and than a cold start at login. */
 export const HOST_START_TIMEOUT_MS = 45_000;
+/** An app's record can be missing for a moment (its bundle is being replaced by an update): the engine looks again
+ *  every `HOST_SOURCE_RECHECK_MS` for `HOST_SOURCE_GRACE_MS` before it takes "no app carries a host" as so, and runs
+ *  headless. A window that connects later makes it look again too. */
+export const HOST_SOURCE_GRACE_MS = 120_000;
+export const HOST_SOURCE_RECHECK_MS = 5_000;
 /** What the engine leaves for the host it starts (`{ by, safeMode, at }`), under the home: none of the OS starts
  *  (`open -a`, `systemctl --user start`, `schtasks /Run`) passes arguments reliably. The host reads it once, deletes it
  *  and honours it for `HOST_START_FILE_TTL_MS`. */

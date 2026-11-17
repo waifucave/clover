@@ -46,8 +46,7 @@ const BROWSER_FEATURE = "browser";
  *  (`code`); never MOSS's window. The one place that decides it, for the tab requests and for whose frames count. */
 export function pagesOwner(conns: readonly MossConn[]): MossConn | undefined {
   const runs = (c: MossConn) => c.role === "app" && c.features.includes(BROWSER_FEATURE);
-  const program = (c: MossConn) => (c as MossConn & { program?: string }).program ?? c.surface;
-  return conns.find((c) => runs(c) && program(c) === "host") ?? conns.find((c) => runs(c) && program(c) === "code");
+  return conns.find((c) => runs(c) && c.program === "host") ?? conns.find((c) => runs(c) && c.program === "code");
 }
 
 interface Reader { fn: (frame: TabFrame) => void; minGapMs: number; last: number }
@@ -167,7 +166,6 @@ export class EngineTabFrames implements TabFrames {
     const s: TabStream = { id: `frames-${randomUUID()}`, tab, owner: owner.connId, width: Math.min(vp.width, PICTURE_MAX_WIDTH), height: Math.min(vp.height, PICTURE_MAX_HEIGHT), lastAccepted: -Infinity, seq: 0 };
     this.#streams.set(s.id, s);
     this.#byTab.set(tab, s);
-    owner.follows.set(`frames:${s.id}`, () => this.ownerGone(owner.connId));
     this.deps.ask(owner, "app.tab.command", { id: tab, command: { kind: "stream", stream: s.id, on: true, codecs: ["jpeg"] } }, 30_000)
       .catch((e: unknown) => this.#log(`[host] a tab's pictures did not start: ${(e as Error).message}`));
   }

@@ -163,6 +163,9 @@ export interface MossServerDeps {
   readonly appToken?: string;
   /** Other lanes' MOSS methods, by wire name. */
   readonly handlers?: Readonly<Record<string, MossHandler>>;
+  /** Lane HS: whether a background host owns the screen and the pages now (the supervisor's state), so a `code` window
+   *  mounts only its own points (`host/mounts.ts`'s `hostOwnsScreen`). Absent: none ever does. */
+  hostOwnsScreen?(): boolean;
   /** Settles once the daemon's late doors are in: the parts that start after the socket listens (the plugin registry's
    *  `plugin.auth.*`, the links' `devices.*`, the computer node's and the bot side's methods) have each finished their
    *  first start or are waiting on something only the user can give (a locked secret store). A call to a method with no
@@ -283,7 +286,9 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   const conns = new Map<number, MossConn>();
   // Lane RT: the hello's surface and program (the door) and where each pending card is drawn (the router). The island is
   // live while a connection that draws it is (the host; until lane HS builds it, today's `code` window).
-  const door = new EngineSurfaceDoor();
+  // lane HS: start. A `code` window mounts the screen too only while no background host owns it (`host/mounts.ts`).
+  const door = new EngineSurfaceDoor({ legacy: () => !(deps.hostOwnsScreen?.() ?? false) });
+  // lane HS: end
   const router = new EngineCardRouter({ clock: deps.clock ?? new SystemClock(), hostLive: false });
   const undoor = door.watch(() => router.hostLive(door.islandLive()));
   const closedHooks = new Set<(conn: MossConn) => void>();

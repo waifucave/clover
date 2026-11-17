@@ -75,7 +75,7 @@ export function startHostSupervision(input: HostSupervisionInput): HostSupervisi
     midWork: () => midWorkOf(input.busy()),
     tab: (id) => input.tabs().find((t) => t.id === id),
     openApp: async (program) => {
-      const live = input.connections().find((c) => c.role === "app" && c.surface === program);
+      const live = input.connections().find((c) => c.role === "app" && c.program === program);
       if (live !== undefined) { live.send("app.show", { what: { kind: "window" } }); return; }
       await input.launchApp?.(program);
     },

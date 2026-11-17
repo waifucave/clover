@@ -22,15 +22,19 @@ interface Held extends LiveSurface {
 export class EngineSurfaceDoor implements SurfaceDoor {
   readonly #live = new Map<number, Held>();
   readonly #listeners = new Listeners<LiveSurface[]>();
-  readonly #legacy: boolean;
+  readonly #legacy: boolean | (() => boolean);
 
-  /** `legacy` (default true): today's engine, before the background host, where a `code` window mounts the screen too. */
-  constructor(opts: { legacy?: boolean } = {}) {
+  /** `legacy` (default true): today's engine, before the background host, where a `code` window mounts the screen too.
+   *  Lane HS: it may be asked at each hello (`() => boolean`): legacy while no background host owns the screen. */
+  constructor(opts: { legacy?: boolean | (() => boolean) } = {}) {
     this.#legacy = opts.legacy ?? true;
   }
 
   #mount(surface: Surface): MountList {
-    return surface === "code" && this.#legacy ? LEGACY_CODE_MOUNTS : SURFACE_MOUNTS[surface];
+    // lane HS: start
+    const legacy = typeof this.#legacy === "function" ? this.#legacy() : this.#legacy;
+    // lane HS: end
+    return surface === "code" && legacy ? LEGACY_CODE_MOUNTS : SURFACE_MOUNTS[surface];
   }
 
   admit(client: SurfaceClient): SurfaceAdmission | { ok: true; surface: undefined } {
