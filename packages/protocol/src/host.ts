@@ -28,6 +28,15 @@ export const HOST_CRASH_LIMIT = 3;
 export const HOST_CRASH_WINDOW_MS = 120_000;
 /** The engine's waits before each restart of a crashed host, the last repeated. */
 export const HOST_RESTART_DELAYS_MS = [500, 2_000, 8_000, 30_000] as const;
+/** How long a host the engine started (or found holding the lock) has to say `host.ready` before the engine counts it as
+ *  a crash: a host that never connects, or dies before its hello, never closes a connection, so without this the engine
+ *  would wait in `starting` for ever. Longer than the longest restart delay, and than a cold start at login. */
+export const HOST_START_TIMEOUT_MS = 45_000;
+/** What the engine leaves for the host it starts (`{ by, safeMode, at }`), under the home: none of the OS starts
+ *  (`open -a`, `systemctl --user start`, `schtasks /Run`) passes arguments reliably. The host reads it once, deletes it
+ *  and honours it for `HOST_START_FILE_TTL_MS`. */
+export const HOST_START_FILE = "run/host-start.json";
+export const HOST_START_FILE_TTL_MS = 60_000;
 
 /** Why the host exits or is stopped. */
 export const HostExitReason = z.enum([
@@ -35,7 +44,8 @@ export const HostExitReason = z.enum([
   "update",
   /** The menu's "quit everything". */
   "quit-everything",
-  /** Too many crashes: it starts again in safe mode. */
+  /** Restart in safe mode: the host goes and the engine starts it again at once with its UI parts in safe mode (no
+   *  third-party part mounted). The one reason after which the engine starts the host again. */
   "safe-mode",
   /** No app that carries a host is left on disk (item 109: the engine then runs headless). */
   "no-app",
