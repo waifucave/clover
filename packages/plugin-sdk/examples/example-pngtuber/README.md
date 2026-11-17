@@ -1,21 +1,24 @@
-# Picture-swap avatar, a character renderer
+# Picture-swap avatar, a renderer for the avatar plugin
 
-The smallest useful character renderer: it draws a bot as three pictures swapped in turn (rest, talking, blink), with no engine
-and no network. It shows what a plugin declares to teach MOSS a new avatar format, so that a bot using it shows its character,
-the avatar picker can import it, and its mouth moves with the bot's voice.
+The smallest useful renderer for MOSS Code's bundled avatar plugin (`moss/character`): it draws the figure as three pictures
+swapped in turn (rest, talking, blink), with no engine and no network. MOSS itself has no avatar; the avatar plugin shows one
+figure at a time and declares its own points, and this plugin plugs into them. It shows what a plugin declares to teach the
+avatar plugin a new model format, bring a figure in it, and move that figure's mouth with what MOSS Voice says.
 
 | Part | Where | What it shows |
 |---|---|---|
-| The format | `contributes["avatar.formats"]` in `moss.json` | its name (`pngtuber`), the extension that picks it (`.pngtuber.json`), the file kinds the app may serve to the bot's stage (`json`, `image`; each with a size cap), how the model is found (`folder`), how it is imported (`folder`) and what it can do (`lipsync`, `expressions`) |
-| The renderer | `contributes.ui` (`spot: "avatar"`, `key: "pngtuber"`) and `client/index.tsx` | the entry the app draws when a bot's avatar format is `pngtuber`: it reads the model's JSON, swaps pictures, blinks, and opens the mouth on the speech feed |
-| A sample model | `sample-model/` | `sunny.pngtuber.json` and three plain-shape pictures made for this example; copy the folder into a bot plugin to try it |
+| The format | `contributes["moss.character.formats"]` in `moss.json` | its id (`pngtuber`), its name and what it can do (`lipsync`, `expressions`) |
+| The renderer | `contributes.ui` (`spot: "moss.character.renderer"`, `key: "pngtuber"`) and `client/index.tsx` | the entry the avatar plugin draws when its figure's format is `pngtuber`: it reads the model's JSON, swaps pictures, blinks, and opens the mouth on the speech feed |
+| A figure | `contributes["moss.character.packs"]` and `sample-model/` | Sunny: `sunny.pngtuber.json` and three plain-shape pictures made for this example. The pack point declares which kinds of file come along with an entry's file (JSON, pictures, capped), so the app serves the figure's folder to its renderer |
+| The mouth | `contributes["moss.voice.speech"]` | an entry in MOSS Voice's own point: MOSS Voice sends each filler its mouth levels |
 
-## Use it with a bot
+Each point it fills is a line on its OK card, in the words of the plugin that declares it: what a renderer is handed, what a
+pack offers, what MOSS Voice tells it. Nothing else gates it, and nothing in the platform names it.
+
+## Use it
 
 1. Install this folder from the Plugins page (Add, Choose a folder…) and press OK on its card.
-2. In a bot plugin, put your model in a folder and name it in the manifest: `"avatar": { "file": "model/sunny.pngtuber.json", "format": "pngtuber" }`.
-   The app serves that bot only the files this renderer declared (JSON up to 64 KiB, pictures up to 4 MiB), from the model's own folder.
-3. Or pick the model's folder in the bot editor (Choose avatar…): the `.pngtuber.json` in it picks this renderer.
+2. In Settings › Avatar, pick Sunny.
 
 ## The model file
 
@@ -27,31 +30,26 @@ Picture paths are relative to the JSON file.
 
 ## The speech feed
 
-`useAvatarSpeech()` (from `@waifucave/moss-plugin-sdk/ui`) gives the renderer the bot's speech: `feed.subscribe(listener)` hands
-batches of `{ t, rms, centroid }` frames (loudness and brightness on the audio clock, a little ahead of when they play),
-`feed.now()` is that clock, and `speaking` says whether the bot speaks. In a plugin's own frame the app sends those numbers on
-from the stage every 40 ms or so while the bot speaks and the frame can be seen, and nothing while it is quiet. This renderer
-opens the mouth for a frame louder than 0.04, and looks only while speech is due. A renderer never hears the audio itself.
+MOSS Voice sends every plugin with an entry in `moss.voice.speech` a point message as it speaks: `{ bot, frames: [{ t, rms,
+centroid? }], cut? }`, levels stamped in epoch milliseconds a little ahead of when they sound. The SDK's `TimedSpeech` keeps
+them by time as a speech feed (`feed.subscribe(listener)`, `feed.now()`), handing each level over a moment before it is due;
+`cut` drops what was not yet due. This renderer opens the mouth for a frame louder than 0.04, and looks only while speech is
+due. It never hears the audio itself.
 
-## The stage's framing
+## The framing
 
-The stage fills the renderer's frame and says how the theme frames the figure in the `framing` prop (`{ mode?, crop?, headroom? }`:
-the theme's `--moss-avatar-framing`, `--moss-avatar-crop` and `--moss-avatar-headroom`, read live; CSS variables do not cross
-into a plugin's frame, so they come as data). This renderer shows `crop` of the picture's height from the top, with `headroom` of
-it empty above (`framePicture`); with no `framing` it fits the whole picture. A renderer that ignores `framing` still fills its frame.
+The avatar plugin says how the theme frames the figure in the `framing` prop (`{ mode?, crop?, headroom? }`: the theme's
+`--moss-avatar-framing`, `--moss-avatar-crop` and `--moss-avatar-headroom`, read live; CSS variables do not cross into a
+plugin's frame, so they come as data). This renderer shows `crop` of the picture's height from the top, with `headroom` of it
+empty above (`framePicture`); with no `framing` it fits the whole picture.
 
-## The avatar contract
+## The cues
 
-`useAvatarControl()` (same package) is how a renderer takes a bot plugin's cues and tells the app what it has. This one calls
-`setCatalogue({ expressions: ["happy"], … })`, listens with `onCue`, and on `{ type: "expression", name: "happy" }` swaps to a second
-picture set drawn by code (an inline SVG, so no files) for a few seconds; it says the picture's box with `setBox`. A bot plugin
-then reaches it through `api.avatar.cue({ type: "expression", name: "happy" })` (capability `avatar.control`), and reads what
-the model has with `api.avatar.catalogue()` (`avatar.read`). A cue this renderer doesn't list is answered plainly, never played.
-
-The mouth is not a cue the renderer plays: `useAvatarSpeech()` hands it the speech as a feed of loudness frames (`feed.subscribe`,
-`feed.now()`), and this renderer opens the mouth for the frames louder than a small threshold (it declares `lipsync`). The feed's
-frames come from the cue API: a plugin (a voice) sends `api.avatar.cue({ type: "speech", frames: [{ t, rms }] })` with `t` in epoch
-milliseconds, batches ahead of the clock, for its own bot (`avatar.control`) or for any bot with `{ bot }` (`avatar.control.all`);
-the stage hands each level to the renderer a moment before it is due. The renderer needs nothing else.
+The avatar plugin sends `{ mount, cue }` for this drawing's `mount` prop (point messages on its renderer spot) and hears
+`{ mount, names }` and `{ mount, box }` back. This renderer says `names: { expressions: ["happy"], … }`, and on
+`{ type: "expression", name: "happy" }` swaps to a second picture set drawn by code (an inline SVG, so no files) for a few
+seconds; it says the picture's box as it shows and resizes. A plugin that moves the figure fills the avatar plugin's
+`moss.character.figure` point and sends its cues there; the avatar plugin answers a cue this renderer doesn't list plainly,
+and never plays it.
 
 Check it with `moss plugin validate`, try it with `moss plugin dev .`.

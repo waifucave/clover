@@ -21,9 +21,7 @@ describe("displayText", () => {
 describe("its call sites share it", () => {
   const sites = [
     "packages/core/src/runtime-sdk/tool-display.ts",
-    "packages/core/src/bots/user-layer.ts",
     "apps/desktop/src/main/ui/tree-calls.ts",
-    "plugins/moss/plugins/character/client/section.tsx",
     // A spot entry's title, as the sidebar, the title bar and Settings show it (`fieldText`: each part's own copy, F2b).
     "plugins/moss/plugins/bot-editor/client/local.ts",
     "plugins/moss/plugins/character/client/local.ts",

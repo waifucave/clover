@@ -504,7 +504,7 @@ describe("declared points (§5.4)", () => {
   });
 
   test("a well-known data point's entries are checked against the catalog now", () => {
-    const r = validateManifest({ ...min(), host: { entry: "host/index.ts" }, contributes: { "webhook.ingress": [{ id: "fwd", handler: "ingress" }, { id: "bad" }] } });
+    const r = validateManifest({ ...min(), engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { "webhook.ingress": [{ id: "fwd", handler: "ingress" }, { id: "bad" }] } });
     expect(r.ok).toBe(true);
     expect(has(r, "schema", "entry")).toBe(true);
     expect(r.manifest?.contributes?.["webhook.ingress"]).toEqual([{ id: "fwd", handler: "ingress" }]);
@@ -860,7 +860,7 @@ describe("a hook's command never runs its stdin (its input) as a script", () => 
   });
 
   describe("files that come with a point's entries (`files` on a declaration; a word-list point, nothing about figures)", () => {
-    const declares = (files: unknown, list: Record<string, unknown> = { type: "string", format: "path" }) => validateManifest({ ...min(), contributes: {}, ...{ host: { entry: "host/index.ts", declares: { "luna.lists": { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, list } }, files } } } } });
+    const declares = (files: unknown, list: Record<string, unknown> = { type: "string", format: "path" }) => validateManifest({ ...min(), engines: { moss: "^1.0.0" }, contributes: {}, ...{ host: { entry: "host/index.ts", declares: { "luna.lists": { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, list } }, files } } } } });
     test("kinds from the closed set on a `path` field pass", () => {
       expect(declares({ list: { kinds: [{ ext: [".json"], type: "json", maxBytes: 65536 }, { ext: [".mp3", ".ogg"], type: "audio" }] } }).issues).toEqual([]);
     });

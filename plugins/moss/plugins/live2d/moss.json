@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "2D model avatar",
-  "description": "Draws the avatar plugin's figure when it is a Live2D model, breathing and blinking, its mouth moving with what MOSS Voice says. It hears nothing itself and plays no sound.",
+  "description": "Draws the avatar plugin's figure when it is a 2D model, breathing and blinking, its mouth moving with what MOSS Voice says. It hears nothing itself and plays no sound.",
   "engines": {
     "moss": "^1.0.0"
   },

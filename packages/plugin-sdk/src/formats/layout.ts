@@ -95,13 +95,15 @@ export function layoutPaths(layout: Layout): string[] {
 // The stock tab, and layout patches
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** The tab the shell gives a bot with no layout of its own, as data: the conversation over the composer. What
- *  `extends: "default"` starts from; the shell's default tab draws the same parts in the same order (its test pins
- *  that). Classes `tab` and `talk` name its boxes, for a patch to address and a layout's CSS to style. */
+/** The tab the shell gives a bot with no layout of its own, as data: the stage (it shows only when the bot has an
+ *  avatar), then the conversation over the composer. What `extends: "default"` starts from; the shell's default tab
+ *  draws the same parts in the same order (its test pins that). Classes `tab`, `stage` and `talk` name its three
+ *  boxes, for a patch to address and a layout's CSS to style. */
 export const DEFAULT_TAB_LAYOUT: Layout = {
   layout: 1,
   root: {
     column: [
+      { spot: "bot.stage", class: "stage" },
       { column: [{ spot: "conversation", grow: 1 }, { spot: "composer" }], grow: 1, class: "talk" },
     ],
     grow: 1,
@@ -109,7 +111,7 @@ export const DEFAULT_TAB_LAYOUT: Layout = {
   },
 };
 
-/** A node a change names: `{ spot, key? }`, `{ class }`, or as a string a spot's name (`"composer"`) or, after a
+/** A node a change names: `{ spot, key? }`, `{ class }`, or as a string a spot's name (`"bot.stage"`) or, after a
  *  dot, a class (`".talk"`). The first such node, in reading order, is the one meant. */
 const ClassName = utf16(64, 1).regex(/^[A-Za-z_][A-Za-z0-9_-]*$/);
 export const LayoutTarget = z.union([

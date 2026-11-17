@@ -1,7 +1,7 @@
-/* The VRM avatar on a bot's stage. The canvas is see-through: the stage's own background (the theme's
-   `stage.*` tokens, or the bot's layout) shows behind the model. A credit line, when the model's licence asks
+/* The VRM figure in the avatar plugin's place for it. The canvas is see-through: the place's own background
+   shows behind the model. A credit line, when the model's licence asks
    for one, sits in a band of its own below the avatar, never over it, on a plate of the surface colour (so
-   `stage.text` is read against `color.surface`, whatever the stage looks like). Every colour reads a token;
+   `color.text.muted` is read against `color.surface`). Every colour reads a token;
    the fallback after it is the base theme's value (`styles.test.ts` keeps the two equal). */
 
 .clvr-avatar {
@@ -15,7 +15,7 @@
   display: flex;
   flex-direction: column;
   font-family: var(--moss-font-sans, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Noto Sans", Ubuntu, Cantarell, sans-serif);
-  color: var(--moss-stage-text, #676674);
+  color: var(--moss-color-text-muted, #6B6B6B);
 }
 
 .clvr-view {
@@ -51,14 +51,14 @@
   height: 96px;
   border-radius: 50%;
   object-fit: cover;
-  box-shadow: 0 0 0 6px var(--moss-stage-glow, #2F6FDF1F);
+  box-shadow: 0 0 0 6px var(--moss-color-accent-soft, #E8F0FC);
 }
 
 .clvr-silhouette {
   width: 88px;
   height: 112px;
   border-radius: 44px 44px 20px 20px;
-  background: var(--moss-stage-glow, #2F6FDF1F);
+  background: var(--moss-color-accent-soft, #E8F0FC);
 }
 
 .clvr-wait-line,
@@ -92,7 +92,7 @@
   border-radius: 10px;
   background: var(--moss-color-surface, #FFFFFF);
   box-shadow: inset 0 0 0 1px var(--moss-color-hairline, #E8E8E8);
-  color: var(--moss-stage-text, #676674);
+  color: var(--moss-color-text-muted, #6B6B6B);
   text-align: center;
   overflow-wrap: anywhere;
 }
