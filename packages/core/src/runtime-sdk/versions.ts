@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.80";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.81";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,11 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.80";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.80 (2026-11-13): edits by the model's strength. The catalog carries a hand-set class per model (strong,
+/** Bumped to 0.0.81 (2026-11-17): a tool that goes away and comes back in one session (the person's tool setting, a plugin
+ *  updated and approved again) is never offered by a reference to a declaration that is not deferred: it is defined by
+ *  value where the row allows, else the tool list starts over; a tool the model still has is never surfaced by reference
+ *  from the tool search; a changed definition is compared to what the model has, so it is sent once, not on every request.
+ *  Earlier: bumped to 0.0.80 (2026-11-13): edits by the model's strength. The catalog carries a hand-set class per model (strong,
  *  medium, weak; a row with none is weak). A strong or medium model's Edit, Write or NotebookEdit no longer needs a Read
  *  of the file first; a weak model's edit needs the lines it changes read since the file last changed, and is told which.
  *  Earlier: bumped to 0.0.79 (2026-11-12): a path the process can't read denies only that one call. A deny-list place macOS keeps
