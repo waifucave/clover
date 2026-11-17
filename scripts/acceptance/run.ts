@@ -1497,19 +1497,30 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
     }
     return out;
   };
-  const found = await until("the card's Approve button in the island's own window", 30_000, async () => {
+  const buttonDocs = async () => {
     const conv = await inConversation();
+    const out: { session: string }[] = [];
     for (const d of await cdp.documents()) {
       if (!decodeURIComponent(d.url).startsWith(`${cardUrl}button:`) || conv.has(decodeURIComponent(d.url))) continue;
-      if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(BUTTON)})`).catch(() => false)) === true) return d;
+      if ((await cdp.evaluate(d.session, `!!document.querySelector(${JSON.stringify(BUTTON)})`).catch(() => false)) === true) out.push(d);
+    }
+    return out;
+  };
+  const found = await until("the card's Approve button in the island's own window", 30_000, async () => (await buttonDocs())[0], 300);
+  const btn0 = await until("the island's Approve button's place", 10_000, () => cdp.centerOf(found.session, BUTTON), 300);
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn0.x, y: btn0.y, button: "none", buttons: 0 }, found.session).catch(() => undefined);
+  // lane HS: the button's page as it is now: the island can fold the card and draw it again while it settles (a slower
+  // machine's first frames), which replaces the page the first look found; the ready mark is read on the live one.
+  const ready = await until("the sealed page's ready-to-answer mark on the island", 30_000, async () => {
+    for (const d of await buttonDocs()) {
+      if ((await cdp.evaluate(d.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) !== "yes") continue;
+      const at = await cdp.centerOf(d.session, BUTTON).catch(() => undefined);
+      if (at !== undefined) return { s: d.session, btn: at };
     }
     return undefined;
-  }, 300);
-  const s = found.session;
-  const btn = await until("the island's Approve button's place", 10_000, () => cdp.centerOf(s, BUTTON), 300);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s).catch(() => undefined);
-  await until("the sealed page's ready-to-answer mark on the island", 15_000, async () => ((await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100)
+  }, 100)
     .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"})`));
+  const { s, btn } = ready;
   await sleep(300);
   await cdp.click(s, btn.x, btn.y);
   const verdict = await until(`the app's answer for the ${card.kind} card pressed on the island`, 8_000, () => {
