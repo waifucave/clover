@@ -1,109 +1,56 @@
-/* A bot's own layout puts the stage and the header where it says; the stage's avatar fills it. */
-.cl-bot-stage {
+/* The figure fills the place it is given (a panel, its window on the screen); its renderer's frame fills the figure. */
+.cl-figure {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
   height: 100%;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
 }
-
-.cl-bot-stage__portrait {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+.cl-figure[data-place="screen"] { background: transparent; }
+.cl-figure__portrait { max-width: 100%; max-height: 100%; object-fit: contain; align-self: center; }
+.cl-figure__empty {
+  align-self: center;
+  margin: 0;
+  padding: var(--moss-space-m);
+  color: var(--moss-color-text-secondary);
+  font-family: var(--moss-font-sans);
+  font-size: var(--moss-font-size-control);
+  text-align: center;
 }
 
-/* The stage's actions (`bot.stage.action`, such as MOSS Voice's chip) place themselves in a corner of the stage. */
-.cl-bot-stage { position: relative; }
-
-/* The Avatar section of a bot's editor (`bot.editor.section`): a row like the editor's own (the label and its detail, the
-   controls under it, a hairline below), the packs a grid of cards, and the user's own model with its pick and note. */
-.cl-avatar-section {
+/* The Settings section: the label and its detail, the figures a grid of cards, then the two switches. */
+.cl-figure-settings {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
   gap: var(--moss-space-s);
-  box-sizing: border-box;
-  min-height: 68px;
   padding: var(--moss-space-m) 0;
-  border-bottom: 1px solid var(--moss-color-hairline);
   color: var(--moss-color-text);
   font-family: var(--moss-font-sans);
   font-size: var(--moss-font-size-control);
   line-height: var(--moss-font-line-body);
 }
-.cl-avatar-section button, .cl-avatar-section textarea { font: inherit; }
-.cl-avatar-section :focus-visible { outline: 2px solid var(--moss-color-focus); outline-offset: -2px; }
-.cl-avatar-section__text { display: flex; flex-direction: column; gap: var(--moss-space-xs); min-width: 0; }
-.cl-avatar-section__control, .cl-avatar-section__import, .cl-avatar-section__credit { display: flex; flex-direction: column; gap: var(--moss-space-s); width: 100%; }
-.cl-avatar-section__credit { gap: var(--moss-space-xs); }
-.cl-avatar-section__detail, .cl-avatar-section__empty { margin: 0; color: var(--moss-color-text-muted); }
-.cl-avatar-section__waiting { color: var(--moss-color-attention-text); }
-.cl-avatar-section__inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--moss-space-s); }
-.cl-avatar-section__value { color: var(--moss-color-text-secondary); }
-.cl-avatar-section__textarea {
-  box-sizing: border-box;
-  width: 100%;
-  padding: var(--moss-space-s);
-  border: 1px solid var(--moss-color-hairline-raised);
-  border-radius: var(--moss-radius-medium);
-  background: var(--moss-color-control);
-  color: var(--moss-color-text);
-  resize: vertical;
-}
-.cl-avatar-section__button, .cl-avatar-section__reset {
-  height: 28px;
-  padding: 0 var(--moss-space-m);
-  border: 1px solid var(--moss-color-hairline-raised);
-  border-radius: var(--moss-radius-medium);
-  background: var(--moss-color-control);
-  color: var(--moss-color-text);
-  cursor: pointer;
-}
-.cl-avatar-section__reset { align-self: flex-start; background: transparent; color: var(--moss-color-text-secondary); }
-.cl-avatar-section__button:hover, .cl-avatar-section__reset:hover { background: var(--moss-color-hover); }
-.cl-avatar-section__button:disabled, .cl-avatar-section__reset:disabled { opacity: .5; cursor: default; }
-.cl-avatar-section__status { margin: 0; color: var(--moss-color-text-secondary); }
-.cl-avatar-section__status[data-tone="danger"] { color: var(--moss-color-attention-text); }
-
-.cl-avatar-section__avatars {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: var(--moss-space-s);
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.cl-avatar-section__avatar {
+.cl-figure-settings button, .cl-figure-settings input { font: inherit; }
+.cl-figure-settings :focus-visible { outline: 2px solid var(--moss-color-focus); outline-offset: -2px; }
+.cl-figure-settings__text { display: flex; flex-direction: column; gap: var(--moss-space-xs); }
+.cl-figure-settings__label { font-weight: 600; }
+.cl-figure-settings__detail, .cl-figure-settings__empty, .cl-figure-settings__from { color: var(--moss-color-text-secondary); margin: 0; }
+.cl-figure-settings__figures { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--moss-space-s); list-style: none; margin: 0; padding: 0; }
+.cl-figure-settings__figure {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--moss-space-xs);
-  box-sizing: border-box;
   width: 100%;
-  padding: var(--moss-space-m) var(--moss-space-s);
-  border: 1px solid var(--moss-color-hairline-raised);
-  border-radius: var(--moss-radius-large);
-  background: var(--moss-color-raised);
-  color: var(--moss-color-text);
+  padding: var(--moss-space-s);
+  border: 1px solid var(--moss-color-hairline);
+  border-radius: var(--moss-radius-medium);
+  background: var(--moss-color-surface);
+  color: inherit;
   cursor: pointer;
 }
-.cl-avatar-section__avatar:hover { background: var(--moss-color-hover); }
-.cl-avatar-section__avatar[aria-checked="true"] { border-color: var(--moss-color-accent); box-shadow: inset 0 0 0 1px var(--moss-color-accent); }
-.cl-avatar-section__face {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: var(--moss-radius-round);
-  background: var(--moss-color-selected);
-  color: var(--moss-color-text-secondary);
-  font-size: var(--moss-font-size-title);
-  object-fit: cover;
-}
-.cl-avatar-section__avatar-name { font-weight: var(--moss-font-weight-medium); }
-.cl-avatar-section__avatar-pack { color: var(--moss-color-text-muted); font-size: var(--moss-font-size-caption); }
-@media (prefers-reduced-motion: reduce) { .cl-avatar-section * { transition: none; } }
+.cl-figure-settings__figure[aria-checked="true"] { border-color: var(--moss-color-accent); }
+.cl-figure-settings__figure:disabled { cursor: default; opacity: 0.6; }
+.cl-figure-settings__face { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--moss-color-hairline); }
+.cl-figure-settings__switch { display: flex; align-items: center; gap: var(--moss-space-s); }

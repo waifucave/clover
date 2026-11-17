@@ -1,6 +1,6 @@
-// The character plugin's client entry: `BotStage` fills `bot.stage` (where a bot's character stands) and asks the `avatar`
-// spot, keyed by the avatar file's format, for the drawing; a renderer plugin fills that spot for a format. It imports no
-// CSS: `client.css` lists the stylesheet.
-export { BotStage } from "./stage";
-// `AvatarSection` fills the bot editor's `bot.editor.section`: the avatar's packs, the user's own model and its credit note.
-export { AvatarSection } from "./section";
+// The avatar plugin's client entry (spec revision 19, G7: the platform has no avatar; this bundled plugin is one figure at a
+// time): `FigurePanel` fills a panel of its own beside every session, `FigureOnScreen` is its window on the screen (off
+// until the person turns it on), and `FigureSettings` is its Settings section, where the person picks the figure. It
+// imports no CSS: `client.css` lists the stylesheet.
+export { FigurePanel, FigureOnScreen } from "./places";
+export { FigureSettings } from "./settings";

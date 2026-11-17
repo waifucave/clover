@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "MOSS's character plugin. It owns the stage's character area: the `avatar` spot a renderer plugin fills for a model format, and the `avatar.formats` point where a renderer declares its format.",
+  "description": "MOSS Code's avatar plugin: one figure at a time, in a panel and on the screen, with its own points for renderers and packs.",
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p ."

@@ -4052,6 +4052,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     notifyService = notify;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: mossHome, computer: hostComputer, registry, secrets: contractSecrets,
+      // A point entry's `path` fields reach its declarer as the app's asset route (`/_t/<plugin>/<path>`), served to every layer.
+      assetUrl: (pluginId: string, path: string) => `/_t/${encodeURIComponent(pluginId)}/${path}`,
       // The daemon's own notion of the user's home: the real one only on its default home (as usage's, `wiring.ts`); any
       // other (a test's) runs programs and judges folders against an empty stand-in, never the developer's.
       ...(opts.parts?.userHome !== undefined ? { userHome: opts.parts.userHome } : isDefaultMossHome(home, profile) ? { userHome: homedir() } : {}),

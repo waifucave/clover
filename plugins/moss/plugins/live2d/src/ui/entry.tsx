@@ -1,18 +1,19 @@
-// The `avatar` spot's entry (key `live2d`): lane B's `EntryProps` with the spot's props — the bot, its avatar file
-// (a URL inside the bot's plugin), the format, whether it speaks, and the speech feed — to the avatar.
+// The avatar plugin's renderer spot entry (key `live2d`): the spot's props (the figure's name, its model file as a URL,
+// the format) with whether it speaks and the speech feed, to the drawing.
 
 import type { ReactElement } from "react";
 import type { SpeechFeed } from "@waifucave/moss-plugin-sdk/ui";
-import type { AvatarControl as FigureControl } from "@waifucave/moss-plugin-sdk/ui";
+import type { FigureControl } from "./figure-cues";
 import { Live2dAvatar } from "./Live2dAvatar";
 
 export interface AvatarSpotProps {
-  bot: { id: string; name?: string } | string;
+  /** Who the figure is, for its label. */
+  name?: string;
   file: string;
   format: string;
   speaking: boolean;
   speech?: SpeechFeed;
-  /** The app's avatar control (the host wrapper adds it): cues in, the model's names and the figure's box out. */
+  /** The avatar plugin's link (the entry adds it): cues in, the model's names and the figure's box out. */
   control?: FigureControl;
 }
 
@@ -23,6 +24,6 @@ export interface Live2dEntryProps {
 }
 
 export function Live2dAvatarEntry({ props }: Live2dEntryProps): ReactElement {
-  const name = typeof props.bot === "string" ? props.bot : (props.bot.name ?? props.bot.id);
+  const name = props.name ?? "";
   return <Live2dAvatar src={props.file} name={name} speech={props.speech ?? null} {...(props.control ? { control: props.control } : {})} />;
 }

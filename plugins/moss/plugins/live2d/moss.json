@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "2D model avatar",
-  "description": "Draws a bot's 2D model on its stage, breathing and blinking, its mouth moving with the bot's voice as the app describes it. It hears nothing itself and plays no sound.",
+  "description": "Draws the avatar plugin's figure when it is a Live2D model, breathing and blinking, its mouth moving with what MOSS Voice says. It hears nothing itself and plays no sound.",
   "engines": {
     "moss": "^1.0.0"
   },
@@ -17,59 +17,17 @@
     ],
     "ui": [
       {
-        "spot": "avatar",
+        "spot": "moss.character.renderer",
         "id": "live2d",
         "key": "live2d",
         "component": "Live2dAvatarSpot"
       }
     ],
-    "avatar.formats": [
+    "moss.character.formats": [
       {
         "id": "live2d",
         "format": "live2d",
         "name": "Live2D (Cubism)",
-        "entry": {
-          "extensions": [
-            ".model3.json",
-            ".zip"
-          ]
-        },
-        "files": {
-          "kinds": [
-            {
-              "ext": [
-                ".json"
-              ],
-              "type": "json",
-              "maxBytes": 8388608
-            },
-            {
-              "ext": [
-                ".moc3"
-              ],
-              "type": "binary",
-              "maxBytes": 134217728
-            },
-            {
-              "ext": [
-                ".png",
-                ".webp",
-                ".jpg",
-                ".jpeg"
-              ],
-              "type": "image",
-              "maxBytes": 134217728
-            }
-          ],
-          "find": "cubism-model3",
-          "maxFiles": 512
-        },
-        "import": {
-          "accepts": [
-            "folder",
-            "zip"
-          ]
-        },
         "capabilities": [
           "lipsync",
           "expressions",
@@ -78,6 +36,11 @@
           "lookat",
           "pace"
         ]
+      }
+    ],
+    "moss.voice.speech": [
+      {
+        "id": "mouth"
       }
     ]
   }

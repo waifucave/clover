@@ -155,9 +155,12 @@ export function fakeApprovals(initial: readonly CardMeta[] = []) {
  *  stub that fails, naming what it lacks. `pluginId` names the plugin it answers as. */
 export function fakeApi(
   members: Partial<Omit<PluginApi, "plugin" | "t" | "settings" | "points">> & { pluginId?: string; computer?: string; settings?: Record<string, unknown>; points?: Record<string, PointEntry[]> } = {},
-): PluginApi & { readonly stored: Map<string, unknown> } {
+): PluginApi & FakePointMessages & { readonly stored: Map<string, unknown> } {
   const { pluginId = "test.plugin", computer = "Studio", settings = {}, points = {}, ...rest } = members;
   const stored = new Map<string, unknown>(Object.entries(settings));
+  // Point messages: what the part sends is kept (`sent`), and the test hands it what it hears (`deliver`).
+  const sent: { point: string; value: unknown; to?: string }[] = [];
+  const listening = new Map<string, Set<(m: { from: string; value: unknown }) => void>>();
   const none = (what: string) => async () => {
     throw new Error(`the fake API has no ${what}`);
   };
@@ -182,6 +185,13 @@ export function fakeApi(
       stream: none("point handlers' streams"),
       active: async () => undefined,
       onActive: () => () => undefined,
+      send: async (point: string, value: unknown, opts?: { to?: string }) => void sent.push({ point, value: structuredClone(value), ...(opts?.to !== undefined ? { to: opts.to } : {}) }),
+      onMessage: (point: string, listener: (m: { from: string; value: unknown }) => void) => {
+        const set = listening.get(point) ?? new Set();
+        set.add(listener);
+        listening.set(point, set);
+        return () => set.delete(listener);
+      },
     },
     host: { call: none("host half"), on: () => () => undefined },
     ui: { send: () => undefined },
@@ -189,9 +199,19 @@ export function fakeApi(
     net: { fetch: none("network") },
     confirm: async () => false,
     stored,
+    sent,
+    deliver: (point: string, from: string, value: unknown) => { for (const l of [...(listening.get(point) ?? [])]) l({ from, value: structuredClone(value) }); },
+    listeners: (point: string) => listening.get(point)?.size ?? 0,
     ...rest,
   };
-  return api as unknown as PluginApi & { readonly stored: Map<string, unknown> };
+  return api as unknown as PluginApi & FakePointMessages & { readonly stored: Map<string, unknown> };
+}
+
+/** The fake API's point messages: what the part sent, and a way to hand it a message (`points.onMessage`'s listeners). */
+export interface FakePointMessages {
+  readonly sent: { point: string; value: unknown; to?: string }[];
+  deliver(point: string, from: string, value: unknown): void;
+  listeners(point: string): number;
 }
 
 /** The `files` member from the calls a test gives; the rest fail. */

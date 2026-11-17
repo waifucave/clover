@@ -16,8 +16,7 @@ import { urlSource, zipSource, readCapped } from "../sources";
 import { t } from "../strings";
 import { LIVE2D_BUDGETS, Live2dRefusal, insideFolder, validateLive2d, type Live2dModel } from "../validate";
 import { useLive2dStyles } from "./styles";
-import { avatarBoxFromRect as boxFromRect, type AvatarControl as FigureControl } from "@waifucave/moss-plugin-sdk/ui";
-import { startFigureCues, type CueModel, type FigureCues } from "./figure-cues";
+import { boxFromRect, startFigureCues, type CueModel, type FigureControl, type FigureCues } from "./figure-cues";
 import { Gaze, paramNames, readTable, type StageTable } from "../cues";
 
 export interface AvatarFrames {
@@ -137,7 +136,7 @@ export interface Live2dAvatarProps {
   portrait?: string;
   /** The speech the app plays, as frames on the audio clock; null when the bot is quiet. */
   speech?: SpeechFeed | null;
-  /** The app's avatar control (`useAvatarControl()`): the bot plugin's cues in, the model's names and the figure's box
+  /** The avatar plugin's link: its cues in, the model's names and the figure's box
    *  out. Without it the figure only lives (breath, idle, blink, the glance). */
   control?: FigureControl;
   paused?: boolean;

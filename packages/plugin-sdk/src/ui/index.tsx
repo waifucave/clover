@@ -19,7 +19,7 @@ import type { PluginApi, ShellAccount, ShellApp, ShellState, Unsubscribe } from 
 import type { StreamMeta, StreamOpenEvent, StreamOpenOptions, StreamReadEvent } from "../api/plugin-api";
 import { acceptStreams, openPicture, openStream, pointStream, type StreamsTransport } from "../api/streams";
 import type {
-  AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpotElementProps, UiApi, UiComponent,
+  AppViewProps, CardButtonProps, CardComponents, CardElementProps, CardFieldProps, EntryProps, SpotElementProps, UiApi, UiComponent,
 } from "../api/ui-api";
 import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget, type ShellMethod } from "./bridge";
 import { EMPTY_STRINGS, translate } from "./strings";
@@ -570,17 +570,6 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
   );
 }
 
-/** Whether this document shows (its window not hidden or minimized). */
-function useDocumentShown(): boolean {
-  const [shown, setShown] = useState(() => typeof document === "undefined" || document.visibilityState !== "hidden");
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const onVisibility = () => setShown(document.visibilityState !== "hidden");
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
-  return shown;
-}
 
 /** Whether an element is near the screen: in its document's viewport or within one viewport of it, while the
  *  document itself shows (a hidden or minimized window counts as away). */
