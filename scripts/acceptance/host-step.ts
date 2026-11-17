@@ -47,7 +47,7 @@ export function onscreenWindows(swiftScript: string): { pid: number; alpha: numb
 /** The browser rows again with the background host running (the controller's ruling): the same row, its pages in the host. */
 export const BROWSER_HOST_STEP = "the Browser rows again with the background host running (lane HS): the pages in the host, the cards pressed where the router put them, MOSS Code's panel drawing the host's tabs";
 
-export const HOST_GAVE_UP_STEP = "a host that never starts (lane HS, the reviewer's B2, never nowhere): the engine gives up after its bounded starts, and with no window focused a plugin's OK card is shown on MOSS Code's window's own fallback card, where a real press answers it";
+export const HOST_GAVE_UP_STEP = "a host that never starts (lane HS, the reviewer's B2, never nowhere): the engine gives up after its bounded starts, and with no window focused a plugin's OK card goes to MOSS Code's window's strip and is shown on its own fallback card, where a real press answers it";
 
 export const SURFACE_COPY_HOST_STEP = "the island and pill copies' row again with the background host running (lane HS, the controller's R12 ruling): the copy island in the host is the OK card's drawer and stays while a third-party part holding no card stands down, and takes the press";
 
