@@ -680,7 +680,12 @@ export class BotService {
     try {
       // The plugin bots first, then the default bot MOSS offers (Alpha, default-bot.ts): a plugin that still brings a
       // bot of her id (a home's own development folder) is moved as that plugin's, and she isn't offered over it.
-      journal = await store.move([...pluginBotsForMove(this.#o.registry, this.#o.home), ...(this.#o.defaultBot === false ? [] : [defaultBotForMove(this.#o.home)])]);
+      const plugins = pluginBotsForMove(this.#o.registry, this.#o.home);
+      const offered = this.#o.defaultBot === false ? [] : [defaultBotForMove(this.#o.home)];
+      // A plugin input of the default bot's id that can't be moved (the bundled `alpha` as a stale record still says, its
+      // bot files gone with her plugin's bot) gives way to the default bot, so she isn't left without a record.
+      const usable = offered.length === 0 ? plugins : plugins.filter((b) => !(b.failed !== undefined && offered.some((d) => d.id === b.id)));
+      journal = await store.move([...usable, ...offered]);
     } catch (err) {
       this.#warn(`moving the plugin bots into records failed: ${err instanceof Error ? err.message : String(err)}`);
       return;

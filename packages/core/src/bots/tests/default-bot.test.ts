@@ -3,7 +3,7 @@
 // bundled plugin bot (the owner's), the flip to records at default keeps her conversation, her memory, her routines and
 // the person's own instructions, and deletes nothing; removed, she is never offered again.
 import { afterEach, describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { BOT_MOVE_JOURNAL, BotMoveJournal, type Caller } from "@waifucave/moss-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
@@ -12,7 +12,7 @@ import { DEFAULT_BOT_GREETING, DEFAULT_BOT_INSTRUCTIONS } from "../default-bot";
 import { botPaths, userLayerFile } from "../paths";
 import { instructionsFile } from "../records";
 import { botSource, DEFAULT_BOT_SOURCE } from "../source";
-import { ALPHA_FOLDER, boot, pluginFromFolder, removeTemps, tempDir } from "./fixtures";
+import { ALPHA_FOLDER, boot, botManifest, pluginFromFolder, removeTemps, tempDir, writePlugin } from "./fixtures";
 
 afterEach(removeTemps);
 
@@ -141,4 +141,20 @@ describe("the default bot", () => {
     }
     expect(readFileSync(userLayerFile(home, "alpha"), "utf8")).toContain("as the person rewrote you");
   });
+
+  test("a stale record of her bundled plugin that still brings her bot, with her bot's files gone: she gets her record at the first start all the same", async () => {
+    const home = tempDir();
+    // Her plugin's manifest as an old record holds it (a bot entry), its folder without the bot's files.
+    const stale = writePlugin(tempDir(), "alpha", { "moss.json": botManifest("alpha", "Alpha"), "bot/instructions.md": "You are Alpha." });
+    const inputs = (await pluginFromFolder(stale, { bundled: true })).inputs;
+    expect(inputs.map((i) => i.id)).toEqual(["alpha"]);
+    rmSync(join(stale, "bot"), { recursive: true });
+    const b = await boot({ home, plugins: inputs, botSource: "records", defaultBot: true });
+    expect(b.bots.records!.get("alpha")).toMatchObject({ id: "alpha", madeBy: { kind: "default" } });
+    expect(b.bots.list().map((v) => v.id)).toEqual(["alpha"]);
+    const journal = BotMoveJournal.parse(JSON.parse(readFileSync(join(home, ...BOT_MOVE_JOURNAL.split("/")), "utf8")));
+    expect(journal.bots).toEqual([{ outcome: "moved", id: "alpha", plugin: "alpha" }]);
+    await b.shutdown();
+  });
 });
+
