@@ -164,3 +164,15 @@ describe("the agent row's echo probe (row 1.93): an agent calls the echo plugin'
     }
   });
 });
+
+describe("toolNamed: the tool a call line names, among the offered names", () => {
+  test("by name, by the end of an MCP name, and a code session's bridge short form; never another tool", async () => {
+    const { toolNamed } = await import("./fake-anthropic");
+    expect(toolNamed("save_place", "save_place")).toBe(true);
+    expect(toolNamed("mcp__moss_0123456789abcdef__example-weather-forecast__forecast", "forecast")).toBe(true);
+    expect(toolNamed("mcp__moss_0123456789abcdef__example-weather__save_place_290261", "save_place")).toBe(true);
+    expect(toolNamed("mcp__x__save_place_extra", "save_place")).toBe(false);
+    expect(toolNamed("mcp__x__unsave_place", "save_place")).toBe(false);
+    expect(toolNamed("mcp__x__forecast2", "forecast")).toBe(false);
+  });
+});

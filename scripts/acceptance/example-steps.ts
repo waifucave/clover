@@ -25,6 +25,7 @@ import { join, resolve } from "node:path";
 import type { Cdp } from "./cdp";
 import type { MossClient } from "./client";
 import { scaled } from "./time-scale";
+import { toolNamed } from "./fake-anthropic";
 
 export const EXAMPLE_NOTES_STEP = "example-notes (stays inside), from its folder on the Plugins page: its OK card names its cardless tools and no network; contained and readOnly tools run with no card, the other cards; hook, skill, agent definition, /note, its TSX page (host.call, its own setting changed with no card from the page and from the Plugins page), the bot's window skin, locales (its page in its Japanese words when the user's language is Japanese, and back); turned off, then removed";
 export const EXAMPLE_WEATHER_STEP = "example-weather (reaches outside), from its folder on the Plugins page: its OK card names its host and notifications and says its tools still ask; its key through the key dialog; each call cards; its forecast reaches its host through its proxy with that key; /rain-alert notifies and a card arriving takes the notification down, and it is refused once muted on the Plugins page";
@@ -227,10 +228,10 @@ export async function callTurn(ctx: ExampleCtx, session: string, tool: string, i
   const text = `ACCEPTANCE-CALL ${tool} ${JSON.stringify(input).replace(/ACCEPTANCE-/g, "ACCEPTANCE\\u002D")}`;
   const t = opts.always === true ? await (ctx.alwaysTurn ?? fail("this run has no turn that answers a card with Always allow"))(session, text, 150_000) : await ctx.turn(session, text, 150_000);
   const mine = ctx.requests().slice(seen);
-  const called = mine.map((r) => r.toolUse).filter((x): x is string => x !== undefined).find((x) => x === tool || x.endsWith(`__${tool}`));
+  const called = mine.map((r) => r.toolUse).filter((x): x is string => x !== undefined).find((x) => toolNamed(x, tool));
   const result = mine.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);
   const said = () => `events: ${[...new Set(t.events.map((e) => String(e.type)))].join(", ") || "none"}; errors: ${t.events.filter((e) => /error/.test(String(e.type)) || e.stopReason === "error").map((e) => String(e.message ?? e.error ?? e.text ?? JSON.stringify(e)).slice(0, 200)).join(" | ") || "none"}; ${mine.length} request(s) reached the model`;
-  if (called === undefined) fail(`no ${tool} was called (offered: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((x) => x.endsWith(`__${tool}`) || x === tool).join(", ") || "not it"}; ${said()})`);
+  if (called === undefined) fail(`no ${tool} was called (offered: ${(mine.find((r) => r.tools.length > 0)?.tools ?? []).filter((x) => toolNamed(x, tool)).join(", ") || "not it"}; ${said()})`);
   if (result === undefined) fail(`${called} gave no result (cards: ${t.cards.join("; ") || "none"})`);
   return { called: called!, result: result!, cards: t.cards, changes: t.changes, events: t.events };
 }
@@ -598,11 +599,6 @@ export async function exampleWeatherStep(ctx: ExampleCtx, session: string): Prom
     //    its host through its proxy, with the key, which never shows in an answer.
     // Its tools in a code session started after its install (a code session's tools are the ones there when it starts).
     // AG: remove the restart when list changes reach a running session
-    // Its server starts once the key is set: the session starts after it has listed its tools (else it starts without them).
-    await until("example-weather's tools listed after its key", 30_000, async () => {
-      const r = await rpc.request<{ plugins: { pluginId: string; tools: { name: string }[] }[] }>("tool.permissions", {}).catch(() => ({ plugins: [] }));
-      return r.plugins.some((p) => p.pluginId === id && p.tools.some((t) => t.name === "save_place")) ? true : undefined;
-    });
     const work = ctx.codeSession !== undefined ? await ctx.codeSession("example-weather-work") : session;
     const saved = await callTurn(ctx, work, "save_place", { place: "Lisbon" });
     if (saved.cards.length === 0) fail("save_place (contained, on a networked plugin) ran with no card");
