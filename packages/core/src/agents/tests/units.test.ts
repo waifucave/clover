@@ -30,6 +30,7 @@ import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/a
 import { MAX_CHECKED_PATHS, agentPaths } from "../paths";
 import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPaths } from "../transcript";
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
+import { ruleShapeOf } from "../../approvals/bot-check";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
 import { FileAgentOks, agentOksPath } from "../sandbox/oks";
 import { fileToolDenials, homeReach, realPathOf, withHomeDenied } from "../memory";
@@ -161,6 +162,15 @@ describe("the card's inputs", () => {
     const mcpKey = (server: string, tool: string) => ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server, tool }, options: [], paths: [] });
     expect(mcpKey("a__b", "c")).not.toBe(mcpKey("a", "b__c"));
     expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "edit", title: "x", options: [], paths: [] })).toBeUndefined();
+    // An edit of one resolved file: that file, for that agent (a Write for new content, an Edit for a change); two files, none.
+    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "edit", title: "x", rawInput: { file_path: "a.md", content: "hi" }, options: [], paths: ["/u/p/a.md"] })).toBe("Agent(cursor):Write(/u/p/a.md)");
+    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "edit", title: "x", rawInput: { file_path: "a.md", old_string: "a", new_string: "b" }, options: [], paths: ["/u/p/a.md"] })).toBe("Agent(cursor):Edit(/u/p/a.md)");
+    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "edit", title: "x", options: [], paths: ["/u/p/a.md", "/u/p/b.md"] })).toBeUndefined();
+    // Each key read back as the rule it stores: the card's "Always allow" sentence comes from this.
+    expect(ruleShapeOf("Agent(cursor):Bash(ls -la)")).toEqual({ kind: "command", target: "ls -la" });
+    expect(ruleShapeOf("Agent(cursor):Write(/u/p/a.md)")).toEqual({ kind: "file", target: "/u/p/a.md" });
+    expect(ruleShapeOf('Agent(cursor):mcp(["blender","Render"])')).toEqual({ kind: "plugin-tool", target: "Render (blender)" });
+    expect(ruleShapeOf("Agent(cursor):Something(odd)")).toEqual({ kind: "other", target: "Agent(cursor):Something(odd)" });
     expect((await promptOf({ from: "bot", bot: "alpha", session: "s", text: "go on" })).text).toBe("go on");
     expect((await promptOf({ from: "note", label: "Fish", text: "hi", by: { kind: "core" } })).text).toBe("[Fish] hi");
   });

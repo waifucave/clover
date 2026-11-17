@@ -1450,6 +1450,9 @@ export function ruleKeyOf(backend: string, ask: AgentPermissionAsk): string | un
   if (ask.mcp) return `Agent(${backend}):mcp(${JSON.stringify([ask.mcp.server, ask.mcp.tool])})`;
   const command = (ask.rawInput as { command?: unknown } | undefined)?.command;
   if (ask.toolKind === "execute" && typeof command === "string" && command.length > 0 && command.length <= 2000) return `Agent(${backend}):Bash(${command})`;
+  // An edit of one file the core resolved: that file, for that agent, as a bot's edit rule is its file (lane MC: a code
+  // session's agent's card offers what a bot's does, "Always allow" included).
+  if (effectOf(ask.toolKind) === "edit" && ask.paths.length === 1) return `Agent(${backend}):${acpHookCall(ask).name}(${ask.paths[0]})`;
   return undefined;
 }
 
@@ -1465,23 +1468,30 @@ function sealedText(s: string, max: number): string {
   return w.length > max ? w.slice(0, max) : w;
 }
 
-/** The card's sealed fields: headings from this table, the agent's own words only as code or row values. */
+/** The card's sealed fields, in the shape a bot's tool card has (approvals/bot-check.ts `botToolRequest`), so it reads like
+ *  any other tool card (the app's card-summary.ts): the tool in MOSS's names (`what`: a built-in's as text, a server's
+ *  tool as code), a command as code, any other input as its JSON in `detail` (the app shows it as text, never as JSON),
+ *  the resolved paths as a list. Headings from this table; the agent's own words only as code or row values. */
 function cardFields(e: Entry, ask: AgentPermissionAsk): ApprovalRequest["fields"] {
   const effect = effectOf(ask.toolKind);
-  const raw = ask.rawInput as { command?: unknown } | undefined;
-  const code = typeof raw?.command === "string" ? raw.command : ask.rawInput === undefined ? ask.title : JSON.stringify(ask.rawInput, null, 2);
+  const call = acpHookCall(ask);
+  const { acpKind: _kind, ...input } = call.input;
+  const command = typeof input.command === "string" ? input.command : undefined;
   const fields: Partial<Record<string, SealedValue>> = {
     title: { type: "text", text: TITLES[effect] },
-    // A bot's agent asks as itself, never as its bot: "<bot>'s agent <title> wants to …".
-    what: { type: "text", text: e.bot === undefined ? "Allow it this once?" : sealedText(`${e.bot}'s agent "${e.title ?? e.backend.id}" (${e.backend.id}) is asking, not ${e.bot} itself. Allow it this once?`, 4000) },
-    command: { type: "code", code: sealedText(code, MAX_CARD_CODE) },
+    what: ask.mcp === undefined ? { type: "text", text: call.name } : { type: "code", code: sealedText(call.name, 4000) },
+    ...(command !== undefined
+      ? { command: { type: "code", code: sealedText(command, MAX_CARD_CODE) } }
+      : { detail: { type: "code", code: sealedText(JSON.stringify(input, null, 2) ?? "", MAX_CARD_CODE), language: "json" } }),
     computer: { type: "text", text: e.computer },
     source: { type: "rows", rows: [
       { label: "Agent", value: sealedText(e.backend.id, 4000) },
       { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
       { label: "Folder", value: sealedText(e.root, 4000) },
+      { label: "The agent's title", value: sealedText(ask.title, 4000) },
     ] },
-    detail: { type: "rows", rows: [{ label: "The agent's title", value: sealedText(ask.title, 4000) }] },
+    // A bot's agent asks as itself, never as its bot: "<bot>'s agent <title> is asking, not <bot> itself".
+    ...(e.bot === undefined ? {} : { reason: { type: "text", text: sealedText(`${e.bot}'s agent "${e.title ?? e.backend.id}" (${e.backend.id}) is asking, not ${e.bot} itself.`, 4000) } }),
   };
   if (ask.paths.length > 0) {
     const shown = ask.paths.slice(0, 200).map((p) => sealedText(p, 4000));

@@ -160,6 +160,34 @@ describe("Agent", () => {
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
   });
 
+  test("a code session's agent's edit card reads like a bot's tool card: the tool in MOSS's names, its input as JSON text, its file; its Always saves an agent file rule that answers the same edit", async () => {
+    const edit = (n: number) => ({ tool: { kind: "edit", title: "Write notes.md", rawInput: { file_path: "notes.md", content: `line ${n}\nline two` }, paths: [] as string[] } });
+    const w = make({ quirks: S5_CURSOR_QUIRKS, level: "ask", script: [[edit(1), edit(2), { say: "Written." }]] });
+    const path = join(w.project, "notes.md");
+    const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool?: { paths: string[] } }[][] };
+    for (const step of script.script[0]!) if (step.tool !== undefined) step.tool.paths = [path];
+    await Bun.write(w.agent.config, JSON.stringify(script));
+    await w.manager.start({ caller: { kind: "user", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() }, backend: "fake", prompt: "Write it.", root: "home/Studio/project1" });
+    const card = await waitFor(() => w.approvals.cards()[0], "a card");
+    expect(card.kind).toBe("agent-permission");
+    expect(card.fields["what"]).toEqual({ type: "text", text: "Write" });
+    // The input as its JSON (the app draws it as text), without ACP's own kind; no command field for an edit.
+    expect(JSON.parse((card.fields["detail"] as { code: string }).code)).toEqual({ file_path: "notes.md", content: "line 1\nline two" });
+    expect(card.fields["command"]).toBeUndefined();
+    expect(card.fields["paths"]).toEqual({ type: "list", items: [path] });
+    // The same choices a bot's card has: an Always, whose reach the card states (the file, for no bot, on this computer).
+    const always = card.options.find((o) => o.remember === "always");
+    expect(always).toBeDefined();
+    // (Its `rule` rows are the broker's own: test/approvals/rule-field.test.ts.)
+    const frame = w.approvals.frameChannel(card.id)!;
+    expect(await w.approvals.answer(card.id, { optionId: always!.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
+    expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual([`Agent(fake):Write(${path})`]);
+    // The second edit of that file is answered by the rule: no second card.
+    await waitFor(() => (w.report("answer").length >= 2 ? true : undefined), "both answers");
+    expect(w.approvals.cards()).toEqual([]);
+    expect(w.approvals.rules()).toHaveLength(1);
+  });
+
   test("a move whose input names a file the ACP listing doesn't read is unresolved (a card every time, saying why); one fully listed isn't", async () => {
     const w = make({ level: "ask", script: [[
       { tool: { kind: "move", title: "mv", rawInput: { source: "/Users/k/.ssh/id_rsa", target: "notes/x" } } },

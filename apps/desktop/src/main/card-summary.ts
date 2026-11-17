@@ -169,16 +169,22 @@ export function alwaysSentence(card: { fields: Readonly<Record<string, unknown>>
 
 /** The card's one line and preview, or undefined for a card that isn't a tool call this knows how to say. */
 export function summarize(card: { kind: string; fields: Readonly<Record<string, unknown>>; bot?: string; options?: readonly { remember?: string }[] }, botName?: string, home?: string): CardSummary | undefined {
-  if (card.kind !== "tool") return undefined;
+  // A coding agent's card (`agent-permission`) has a bot's tool card's shape (agents/manager.ts `cardFields`) and reads the
+  // same; it is the agent that asks, the session's own or a bot's.
+  const agentCard = card.kind === "agent-permission";
+  if (card.kind !== "tool" && !agentCard) return undefined;
   const f = card.fields as Record<string, SealedValue | undefined>;
   const what = textOf(f.what);
   if (what === undefined || what === "") return undefined;
   const browserCard = what.startsWith(BROWSER_WHAT);
-  const who = botName ?? (card.bot !== undefined ? nameFromId(card.bot) : browserCard ? "This coding session" : "A bot");
+  const who = agentCard
+    ? (card.bot !== undefined ? `${botName ?? nameFromId(card.bot)}'s agent` : "This coding session")
+    : botName ?? (card.bot !== undefined ? nameFromId(card.bot) : browserCard ? "This coding session" : "A bot");
   const title = textOf(f.title);
   const input = asRecord(textOf(f.detail));
   const command = textOf(f.command);
-  const resolved = (textOf(f.paths) ?? "").split("\n").filter((x) => x !== "");
+  // A bot's tool card has its paths as one code field, a line each; an agent's card as a list.
+  const resolved = (f.paths?.type === "list" ? f.paths.items.join("\n") : textOf(f.paths) ?? "").split("\n").filter((x) => x !== "");
   const always = alwaysSentence(card, botName, home);
   const base = { who, ...(title !== undefined ? { title } : {}), ...(always !== undefined ? { always } : {}) };
   // The place the card names is the core's resolved path alone. What the model wrote is shown only beside it, and only
