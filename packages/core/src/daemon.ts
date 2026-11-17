@@ -109,6 +109,7 @@ import { commandListMethods } from "./commands/views";
 import { ActiveNotices } from "./registry/active-one";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { appTabPort } from "./browser/app-port";
+import { startHostSupervision, type HostSupervision } from "./host/engine";
 import { browserCallerOf } from "./browser/service";
 import { noteCheckedHost } from "./browser/checked-hosts";
 import { hearsTabsOf } from "./browser/rpc-handlers";
@@ -3876,6 +3877,21 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   } catch (err) {
     console.error(`[browser-host] could not listen on ${join(dirs.runDir, BROWSER_HOST_SOCKET_NAME)}: ${err instanceof Error ? err.message : String(err)}`);
   }
+  // Lane HS: the engine starts and supervises the background host from the newest app that carries it (§3.1); with none
+  // on disk (a server, a checkout, a test's home) it runs headless and says so. Its door joins the MOSS handlers.
+  const hostSupervision: HostSupervision | undefined = opts.pair === false ? undefined : startHostSupervision({
+    home: mossHome, os: process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux",
+    profile: resolveMossProfile(), release: CORE_VERSION, run: bunRunner, dist: DIST_BUILD,
+    testBuild: typeof __MOSS_TEST_BUILD__ === "string", env: process.env,
+    connections: () => mossServer?.connections() ?? [],
+    ask: (conn, method, params, ms) => mossServer === undefined ? Promise.reject(new Error("the daemon's endpoint isn't open")) : mossServer.ask(conn, method, params, ms),
+    coreEvent: (event) => void mossServer?.coreEvent(event as Parameters<MossServer["coreEvent"]>[0]),
+    busy: () => updateGate.verdict().busy,
+    tabs: () => daemonParts?.browser?.service.tabs({ kind: "user" }) ?? [],
+    quitEverything: () => { if (pairSide) pairSide.pair.quit("quit"); else if (!stopping) { server.stopAccepting(); setTimeout(() => resolvePairStopped("quit everything"), 50); } },
+  });
+  if (hostSupervision) Object.assign(mossLaneHandlers, hostSupervision.handlers);
+  void hostSupervision?.boot().catch((err: unknown) => console.error(`[host] boot failed: ${(err as Error).message}`));
   // C-M2 and the daemon integration: H's links, then J's computer node and D's bot side over them (daemon-parts.ts),
   // started in the background so a slow sidecar never holds the daemon's start; their methods join the MOSS server's
   // handlers when they're up. A daemon with no sidecar (run from source, a build without it) runs them local-only,
@@ -4993,6 +5009,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       if (o?.keepApp !== true) pairSide?.pair.quit("quit");
       else pairSide?.keepApp();
       pairSide?.dispose();
+      hostSupervision?.dispose();
       mossServer?.dispose();
       mark("the pair and the MOSS server");
       // The first thing in the bounded tail: every bot conversation and side thread lets its driver go, each running
