@@ -77,7 +77,7 @@ import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-fi
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { MossClient, RpcError, hello } from "./client";
-import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+import { BRIDGE_ECHO, CHILD_REPORT, netCommand, newestDirective as newestDirectiveOf, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 // lane HS
 import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
@@ -5485,8 +5485,18 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
             const after3 = (await appDriver()).client;
             const ok = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
             const before = (await history(after3, session!)).length;
+            const askedBefore = fake!.requests.length;
+            // What the next turn's requests carried (each message's role and blocks, the text cut short), for a failure
+            // to say whether the fake or the product did it: the TAG's words should be in the last user message.
+            const shapes = () => fake!.requests.slice(askedBefore).map((r) => {
+              const msgs = ((r.body as { messages?: { role?: string; content?: unknown }[] } | undefined)?.messages ?? []).slice(-4);
+              const blocks = (c: unknown) => (typeof c === "string" ? [`text:${JSON.stringify(c.slice(-80))}`] : Array.isArray(c) ? c.map((b: { type?: string; text?: string; name?: string; content?: unknown }) => b.type === "text" ? `text:${JSON.stringify(String(b.text).slice(-80))}` : b.type === "tool_use" ? `tool_use:${b.name}` : b.type === "tool_result" ? `tool_result:${JSON.stringify(JSON.stringify(b.content ?? "").slice(0, 60))}` : String(b.type)) : []);
+              return `[answered ${r.answered}; said ${JSON.stringify(newestDirectiveOf(r.lastUserText).slice(0, 60))}; last messages: ${msgs.map((m) => `${m.role}(${blocks(m.content).join(", ")})`).join(" | ")}]`;
+            }).join(" ");
             // Its cards read from the reopened app's own log (the first app's \`app.log\` never hears of them).
-            const { events: next } = await turn(after3, session!, `${ok} are you back?`, undefined, { log: appB!.log });
+            const { events: next } = await turn(after3, session!, `${ok} are you back?`, undefined, { log: appB!.log }).catch((err: unknown) => {
+              throw new Error(`${err instanceof Error ? err.message : String(err)}; the fake was asked: ${shapes() || "nothing"}`);
+            });
             const later = (await history(after3, session!)).slice(before);
             after3.close();
             if (!JSON.stringify(next).includes(`ACCEPTANCE-REPLY-OK ${ok}`)) wrong.push(`the next message got no reply of its own (stop ${stopOf(next)}${errorsOf(next).length ? `: ${errorsOf(next)[0]}` : ""})`);
