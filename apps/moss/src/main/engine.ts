@@ -478,14 +478,14 @@ export class MossEngine {
       this.read<{ signedIn: boolean; user?: { name?: string; email?: string } }>("account", "account.status"),
       this.read<{ devices: { id: string; name: string; kind: string }[] }>("devices", "device.list"),
       this.read<{ computers: { name: string; level: string; self?: boolean }[] }>("devices", "computer.list"),
-      this.read<{ plugins: { id: string; name: string; enabled: boolean; parent?: string }[] }>("plugins", "plugin.list"),
+      this.read<{ plugins: { id: string; name: string | { en: string }; enabled: boolean; parent?: string }[] }>("plugins", "plugin.list"),
     ]);
     let signIns: SettingsView["signIns"] = "waiting";
     if (plugins !== undefined) {
       const rows: Exclude<SettingsView["signIns"], "waiting"> = [];
       for (const p of plugins.plugins.filter((x) => x.enabled)) {
         const r = await this.client?.request<{ auth: { index: number; method: "api-key" | "oauth-pkce" | "custom" | "core"; state: string; account?: string }[] }>("plugin.auth.list", { id: p.id }, 5_000).catch(() => undefined);
-        for (const a of r?.auth ?? []) rows.push({ pluginId: p.id, name: p.name, index: a.index, method: a.method, state: a.state, ...(a.account !== undefined ? { account: a.account } : {}) });
+        for (const a of r?.auth ?? []) rows.push({ pluginId: p.id, name: textOf(p.name), index: a.index, method: a.method, state: a.state, ...(a.account !== undefined ? { account: a.account } : {}) });
       }
       signIns = rows;
     }

@@ -299,6 +299,27 @@ async function botSaid(s: UnitState, text: string, ms = 120_000): Promise<string
   return s.w.waitFor(`a reply holding "${text.slice(0, 40)}" drawn in MOSS`, `[...document.querySelectorAll('.bubble--bot')].map((b) => b.textContent).find((t) => t.includes(${JSON.stringify(text)})) ?? null`, ms);
 }
 
+/** A turn the person starts in MOSS: the message sent from the composer, every card the turn raises for that session
+ *  approved with a real press where MOSS draws it, until a new reply holding `reply` is drawn. The cards' kinds. */
+async function turnInMoss(s: UnitState, name: string, session: string, text: string, reply: string, ms = 150_000): Promise<{ said: string; cards: string[] }> {
+  const before = await cardIds(s.c);
+  const from = await s.w.eval<number>("document.querySelectorAll('.bubble--bot').length");
+  await sendInMoss(s, name, text);
+  const cards: string[] = [];
+  const seen = new Set<string>();
+  const said = await s.x.until(`${name}'s reply holding "${reply.slice(0, 30)}" after "${text.slice(0, 30)}"`, ms, async () => {
+    for (const k of await pending(s.c)) {
+      if (before.has(k.id) || seen.has(k.id) || k.session !== session) continue;
+      seen.add(k.id);
+      await s.w.pressApprove(k.id);
+      cards.push(k.kind);
+    }
+    const texts = await s.w.eval<string[]>(`[...document.querySelectorAll('.bubble--bot')].slice(${from}).map((b) => b.textContent)`);
+    return texts.find((t) => t.includes(reply));
+  }, 500);
+  return { said, cards };
+}
+
 const tag = (what: string) => `ACCEPTANCE-TAG-MOSS${what.toUpperCase()}${randomBytes(3).toString("hex").toUpperCase()}`;
 
 // ── the rows ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -462,10 +483,10 @@ async function panelRow(s: UnitState): Promise<string> {
   // Alpha makes a routine and uses the tool that publishes her picture.
   await openBot(s, "alpha", "Alpha");
   const routine = `MOSS panel probe ${randomBytes(2).toString("hex")}`;
-  await sendInMoss(s, "Alpha", callText("Routine", { name: routine, instructions: "ACCEPTANCE-TAG-MOSSROUTINE", schedule: "every 6h" }));
-  await botSaid(s, "ACCEPTANCE-DONE");
+  const a = await alpha(s.c);
+  const made = await turnInMoss(s, "Alpha", a.mainSession, callText("Routine", { name: routine, instructions: "ACCEPTANCE-TAG-MOSSROUTINE", schedule: "every 6h" }), "ACCEPTANCE-DONE");
   const listed = await s.x.until("her routine in routine.list", 30_000, async () => (await s.c.request<{ routines: { id: string; name: string }[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.name === routine), 500);
-  await sendInMoss(s, "Alpha", callText("Show", {}));
+  const showed = await turnInMoss(s, "Alpha", a.mainSession, callText("Show", {}), "ACCEPTANCE-DONE");
   await s.x.until("her live picture listed", 60_000, async () => ((await s.c.request<{ pictures: { publisher: string }[] }>("picture.list", { kind: "bots", bot: "alpha" })).pictures.some((p) => p.publisher === installed.id) ? true : undefined), 500);
   // The side panel, opened from her conversation's header.
   await s.w.click(`button[aria-label="Open Alpha's screen and routines"]`);
@@ -486,7 +507,7 @@ async function panelRow(s: UnitState): Promise<string> {
     return r ? { name: r.querySelector('.routine__name').textContent, when: r.querySelector('.routine__when')?.textContent ?? '', chip: r.querySelector('.chip')?.textContent ?? '' } : null;
   })()`, 20_000);
   await s.w.click(`button[aria-label="Close the side panel"]`);
-  return `the plugin's OK card placed ${placeWords(okPlace)} and pressed in MOSS; her picture from ${shown.from.replace(/\s+/g, " ").trim().slice(0, 80)} drawn (${shown.src}…), no control in it, a click on it: "${refused.slice(0, 80)}"; her routine "${row.name}" (${row.when.slice(0, 40)}, ${row.chip}) listed (routine ${listed.id})`;
+  return `the plugin's OK card placed ${placeWords(okPlace)} and pressed in MOSS; her picture from ${shown.from.replace(/\s+/g, " ").trim().slice(0, 80)} drawn (${shown.src}…), no control in it, a click on it: "${refused.slice(0, 80)}"; her routine "${row.name}" (${row.when.slice(0, 40)}, ${row.chip}) listed (routine ${listed.id}; Routine ${made.cards.length > 0 ? `asked on ${made.cards.join(", ")} card(s), pressed in MOSS` : "asked nothing"}, Show ${showed.cards.length > 0 ? `asked on ${showed.cards.join(", ")} card(s)` : "asked nothing"})`;
 }
 
 async function toolsRow(s: UnitState): Promise<string> {

@@ -119,6 +119,15 @@ describe("a bot's own choices", () => {
 });
 
 describe("the pages' data (Plugins, Settings, a bot's Edit view)", () => {
+  test("Settings' sign-ins name each plugin in words, never the engine's table of languages (it took the window down once)", async () => {
+    const { engine } = await setup();
+    const s = await engine.settings();
+    if (s.signIns === "waiting") throw new Error("sign-ins waiting");
+    expect(s.signIns.length).toBeGreaterThan(0);
+    for (const r of s.signIns) expect(typeof r.name).toBe("string");
+    expect(s.signIns.map((r) => r.name)).toContain("Fish Audio");
+  });
+
   test("tools with their declared default, the person's value and permission; models; a bot's record; edits", async () => {
     const { engine } = await setup();
     const plugins = await engine.plugins();

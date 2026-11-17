@@ -303,7 +303,9 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
         c.attached.delete(String(params.id));
         return { ok: true };
       case "plugin.list":
-        return { plugins: PLUGINS.map((p) => ({ id: p.id, name: p.name, version: "1.0.0", enabled: p.enabled, state: "running" })) };
+        // Names as the real engine sends them: a plugin's `Text` may be a table of languages (the first as one, the rest
+        // as plain strings), which the window must never draw as it is (it once took the whole window down).
+        return { plugins: PLUGINS.map((p) => ({ id: p.id, name: p.id === "fish-audio" ? { en: p.name } : p.name, version: "1.0.0", enabled: p.enabled, state: "running" })) };
       case "tool.permissions": {
         piece("tools", method);
         const rows = tools.list();
