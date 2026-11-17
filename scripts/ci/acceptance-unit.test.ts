@@ -98,9 +98,9 @@ describe("the acceptance unit's verdict", () => {
     expect(names.length).toBeGreaterThan(67);
   });
 
-  test("the moss unit (MOSS, the bots app) owns its 17 rows", () => {
+  test("the moss unit (MOSS, the bots app) owns its 19 rows", () => {
     const moss = units().find((u) => u.id === "moss")!;
-    expect(moss.rows.length).toBe(17);
-    expect(new Set(moss.rows).size).toBe(17);
+    expect(moss.rows.length).toBe(19);
+    expect(new Set(moss.rows).size).toBe(19);
   });
 });

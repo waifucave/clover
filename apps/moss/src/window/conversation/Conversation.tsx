@@ -6,7 +6,7 @@
 //
 // Everything a bot wrote is plain text drawn as React text nodes (with line breaks kept by CSS), never parsed as markup:
 // no `dangerouslySetInnerHTML`, no HTML from a message reaches the page.
-import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Face, MoodWords } from "../faces/Face";
 import { bridge, shortTime } from "../bridge";
 import { CardFrame } from "../cards/CardFrame";
@@ -149,7 +149,7 @@ export function merge(older: readonly Message[], now: readonly Message[]): Messa
 const Bubble = memo(function Bubble(props: { m: Message; showTime: boolean; /** The failed turn's note while it is the last thing: Try again. */ bot?: string }) {
   const m = props.m;
   if (m.from === "note" && props.bot !== undefined) return <FailedNote text={m.text} bot={props.bot} />;
-  if (m.from === "note") return <p className="note" data-bubble="note">{m.text}</p>;
+  if (m.from === "note") return <p className={`note${m.routineFailed === true ? " note--failed" : ""}`} data-bubble="note" {...(m.routineFailed === true ? { "data-routine-failed": "" } : {})}>{m.text}</p>;
   return (
     <div className={`bubble-row bubble-row--${m.from}`}>
       {m.files?.map((f, i) => (
@@ -222,8 +222,17 @@ function Composer(props: { bot: BotRow; talk?: MossView["talk"] }) {
     setHolding(false);
     bridge().talk("up");
   };
+  // Something dropped on the composer: MOSS takes pictures only, through the attach button (main's own dialog, so their
+  // bytes never pass through the window); a dropped file or picture is said so, plainly, and nothing is sent.
+  const onDrop = (e: DragEvent<HTMLDivElement>): void => {
+    e.preventDefault();
+    const items = [...e.dataTransfer.files];
+    if (items.length === 0) return;
+    const pictures = items.every((f) => /^image\/(png|jpeg|webp)$/.test(f.type));
+    setWhy(pictures ? "Dropping isn't supported yet: attach pictures with the paperclip." : "Files aren't supported yet: MOSS sends pictures only (PNG, JPEG or WebP), attached with the paperclip.");
+  };
   return (
-    <div className="composer" data-composer>
+    <div className="composer" data-composer onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
       {why !== undefined ? <p className="composer__why" role="status">{why}</p> : null}
       {images.length > 0 ? (
         <div className="composer__files">

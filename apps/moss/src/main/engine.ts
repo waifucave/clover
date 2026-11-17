@@ -51,7 +51,12 @@ export function messageOf(e: Record<string, unknown>): Message | undefined {
   // A routine's run posts its short result into the bot's conversation (§7): a note naming the routine.
   if (e.type === "routine_result" && typeof e.text === "string") {
     const name = typeof e.name === "string" ? e.name.slice(0, 200) : "A routine";
-    return { id, from: "note", text: `${e.failed === true ? `Routine "${name}" failed` : `Routine "${name}"`}: ${e.text.slice(0, 2_000)}`, at };
+    // A failed run says so and why (the engine's words: "The run failed (<why>): …"); a run that ended with no words still says it failed.
+    const said = e.text.trim();
+    const text = e.failed === true
+      ? (said === "" ? `Routine "${name}" failed, and said nothing about why.` : /^The run /.test(said) ? `Routine "${name}": ${said}` : `Routine "${name}" failed: ${said}`)
+      : `Routine "${name}": ${said}`;
+    return { id, from: "note", text: text.slice(0, 2_200), at, ...(e.failed === true ? { routineFailed: true as const } : {}) };
   }
   return undefined;
 }
