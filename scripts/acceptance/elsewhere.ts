@@ -17,6 +17,7 @@ import { NOTIFY_STEP } from "./child-notify-step";
 import { LISTEN_STEP } from "./listen-step";
 import { DRAG_STEP } from "./drag-step";
 import { STAGE_COPY_STEP } from "./stage-copy-step";
+import { SURFACE_COPY_STEP } from "./surface-copy-step";
 import { STAGE_STEP, ELSEWHERE_NOTES } from "./steps";
 import { EXAMPLE_NOTES_STEP } from "./example-steps";
 
@@ -35,6 +36,8 @@ export const ROWS_ELSEWHERE: ReadonlyMap<string, Elsewhere> = new Map<string, El
   [ui(20), { owner: "MC2", why: "Alpha's tab under Bots' plug: the stock sidebar, her top bar, her stage's fold" }],
   [ui(21), { owner: "retired", why: "a bot plugin's own tab layout: the plug went with the bot tab (G8)" }],
   [ui(26), { owner: "retired", why: "a bot plugin's panel replacing a stock one on its bot's tab only: the plug went with the bot tab (G8)" }],
+  [ui(27), { owner: "MOSS", why: "panels a plugin adds on Alpha's tab and a bot plugin's panels inside its bot (its coding-tab half, Slides on a coding session, is the MOSS unit's to keep with the rest)" }],
+  [SURFACE_COPY_STEP, { owner: "MOSS", why: "a copy of the Dispatch pill sending to a bot's conversation" }],
   [TAB_FLASH_STEP, { owner: "MOSS", why: "Alpha's tab never flashing on the way back to it" }],
   [NOTIFY_STEP, { owner: "MOSS", why: "a turn a bot runs on its own reaching the notifier, from a bot's tab" }],
   [LISTEN_STEP, { owner: "MOSS", why: "push-to-talk where a bot's voice listens" }],

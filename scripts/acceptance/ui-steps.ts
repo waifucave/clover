@@ -183,6 +183,47 @@ export async function treeDocs(cdp: Cdp): Promise<{ session: string; url: string
 
 /** The window's own sidebar's items: the stock sidebar is beside every tab, Alpha's too (Bots doesn't offer a bot the sidebar). */
 const SIDEBAR_ITEMS = ".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]";
+/** MOSS Code's window (lane MC: no bots in it): a code session's row in the sidebar, and its tab in main. */
+const SESSION_ROWS = ".cl-sidebar .cl-sidebar__agent .cl-sidebar__row";
+const SESSION_TAB = ".cl-window__content .cl-agent-tab[data-place=main]";
+
+/** The code session the window opens on: the newest coding session. */
+async function windowSession(rpc: MossClient): Promise<string> {
+  const list = await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["coding"] });
+  const id = list.sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0]?.id;
+  return id ?? fail("no code session for the window to open on");
+}
+
+/** A new code session on the window session's model (MOSS's own agent, in a folder of the run's user home), opened in the window
+ *  from its sidebar row: a code session's tools are the ones there when it starts, so a row that installs a plugin calls its
+ *  tools in one started after. */
+async function freshWindowSession(ctx: Ctx, folder: string): Promise<string> {
+  const { cdp, rpc } = ctx;
+  const model = (await windowSessionView(rpc)).model;
+  const computer = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? fail("computer.list lists no computer");
+  if (ctx.home === undefined) fail("the run gives no home to start a code session beside");
+  mkdirSync(join(dirname(ctx.home!), folder), { recursive: true });
+  const id = (await rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/${folder}`, ...(model !== undefined ? { model } : {}) }, 60_000)).session;
+  await rpc.request("session.attach", { id }).catch(() => undefined);
+  const pressText = async (what: string, selector: string, text?: string, ms = 20_000) => {
+    const at = await until(what, ms, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const c = await cdp.centerOf(d.session, selector, text).catch(() => undefined);
+        if (c !== undefined) return { session: d.session, c };
+      }
+      return undefined;
+    }, () => dumpFrames(cdp));
+    await cdp.click(at.session, at.c.x, at.c.y);
+  };
+  await toCodingSession(cdp, id, pressText);
+  return id;
+}
+
+/** That session's view (its model and effort). */
+async function windowSessionView(rpc: MossClient): Promise<{ id: string; model?: string; effort?: string }> {
+  const id = await windowSession(rpc);
+  return { id, ...(await rpc.request<{ session: { model?: string; effort?: string } }>("session.get", { id })).session };
+}
 
 async function inTree<T>(cdp: Cdp, expr: string): Promise<{ session: string; value: T } | undefined> {
   for (const d of await treeDocs(cdp)) {
@@ -467,7 +508,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
       return undefined;
     }, () => dumpFrames(cdp));
-    const before = await rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {});
+    // The code session's model (its composer's picker is the session's own).
+    const before = { bots: [await windowSessionView(rpc)] };
     const was = before.bots[0]?.model;
     await cdp.click(pill.session, pill.c.x, pill.c.y);
     const items = await until("the picker's models", 15_000, async () => {
@@ -485,7 +527,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (pick.y < 0 || pick.y > room) fail(`the picker's row can't be brought on screen (y ${Math.round(pick.y)} of ${room}): the menu doesn't scroll`);
     await cdp.click(pill.session, pick.x, pick.y);
     const now = await until("the bot's model to change", 15_000, async () => {
-      const m = (await rpc.request<{ bots: { model?: string }[] }>("bot.list", {})).bots[0]?.model;
+      const m = (await windowSessionView(rpc)).model;
       return m !== undefined && m !== was ? m : undefined;
     });
     if (!now.startsWith("anthropic/")) fail(`the pick landed on ${now}, a provider with no key stored (the run's only key is Anthropic's)`);
@@ -510,9 +552,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await cdp.click(pill.session, row.x, row.y);
       const want = shown[at]!.t;
       await until(`the bot's effort to be ${want}`, 15_000, async () => {
-        const bot = (await rpc.request<{ bots: { model?: string; effort?: string }[] }>("bot.list", {})).bots[0];
+        const bot = await windowSessionView(rpc);
         return bot?.effort === want && bot.model === now ? true : undefined;
-      }, async () => `bot now: ${JSON.stringify((await rpc.request<{ bots: { model?: string; effort?: string }[] }>("bot.list", {})).bots[0])}`);
+      }, async () => `session now: ${JSON.stringify(await windowSessionView(rpc))}`);
       effortNote = `the Effort section listed ${levels.join(", ")}; picked "${want}" and it is the bot's effort`;
     } else {
       await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, pill.session);
@@ -1202,7 +1244,8 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (pickRow !== JSON.stringify(pickWant)) fail(`${pick!.name}'s row shows ${pickRow}, the core derived ${JSON.stringify(pickWant)}`);
       const alphaWant = await wantLabels("alpha");
       const alphaRow = await rowLabels("Alpha");
-      if (!alphaWant.includes("Bot") || alphaRow !== JSON.stringify(alphaWant)) fail(`Alpha's labels: the core derived ${JSON.stringify(alphaWant)} (a bot's own plugin brings Bot), her row shows ${alphaRow}`);
+      // Alpha's plugin brings no bot now (lane MC: she is the engine's default bot, a record): her row says what it does bring.
+      if (alphaWant.includes("Bot") || alphaRow !== JSON.stringify(alphaWant)) fail(`Alpha's labels: the core derived ${JSON.stringify(alphaWant)} (her plugin brings no bot now), her row shows ${alphaRow}`);
       if ([...pickWant, ...alphaWant].some((l) => /plugin|type|kind/i.test(l))) fail(`a label names a kind of plugin: ${[...pickWant, ...alphaWant].join(", ")}`);
       labelsSaid = `its row shows what it brings (${pickWant.join(", ")}) and Alpha's shows ${alphaWant.join(", ")}, both as the core derived them`;
       await clickText(`Open ${pick!.name}`, `button[aria-label=${JSON.stringify(`Open ${pick!.name}`)}]`, undefined);
@@ -1646,12 +1689,12 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (ctx.healFake === undefined) fail("this run has no way to let the fake provider's failing turn succeed");
     const tag = `ACCEPTANCE-FAIL-${randomBytes(4).toString("hex").toUpperCase()}`;
     const words = `${tag} say hello again,  with my  spacing`;
-    const bot = (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha");
-    if (bot === undefined) fail("no bot alpha");
+    // The code session the window shows (lane MC: MOSS Code's window has no bots).
+    const bot = { mainSession: await windowSession(rpc) };
     const log = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: bot!.mainSession, limit: 500 })).events;
     const mine = (events: Record<string, unknown>[]) => events.filter((e) => e.type === "user_message" && typeof e.text === "string" && e.text.includes(tag));
     await escape();
-    await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+    await clickIn("the code session in the sidebar", SESSION_ROWS, undefined);
     const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
     await cdp.evaluate(box.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
     await cdp.send("Input.insertText", { text: words }, box.session);
@@ -2089,16 +2132,16 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const IDLE_MS = 15_000, MAIN_MAX_PERCENT = 25, MESSAGES_MAX_PER_SECOND = 20; // measured idle: main about 7.5%, under 1 message a second
     // A CI runner's load says nothing about the app: the row is the Mac's to measure (measured.ts).
     if (measuredOnMacOnly()) return `${MEASURED_ON_MAC_ONLY}: ${MEASURED_ROWS[0]!.reason}`;
-    if ((await inTree<boolean>(cdp, "!!document.querySelector('.ac')")) === undefined) {
-      const at = await until("Alpha in the sidebar", 20_000, async () => {
+    if ((await inTree<boolean>(cdp, `!!document.querySelector('${SESSION_TAB}')`)) === undefined) {
+      const at = await until("the code session in the sidebar", 20_000, async () => {
         for (const d of await treeDocs(cdp)) {
-          const c = await cdp.centerOf(d.session, SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+          const c = await cdp.centerOf(d.session, SESSION_ROWS).catch(() => undefined);
           if (c !== undefined) return { session: d.session, c };
         }
         return undefined;
       }, () => dumpFrames(cdp));
       await cdp.click(at.session, at.c.x, at.c.y);
-      await until("Alpha's own controls", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.ac')"), () => dumpFrames(cdp));
+      await until("the code session's tab", 20_000, () => inTree<boolean>(cdp, `!!document.querySelector('${SESSION_TAB}')`), () => dumpFrames(cdp));
     }
     await sleep(6_000); // what opening her tab starts (her room's few ticks, the stage loading) is not idle
     const from = ctx.appLog().length;
@@ -2308,23 +2351,20 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await cdp.click(at.session, at.c.x, at.c.y);
       await sleep(600);
     };
-    const botMain = async () => (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.mainSession ?? fail("no bot alpha");
     const installed = await rpc.request<{ id: string; state: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
     try {
       if (installed.id !== id) fail(`the fixture installed as ${installed.id}`);
       const ok = await ctx.pressCard!("its OK card", (c) => c.kind === "plugin-ok" && c.pluginId === id);
       await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
-      // A turn in Alpha's conversation that calls the plugin's tool; her tab is open while it runs.
-      // Alpha's tab is the one open at the start of a window run; pressed again only when another tab is showing.
-      if ((await find('[data-acceptance-window="composer"]')) === undefined) await openApp("Alpha").catch(() => undefined);
-      const session = await botMain();
+      // A turn that calls the plugin's tool, in a code session started after its OK and open in the window while it runs.
+      const session = await freshWindowSession(ctx, "window-spots-work");
       const tag = `WINDOW-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
       await rpc.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL Window {"text":"${tag}"}`, clientMessageId: `window-${tag}` } }, 30_000);
       const carded = "a read-only tool of its own: it ran with no card";
       await until("the tool's result in the model's next request", 90_000, async () => ctx.requests().find((r) => r.toolResult?.text.includes(`acceptance-window-pong: ${tag}`)),
         async () => `${carded}; the provider's last requests: ${JSON.stringify(ctx.requests().slice(-3).map((r) => ({ said: r.lastUserText.slice(0, 80), answered: r.answered?.slice(0, 80), result: r.toolResult?.text.slice(0, 80) })))}`);
       // 1.83 composer.action: its button is in the composer of Alpha's tab, pressed in the window.
-      await waitFor("its composer.action button in Alpha's composer", '[data-acceptance-window="composer"]');
+      await waitFor("its composer.action button in the session's composer", '[data-acceptance-window="composer"]');
       await press("its composer button", '[data-acceptance-window="composer"]');
       await until("its composer button's press counted", 15_000, async () => ((await find('[data-acceptance-window="composer"]'))?.attrs["data-pressed"] === "1" ? true : undefined));
       // 1.89 conversation.message keyed `user`: the user's message drawn by the plugin, with its text (conversation.read).
@@ -2998,11 +3038,11 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     };
     try {
       for (const id of ids) await install(id);
-      // Alpha's tab, where the composer's action parts are drawn.
+      // The code session's tab, where the composer's action parts are drawn.
       await escape();
-      const at = await until("Alpha in the sidebar", 20_000, async () => {
+      const at = await until("the code session in the sidebar", 20_000, async () => {
         for (const d of await treeDocs(cdp)) {
-          const c = await cdp.centerOf(d.session, SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+          const c = await cdp.centerOf(d.session, SESSION_ROWS).catch(() => undefined);
           if (c !== undefined) return { session: d.session, c };
         }
         return undefined;

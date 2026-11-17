@@ -6154,7 +6154,12 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     const rpc = (await appDriver()).client;
     await uiSteps({
       cdp: cdp!, rpc, home, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
-      cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
+      // A card its check left waiting is answered no, so a failed check never holds the window's dialogs and menus shut for
+      // the steps after it (a waiting card closes them).
+      cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined, async (err: unknown) => {
+        for (const card of await cards(rpc).catch(() => [])) if (card.session === session) await deny(rpc, card, proc.log).catch(() => undefined);
+        throw err;
+      }) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       ...(only !== undefined ? { only } : onlyUi !== undefined ? { only: new Set(onlyUi) } : windowStepsHere() !== undefined ? { only: windowStepsHere()! } : {}),
       pickFolder,
