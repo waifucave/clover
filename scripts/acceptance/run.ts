@@ -4477,10 +4477,11 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
         await pressWhereHeld(card);
         return card.id;
       },
-      approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await approve(rpc, card, { log }); },
+      // With a host, a card the router put on the host's island is answered only there: it is pressed where it is.
+      approveCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) { if (hostCdp !== undefined) await pressWhereHeld(card); else await approve(rpc, card, { log }); } },
       denyCard: async (id) => { const card = (await cards(rpc)).find((x) => x.id === id); if (card !== undefined) await deny(rpc, card, log); },
       turn: (s2, text, ms) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick } }),
-      alwaysTurn: (s2, text, ms) => turn(rpc, s2, text, ms, { always: true, log }),
+      alwaysTurn: (s2, text, ms) => (hostCdp !== undefined ? turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick } }) : turn(rpc, s2, text, ms, { always: true, log })),
       inspectTurn: (s2, text, ms, inspect) => turn(rpc, s2, text, ms, { press: { cdp: cdp!, log, pick }, inspect: async () => inspect() }),
       history: (s2) => history(rpc, s2),
       setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back"),
