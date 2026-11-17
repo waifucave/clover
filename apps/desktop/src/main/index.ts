@@ -27,6 +27,7 @@ import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost 
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
 import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
+import { coverAt, loadWindowsAbove, windowIdOfMediaSource, type WindowsAbove } from "./overlap";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { cliLauncher, locateDaemonBinary } from "./pair/login";
@@ -514,6 +515,12 @@ async function ready(): Promise<void> {
       if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) })) {
         log(`sealed: answer refused (a press ${source === "island" ? "on the island" : "in the window"} for a card the router placed ${placed?.kind === "island" ? "on the island" : "in the window"})`);
         return { accepted: false, reason: placed?.kind === "island" ? "this card is on the island now" : "this card is in MOSS's window now" };
+      }
+      // R12 (lane RT): no window of any app lies over the button, read from the OS's own window list (overlap.ts).
+      const cover = osCoverOf(from);
+      if (cover !== undefined) {
+        log(`sealed: answer refused (a window lies over the button: ${cover})`);
+        return { accepted: false, again: true, reason: "another window lies over the button: move it away and press again" };
       }
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
@@ -2118,6 +2125,35 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
   if (typeof request.visible === "boolean") s.wantsVisible = request.visible;
   if (typeof request.visible === "boolean") applyVisibility(s);
   else clickThrough(s);
+}
+
+/** The OS-wide half of the overlap check (overlap.ts, R12): what lies over the place the person just pressed in window
+ *  `windowId`, named by what it is (ours or another app's, never a title), or undefined when nothing does. With no window list
+ *  here (Windows, Linux, a Mac without the add-on built) or no mouse-down seen for the press, the in-page check stands alone
+ *  (said once). A headless run reads its own windows only. */
+let windowsAbove: WindowsAbove | undefined | null = null;
+let overlapUnread = false;
+function osCoverOf(windowId: number | undefined): string | undefined {
+  if (windowId === undefined) return undefined;
+  if (windowsAbove === null) windowsAbove = loadWindowsAbove(join(here, "native", "screen.node"), log);
+  const win = BrowserWindow.fromId(windowId);
+  const point = pointers.lastDown(windowId, 2_000);
+  const id = win === null || win.isDestroyed() ? undefined : windowIdOfMediaSource(win.getMediaSourceId());
+  if (windowsAbove === undefined || win === null || id === undefined || point === undefined) {
+    if (!overlapUnread) { overlapUnread = true; log(`overlap: the OS window list wasn't read for a press (${windowsAbove === undefined ? "no window list here" : point === undefined ? "no mouse-down seen for it" : "no window id"}); the in-page check stands alone`); }
+    return undefined;
+  }
+  const content = win.getContentBounds();
+  const own = new Map<number, { origin: { x: number; y: number }; regions?: readonly Rect[] }>();
+  for (const s of surfaces.values()) {
+    if (s.win.isDestroyed()) continue;
+    const sid = windowIdOfMediaSource(s.win.getMediaSourceId());
+    const b = s.win.getContentBounds();
+    if (sid !== undefined) own.set(sid, { origin: { x: b.x, y: b.y }, regions: s.regions });
+  }
+  const hit = coverAt({ x: content.x + point.x, y: content.y + point.y }, windowsAbove(id), { own, ...(headless ? { onlyPid: process.pid } : {}) });
+  if (hit === undefined) return undefined;
+  return hit.pid === process.pid ? `one of MOSS's own windows (layer ${hit.layer})` : `another app's window (layer ${hit.layer})`;
 }
 
 /** The screen add-on (macOS), for the camera housing; undefined where there is none. */
