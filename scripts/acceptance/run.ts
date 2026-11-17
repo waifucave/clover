@@ -3716,6 +3716,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
   let windowSetup: string | undefined;
   let echoMissing = false;
   let session: string | undefined;
+  let bot: string | undefined;
   let c: MossClient | undefined;
   // lane HS: the host unit runs alone (its own daemon starts the host).
   if (ids.includes("host")) { await hostOnlyRun(app); await hostGaveUpRun(app); return; }
@@ -3729,7 +3730,10 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     await startDaemonProc();
     c = (await appDriver()).client;
     await signInKey(c);
-    session = await keyedSession(c);
+    // The rows about a bot (the models, a bot's builds) in Alpha's conversation; every other one in a code session with
+    // MOSS's own agent, which the window opens on (the newest code session).
+    bot = await keyedSession(c);
+    session = await keyedCodeSession(c);
     if (windowIds.length > 0) {
       // The window's steps run as they did after step 4: its plugin is installed (the slash menu step runs its command).
       try { await installEcho(c); } catch (err) { windowSetup = `the window unit's setup (step 4's plugin): ${why(err)}`; }
@@ -3740,13 +3744,13 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     }
     if (ids.includes("stage")) {
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
-      await c.request("session.attach", { id: session });
-      await stageStep(c, session, true);
+      await c.request("session.attach", { id: bot });
+      await stageStep(c, bot, true);
     }
     if (ids.includes("models")) {
       // The rows that go over the app's methods with no app (appless): each its own clause, a failure its own row's.
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
-      await c.request("session.attach", { id: session });
+      await c.request("session.attach", { id: bot });
       // No app is up yet in this shard (its window, if any, comes after): their cards are answered over RPC only, as
       // under their own --only-* (the first 14f table: "the app was never told of the card" for all four).
       const wasAppless = appless;
@@ -3754,7 +3758,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
       try {
       for (const [step, turnOf] of [[CODE_ADAPTER_STEP, codeAdapterTurn], [THIRD_PARTY_MODEL_STEP, thirdPartyModelTurn], [OAUTH_SIGN_IN_STEP, oauthSignInTurn], [SCHEDULED_ROUTINE_STEP, scheduledRoutineTurn]] as const) {
         try {
-          const out = await turnOf(c, session);
+          const out = await turnOf(c, bot);
           record(stepNumber(FULL_STEPS, step), out.status, out.detail);
         } catch (err) {
           record(stepNumber(FULL_STEPS, step), statusOf(err), why(err));
@@ -3774,7 +3778,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     const names = allUnits().filter((u) => windowIds.includes(u.id)).flatMap((u) => u.rows);
     if (windowSetup !== undefined) for (const name of names) record(stepNumber(FULL_STEPS, name), "FAIL", windowSetup);
     else {
-      // Her tab, not the welcome guide: the guide is marked done, as the app marks it once it is.
+      // The session's tab, not the welcome guide: the guide is marked done, as the app marks it once it is.
       const welcomeDone = join(home, "app-data", profile, "welcome-done");
       mkdirSync(dirname(welcomeDone), { recursive: true });
       if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
@@ -3782,7 +3786,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     }
   }
   const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "tab-flash" || id === "browser" || id === "plugin-app");
-  if (windowed.length > 0) await unitWindow(app, windowed, session);
+  if (windowed.length > 0) await unitWindow(app, windowed, session, undefined, bot);
   if (ids.includes("release")) await releaseSteps(app);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
@@ -3812,7 +3816,7 @@ async function appRowsOnlyRun(app: { exe: string; args: string[] }, names: reado
 /** An app over the shard's daemon (headless, its DevTools port, cards pressed in its window, main's picker), as the full
  *  run's UI phase gives one, and the units' rows in it. The tab flash, when it is this app's first unit, samples the
  *  window's start as its own run does. */
-async function unitWindow(app: { exe: string; args: string[] }, ids: readonly UnitId[], session: string, only?: readonly string[]): Promise<void> {
+async function unitWindow(app: { exe: string; args: string[] }, ids: readonly UnitId[], session: string, only?: readonly string[], bot: string = session): Promise<void> {
   const names = only ?? allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
@@ -3843,7 +3847,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
     const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, unitAppearance, frontFile, keyPresser(unitKeys));
-    for (const [name, run] of uiRowRunners(ctx, session, launch)) {
+    for (const [name, run] of uiRowRunners(ctx, session, launch, bot)) {
       if (!names.includes(name)) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
@@ -3903,7 +3907,9 @@ function exampleCtxFor(cdp: Cdp, rpc: MossClient, log: string, pickFile: string,
 }
 
 /** The rows an app over Alpha's conversation drives after the window's steps, in the full run's order. */
-function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnType<typeof launchSamples>>): readonly (readonly [string, () => Promise<string>])[] {
+/** Each row's runner: `session` is the code session the window opens on; `bot` Alpha's conversation, for the rows about a
+ *  bot that run over the engine (a bot's builds). */
+function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnType<typeof launchSamples>>, bot: string = session): readonly (readonly [string, () => Promise<string>])[] {
   return [
     [EXAMPLE_NOTES_STEP, () => exampleNotesStep(ctx, session)],
     [EXAMPLE_WEATHER_STEP, () => exampleWeatherStep(ctx, session)],
@@ -3917,7 +3923,7 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [CARDS_STEP, () => cardsStep(ctx)],
     // The engine's router (lane RT): a card with no session in the focused window's strip, the island with the window unfocused.
     [ROUTER_STEP, () => routerStep(ctx)],
-    // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
+    // The path the owner tries first: a plugin built with the builder's tools, in a code session on MOSS's own agent.
     [WORKSHOP_STEP, () => workshopStep(ctx, session)],
     // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
     [TAB_FLASH_STEP, () => tabFlashStep(ctx, session, launch, tabFlashAlone ? TAB_FLASH_SLEEP_MS : undefined)],
@@ -3933,7 +3939,7 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [ACP_BACKEND_STEP, () => acpBackendStep(ctx)],
     // The plugin builder's 15 examples installed and drawn on the app (checklist 5.4), and a bot's plugin that takes a plugin (5.12).
     [BUILDER_EXAMPLES_STEP, () => builderExamplesStep(ctx, session)],
-    [WORKSHOP_POINTS_STEP, () => workshopPointsStep(ctx, session)],
+    [WORKSHOP_POINTS_STEP, () => workshopPointsStep(ctx, bot)],
     // A plugin that holds a plugin, and the core's updates reaching the notifier plugins.
     [CHILD_STEP, () => childStep(ctx, session)],
     [NOTIFY_STEP, () => notifyStep(ctx, session)],
