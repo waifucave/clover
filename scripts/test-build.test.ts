@@ -82,7 +82,7 @@ describe("the test-marked build's marker (scripts/test-build.ts)", () => {
     expect(asarMarkerProblems("app.asar", real, true)).toHaveLength(2);
     // The test-only app paths: a real build's code reads neither variable, nor carries the acceptance build's label.
     for (const t of TEST_ONLY_APP_STRINGS) {
-      // Each name is found (a longer one, MOSS_TEST_PICK_AVATAR, also carries MOSS_TEST_PICK: both are named).
+      // Each name is found.
       expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js": `process.env.${t}` }), false)).toContain(`app.asar's code reads ${t}: a real build's test-only path must be compiled out`);
       expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js.map": `process.env.${t}` }), false)).toEqual([]);
     }

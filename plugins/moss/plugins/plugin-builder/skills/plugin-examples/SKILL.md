@@ -237,7 +237,7 @@ File `README.md`:
 ```markdown
 # Ex bot
 
-A bot. Its instructions are in `bot/instructions.md`; its manifest, `moss.json`, can also give it a model, an avatar and a theme, and a default voice on MOSS Voice's point `moss.voice.defaults` (the user's own choice wins). What it adds to the UI is inside the bot (only its own tab, and only what Bots offers there) unless an entry says `"app": true`: that part is beside the bot, shows anywhere, and comes under a switch of its own. A tool, skill or command with `"scope": "own-bot"` is this bot's alone.
+A bot. Its instructions are in `bot/instructions.md`; its manifest, `moss.json`, can also give it a model and a theme, and a default voice on MOSS Voice's point `moss.voice.defaults` (the user's own choice wins). What it adds to the UI is inside the bot (only its own tab, and only what Bots offers there) unless an entry says `"app": true`: that part is beside the bot, shows anywhere, and comes under a switch of its own. A tool, skill or command with `"scope": "own-bot"` is this bot's alone.
 
 Check it with `moss plugin validate`, and try it on this computer with `moss plugin dev .`.
 ```
@@ -700,7 +700,7 @@ export function Hello({ props }: { props: { size?: string } }) {
 
 ### Example: A bot with its own tab, and parts beside it (`ex-buddy`)
 
-A plugin with a bot draws in what Bots offers on the bot's tab (`bot.header`, `bot.side`, `bot.stage`,
+A plugin with a bot draws in what Bots offers on the bot's tab (`bot.header`, `bot.side`,
 `bot.controls`, …): each entry gets `props.bot`, the bot it is drawn for, and shows only on that bot's tab. A part for
 anywhere else (a Settings section, the status bar, an island tab) is beside the bot: here the Settings section is the
 same plugin's entry marked `"app": true`, which follows the app's rules, gets a line of its own on the OK card and comes

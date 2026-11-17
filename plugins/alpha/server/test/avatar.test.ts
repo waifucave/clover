@@ -1,18 +1,19 @@
-// Her stage tools reach her figure through the public avatar calls (`api.avatar`), never through a message of their
+// Her stage tools reach her figure through the figure calls handed to her store (`figure`), never through a message of their
 // own: a name is checked against the catalogue the renderer published, a cue the renderer won't play is the tool's
 // refusal (and the stage keeps what it had), and the figure's own names are what stage_status lists.
 import { expect, test } from "bun:test";
 import { CATALOG_KEY, STAGE_KEY } from "../stage";
 import { StageStore } from "../store";
 import { runStageTool } from "../tools";
+import { changeBy } from "./fakes";
 import { fakeApi, fakeAvatar, MODEL } from "./fakes";
 
 const setup = (o: Parameters<typeof fakeAvatar>[0] = { catalogue: MODEL }) => {
   const f = fakeApi();
   const a = fakeAvatar(o);
   let t = 0;
-  const s = new StageStore({ ...f.api, avatar: a.avatar }, { now: () => (t += 200) });
-  return { f, a, s, run: (name: string, args: unknown = {}) => runStageTool(name, args, s, f.api.settings.get) };
+  const s = new StageStore(f.api, { now: () => (t += 200), figure: a.avatar });
+  return { f, a, s, run: (name: string, args: Record<string, unknown> = {}) => (name === "stage_status" ? runStageTool(name, args, s, f.api.settings.get) : changeBy(s, name, args)) };
 };
 
 test("set_expression, play_motion and toggle_outfit cue her figure with the renderer's own names", async () => {
@@ -27,13 +28,12 @@ test("set_expression, play_motion and toggle_outfit cue her figure with the rend
   ]);
 });
 
-test("the catalogue comes from the renderer, so stage_status lists its names; a wrong name is refused with them", async () => {
-  const { f, a, run } = setup();
+test("the catalogue comes from the renderer, so her stage keeps its names; a wrong name is refused with them", async () => {
+  const { f, a, s, run } = setup();
   expect(await run("set_expression", { name: "nope" })).toMatchObject({ isError: true, content: [{ text: 'The model has no expression "nope". The expressions this model has: "smile", "love".' }] });
   expect(a.cues).toEqual([]);
   expect(f.store.get(CATALOG_KEY)).toEqual({ v: 1, expressions: ["smile", "love"], motions: ["wave"], outfit: ["hat"] });
-  const st = JSON.parse((await run("stage_status")).content[0]!.text.split("\n")[1]!);
-  expect(st.names_this_model_has).toEqual({ expressions: ["smile", "love"], motions: ["wave"], outfit_parts: ["hat"] });
+  expect((await s.read()).catalog).toMatchObject({ expressions: ["smile", "love"], motions: ["wave"], outfit: ["hat"] });
 });
 
 test("a cue the renderer answers plainly with no is the tool's refusal, and the stage keeps what it had", async () => {

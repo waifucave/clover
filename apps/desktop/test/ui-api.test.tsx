@@ -14,7 +14,6 @@ const { act, cleanup, render } = await import("@testing-library/react");
 const ui = await import("@waifucave/moss-plugin-sdk/ui");
 const { createElement: h, useState } = await import("react");
 // The SDK's example renderer, as a third-party `avatar` entry (its own frame in the app).
-const pngtuber = await import("../../../packages/plugin-sdk/examples/example-pngtuber/client/index");
 
 afterAll(async () => {
   cleanup();
@@ -34,9 +33,6 @@ function fakeBridge(views: Record<string, SpotView>) {
       return views[`${mount}:${spot}${key !== undefined ? `[${key}]` : ""}`] ?? { spot, shape: "single", items: [], hidden: false, conflict: false, undeclared: true };
     },
     setProps: (child, props) => calls.push({ op: "setProps", args: [child, props] }),
-    speech: (child, message) => calls.push({ op: "speech", args: [child, message] }),
-    avatar: (child, message) => calls.push({ op: "avatar", args: [child, message] }),
-    avatarUp: (message) => calls.push({ op: "avatarUp", args: [message] }),
     callback: (id, args) => calls.push({ op: "callback", args: [id, args] }),
     reportSize: () => {},
     shell: async (mount, method, args) => {
@@ -138,25 +134,6 @@ const VnPage = () => {
 };
 const hooks: { cards?: () => readonly { id: string }[]; api?: ReturnType<typeof ui.usePluginApi>; entries?: () => readonly { ref: string }[]; loaded?: () => boolean; questions?: () => readonly unknown[]; userSend?: unknown; t?: (key: string, params?: Record<string, string | number>) => string; menu?: () => Promise<string | null>; offer?: () => Promise<string | undefined>; claim?: () => Promise<unknown>; open?: () => Promise<void>; env?: unknown } = {};
 
-/** The stage's speech, as the app would feed it: frames pushed by the test, on a clock of its own. */
-const stageSpeech = (() => {
-  const listeners = new Set<(frames: readonly { t: number; rms: number; centroid: number }[]) => void>();
-  return {
-    feed: { subscribe: (l: (frames: readonly { t: number; rms: number; centroid: number }[]) => void) => { listeners.add(l); return () => void listeners.delete(l); }, now: () => performance.now() / 1000 },
-    push: (frames: { t: number; rms: number; centroid: number }[]) => listeners.forEach((l) => l(frames)),
-    listeners,
-  };
-})();
-let setStageSpeaking: ((speaking: boolean) => void) | undefined;
-/** A bot's stage: the `avatar` spot under the stage's speech (the character part's place for the feed). */
-/** The stage's avatar hub, as the character part makes it: what the renderer publishes lands in `published`. */
-const published: { names: unknown; box: unknown }[] = [];
-const stageHub = new ui.AvatarControlHub((state) => published.push({ names: state.names, box: state.box }));
-const Stage = () => {
-  const [speaking, setSpeaking] = useState(false);
-  setStageSpeaking = setSpeaking;
-  return h(ui.AvatarControlProvider, { hub: stageHub }, h(ui.AvatarSpeechProvider, { feed: stageSpeech.feed, speaking }, h(ui.Spot, { name: "avatar", spotKey: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" } })));
-};
 /** A window's columns: its `main` and `panel` spots, and the `sidebar` for a frame that is not a fill spot. */
 const Columns = () => h("div", null, h(ui.Spot, { name: "main", spotKey: "editor" }), h(ui.Spot, { name: "panel", spotKey: "side" }), h(ui.Spot, { name: "bar" }));
 const NarrowProbe = () => {
@@ -207,7 +184,7 @@ describe("the UI API in a layer", () => {
       hooks.claim = () => drag.claim("g1");
       return h("nav", { "data-route": props.route, "data-plugin": entry.pluginId, "data-accent": String(tokens["color.accent"]) }, h("div", { ref: viewRef, "data-live-view": "" }));
     };
-    ui.configureLayer({ bridge: fake.bridge, modules: { "moss/shell": { Window: Shell }, "moss/sidebar": { Sidebar }, vn: { VnPage }, "moss/character": { Stage }, "example-pngtuber": { PngtuberAvatar: pngtuber.PngtuberAvatar }, "test/fill": { Columns, NarrowProbe } }, sleepAfterMs: 30 });
+    ui.configureLayer({ bridge: fake.bridge, modules: { "moss/shell": { Window: Shell }, "moss/sidebar": { Sidebar }, vn: { VnPage }, "test/fill": { Columns, NarrowProbe } }, sleepAfterMs: 30 });
   });
 
   test("the document's entry renders with its props and tokens; an inline part from the same layer with its own", async () => {
@@ -557,132 +534,6 @@ describe("the UI API in a layer", () => {
     expect(called).toEqual([["1", [undefined]]]);
   });
 
-  test("an avatar renderer in its own frame gets the stage's speech as batches of numbers, ~every 40 ms while it speaks, nothing while quiet, hidden or gone", async () => {
-    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", layer: "example-pngtuber", url: "moss-plugin://example-pngtuber/?mount=a1" }] };
-    const info: MountInfo = { mount: "s1", pluginId: "moss/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
-    const stage = render(h(ui.LayerRoot, { info }));
-    await tick();
-    const speech = () => fake.calls.filter((c) => c.op === "speech");
-    expect(stage.container.querySelector('iframe[data-moss-mount="s2"]')).toBeTruthy();
-    // The frame's props carry no feed (functions never cross as data): the speech goes its own way.
-    const props = fake.calls.filter((c) => c.op === "setProps" && c.args[0] === "s2").at(-1)?.args[1] as Record<string, unknown>;
-    expect(Object.keys(props).sort()).toEqual(["bot", "file", "format"]);
-    // Quiet: nothing crosses.
-    await wait(150);
-    expect(speech()).toHaveLength(0);
-    // Speaking for ~240 ms, a frame every ~12 ms: a handful of batches, not one per frame, every frame there.
-    await act(async () => setStageSpeaking!(true));
-    let n = 0;
-    const start = performance.now() / 1000;
-    for (let i = 0; i < 20; i++) {
-      stageSpeech.push([{ t: start + n * 0.0116, rms: 0.3, centroid: 1500 }]);
-      n++;
-      await new Promise((r) => setTimeout(r, 12));
-    }
-    await wait(100);
-    const sent = speech();
-    expect(sent.every((c) => c.args[0] === "s2")).toBe(true);
-    const messages = sent.map((c) => c.args[1] as { speaking: boolean; clock: { audio: number; wall: number }; frames: { t: number; rms: number; centroid: number }[] });
-    expect(messages.flatMap((m) => m.frames)).toHaveLength(n);
-    expect(messages.length).toBeLessThanOrEqual(12);
-    expect(messages.length).toBeGreaterThanOrEqual(3);
-    expect(messages[0]!.speaking).toBe(true);
-    // Only numbers: the three per frame, the clock, and the flag.
-    for (const m of messages) {
-      expect(Object.keys(m).sort()).toEqual(["clock", "frames", "speaking"]);
-      for (const f of m.frames) expect(Object.keys(f).sort()).toEqual(["centroid", "rms", "t"]);
-    }
-    // Quiet again: one message saying so, then nothing.
-    await act(async () => setStageSpeaking!(false));
-    await wait(200);
-    expect(speech().length).toBe(sent.length + 1);
-    expect((speech().at(-1)!.args[1] as { speaking: boolean }).speaking).toBe(false);
-    // The window hidden: the feed isn't even heard, and nothing is sent.
-    const visibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
-    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
-    await act(async () => void document.dispatchEvent(new Event("visibilitychange")));
-    expect(stageSpeech.listeners.size).toBe(0);
-    stageSpeech.push([{ t: start + 1, rms: 0.3, centroid: 1500 }]);
-    await wait(100);
-    expect(speech().length).toBe(sent.length + 1);
-    if (visibility) Object.defineProperty(document, "visibilityState", visibility);
-    else delete (document as { visibilityState?: unknown }).visibilityState;
-    await act(async () => void document.dispatchEvent(new Event("visibilitychange")));
-    expect(stageSpeech.listeners.size).toBe(1);
-    // The frame's layer stops: nothing more goes to it.
-    await act(async () => fake.emit({ type: "child-gone", child: "s2", reason: "its layer stopped" }));
-    stageSpeech.push([{ t: start + 2, rms: 0.3, centroid: 1500 }]);
-    await wait(100);
-    expect(speech().length).toBe(sent.length + 1);
-    expect(stageSpeech.listeners.size).toBe(0);
-    stage.unmount();
-  });
-
-  test("an avatar renderer in its own frame: the stage's cues go to it while it can be seen, and what it says about its model and figure reaches the stage's hub", async () => {
-    views["s1:avatar[pngtuber]"] = { spot: "avatar", key: "pngtuber", shape: "keyed", hidden: false, conflict: false, items: [{ kind: "frame", mount: "s2", ref: "example-pngtuber#avatar", pluginId: "example-pngtuber", entryId: "avatar", url: "moss-plugin://example-pngtuber/?mount=s2" }] } as never;
-    const info: MountInfo = { mount: "s1", pluginId: "moss/character", entryId: "bot-stage", component: "Stage", spot: "bot.stage", props: {}, tokens: {}, context: CTX, css: [] };
-    const stage = render(h(ui.LayerRoot, { info }));
-    await tick();
-    const sentCues = () => fake.calls.filter((c) => c.op === "avatar");
-    const before = sentCues().length;
-    await act(async () => stageHub.cue({ type: "expression", name: "happy" }));
-    expect(sentCues().length).toBe(before + 1);
-    expect(sentCues().at(-1)!.args).toEqual(["s2", { kind: "cue", cue: { type: "expression", name: "happy" } }]);
-    // What the frame says goes into the stage's hub (and is read again: a bad one is dropped).
-    const names = { expressions: ["happy", "sad"], motions: [], outfits: [{ name: "hat", on: false }] };
-    published.length = 0;
-    await act(async () => fake.emit({ type: "avatar-up", child: "s2", message: { kind: "state", names, box: { canvas: { width: 300, height: 500 } } } }));
-    expect(published.at(-1)!.names).toEqual(names);
-    expect((published.at(-1)!.box as { canvas: unknown }).canvas).toEqual({ width: 300, height: 500 });
-    const n = published.length;
-    await act(async () => fake.emit({ type: "avatar-up", child: "s2", message: { kind: "state", names: "nope" } as never }));
-    await act(async () => fake.emit({ type: "avatar-up", child: "s9", message: { kind: "state", names: null } }));
-    expect(published.length).toBe(n);
-    // Gone: no more cues.
-    await act(async () => fake.emit({ type: "child-gone", child: "s2", reason: "its layer stopped" }));
-    const after = sentCues().length;
-    await act(async () => stageHub.cue({ type: "pace", calm: true }));
-    expect(sentCues().length).toBe(after);
-    stage.unmount();
-  });
-
-  test("the example PNGtuber renderer in its own frame: the talk picture while the bot speaks, the idle one after; batches from elsewhere change nothing", async () => {
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = (async (url: string) => {
-      expect(String(url)).toBe("https://pngtuber.test/pip.pngtuber.json");
-      return new Response(JSON.stringify({ name: "Pip", idle: "idle.png", talk: "talk.png", blink: "blink.png" }));
-    }) as typeof fetch;
-    try {
-      const info: MountInfo = { mount: "p1", pluginId: "example-pngtuber", entryId: "avatar", component: "PngtuberAvatar", spot: "avatar", key: "pngtuber", props: { bot: { id: "pip", name: "Pip" }, file: "https://pngtuber.test/pip.pngtuber.json", format: "pngtuber" }, tokens: {}, context: CTX, css: [] };
-      const frame = render(h(ui.LayerRoot, { info }));
-      const shown = () => frame.container.querySelector("[data-pngtuber]")?.getAttribute("data-pngtuber");
-      const picture = () => frame.container.querySelector("img")?.getAttribute("src") ?? "";
-      await wait(30);
-      expect(shown()).toBe("idle");
-      expect(picture()).toBe("https://pngtuber.test/idle.png");
-      const wall = () => performance.timeOrigin + performance.now();
-      const frames = (from: number, count: number, rms: number) => Array.from({ length: count }, (_, i) => ({ t: from + i * 0.0116, rms, centroid: 1400 }));
-      // A batch for another frame, or one that isn't numbers, is not this renderer's.
-      await act(async () => fake.emit({ type: "speech", mount: "p9", speech: { speaking: true, clock: { audio: 50, wall: wall() }, frames: frames(50, 20, 0.5) } }));
-      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: true, clock: { audio: "50", wall: wall() }, frames: frames(50, 20, 0.5) } as never }));
-      await wait(30);
-      expect(shown()).toBe("idle");
-      // The bot speaks: ~230 ms of loud frames, starting now on the parent's clock.
-      const w0 = wall();
-      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: true, clock: { audio: 50, wall: w0 }, frames: frames(50, 20, 0.3) } }));
-      await wait(50);
-      expect(shown()).toBe("talk");
-      expect(picture()).toBe("https://pngtuber.test/talk.png");
-      // After the speech: the idle picture again (and its timer stops: nothing is due).
-      await act(async () => fake.emit({ type: "speech", mount: "p1", speech: { speaking: false, clock: { audio: 50 + (wall() - w0) / 1000, wall: wall() }, frames: [] } }));
-      await wait(350);
-      expect(shown()).toBe("idle");
-      frame.unmount();
-    } finally {
-      globalThis.fetch = realFetch;
-    }
-  });
-
   test("a frame in the main or panel spot fills the room it is given and ignores the height its page reports; in another spot it takes the page's height", async () => {
     const frameItem = (mount: string, spot: string) => ({ kind: "frame" as const, mount, ref: `vn#${spot}`, pluginId: "vn", entryId: spot, layer: "vn", url: `moss-plugin://vn/?mount=${mount}` });
     views["w1:main[editor]"] = { spot: "main", key: "editor", shape: "keyed", hidden: false, conflict: false, items: [frameItem("w2", "main")] };
@@ -781,7 +632,8 @@ describe("a document loaded again keeps the user's place", () => {
   });
 });
 
-describe("the example PNGtuber renderer's framing", () => {
+describe("the example PNGtuber renderer's framing", async () => {
+  const pngtuber = await import("../../../packages/plugin-sdk/examples/example-pngtuber/client/index");
   const host = { width: 600, height: 800 };
   const natural = { width: 400, height: 800 };
 

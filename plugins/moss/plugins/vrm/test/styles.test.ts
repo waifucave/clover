@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { basename, join } from "node:path";
 import { readFileSync } from "node:fs";
-import { TOKENS, cssProperty, validateManifest } from "@waifucave/moss-plugin-sdk";
+import { validateManifest } from "@waifucave/moss-plugin-sdk";
 import { checkThemeCss, tokenFallbackProblems, tokenUses, catalogValues } from "@waifucave/moss-plugin-sdk/ui/testing";
 import { AVATAR_CSS } from "../src/ui/styles";
 
@@ -12,7 +12,6 @@ function manifestFindings(root: string): string[] {
 }
 
 
-const byProperty = new Map(TOKENS.map((spec) => [cssProperty(spec.name), spec.name]));
 /** The base theme as the core resolves it with no OS reading: an accent that follows the OS is the catalog's, an ink
  *  on it worked out against it (the CSS fallbacks are those values). */
 const light = catalogValues("light");
@@ -27,13 +26,10 @@ describe("the avatar's stylesheet", () => {
     expect(checkThemeCss(AVATAR_CSS, { component: true })).toEqual([]);
   });
 
-  test("the component reads the stage's light tokens", () => {
-    for (const name of ["avatar.light.key", "avatar.light.fill", "avatar.light.rim", "avatar.exposure"]) expect(byProperty.get(cssProperty(name))).toBe(name);
-  });
 });
 
 describe("the manifest", () => {
-  test("fills the stage's avatar spot for the vrm format, as code", () => {
+  test("fills the avatar plugin's renderer spot for the vrm format, as code", () => {
     const root = join(import.meta.dir, "..");
     expect(manifestFindings(root)).toEqual([]);
     const manifest = JSON.parse(readFileSync(join(root, "moss.json"), "utf8"));

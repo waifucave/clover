@@ -10,7 +10,7 @@
 //   only (what the contributor declared for that point, nothing else of its manifest). A value's `path` fields (by the
 //   point's declaration, `format: "path"`) become asset URLs.
 // * The reader must be on and running too: a turned-off plugin's connection still open reads nothing.
-// * A platform point (`avatar.formats`, `avatar.packs`: the core and the app read it, no plugin declares it) is read by any
+// * A platform point (one the core and the app read, which no plugin declares; none ships today) is read by any
 //   plugin that holds one of the capabilities its catalog entry names (`readBy`); there is no declarer's right to read
 //   it, and no plugin's id decides. Its entries are in force as soon as their plugins run.
 // * A component reads them the same way (`plugin.layer.call`'s `points.entries`, its own plugin as the caller), and

@@ -58,16 +58,6 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "plugins.watch", lets: "Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing", ok: "sees every plugin you have, whether it's on, and when you add or remove one", warns: true },
   { name: "usage.read", lets: "Read usage rows and plan readings", ok: "sees your usage and plan readings", warns: false },
   { name: "logs.read", lets: "Read MOSS's logs and every plugin's", ok: "reads MOSS's logs and every plugin's logs", warns: false },
-  /** Retired by spec revision 19 (§5.4 "There is no avatar in the platform", G7): `avatar.read`, `avatar.control`,
-   *  `avatar.control.all`, `avatar.report` and `bots.avatar` move into the bundled avatar plugin as its own points and
-   *  rules (lane MC). Kept until that lane replaces them. */
-  { name: "avatar.read", lets: "Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change", ok: "sees your bot's figure", warns: false },
-  { name: "avatar.control", lets: "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, look at a point, or move its mouth with speech levels; the renderer says plainly what it doesn't do", ok: "moves your bot's figure", warns: false },
-  /** Any bot's figure, not only the plugin's own: a voice that speaks for every bot sends each its mouth. It holds
-   *  `avatar.control` by holding this (`IMPLIED_CAPABILITIES`). Not display-only (`CONTAINED_TOOL_CAPABILITIES` lacks it). */
-  { name: "avatar.control.all", lets: "Do what avatar.control does for any bot's figure, not only its own: play cues and send the mouth's levels (speech) to any bot's stage; the renderer says plainly what it doesn't do", ok: "moves any of your bots' figures", warns: false },
-  /** The stage's: it tells the core which renderer drew a bot's figure, its names and its box. */
-  { name: "avatar.report", lets: "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)", ok: "tells MOSS how your bots' figures look and where they stand, which other plugins and your bots then see, and receives your bots' expression, motion and speech cues to draw", warns: true },
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
   /** Sound with no press from the user: its background part may start sound by itself, and it may take the device's speech
    *  turn (`device/speech`, one voice at a time). */
@@ -77,11 +67,10 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
    *  own use of it (MOSS Voice's talk button), taking the device's microphone turn (`device/microphone`). */
   { name: "microphone", lets: "Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission still applies, and no other plugin's frame gets it", ok: "hears your microphone, also while no window of it shows", warns: true },
   /** F2 (the app's door for its parts, by capability; the controller's rulings of 2026-11-15): what the bundled Settings,
-   *  Plugins page, bot editor, avatar section, shell and composer do, any plugin may do behind its OK card. Each write is
+   *  Plugins page, bot editor, shell and composer do, any plugin may do behind its OK card. Each write is
    *  the user's own press in the holder's frame; what is on a sealed card today stays on one for every holder. */
   { name: "app.settings", lets: "Read MOSS's own settings (its look, theme, language, layout lists, and which plugin is active for each one-at-a-time job) and, on the user's own press in its frame, change the look, the theme, the language and which plugin does each job", ok: "reads MOSS Code's settings, and changes its window's look, language and which plugin does each job when you press its controls", warns: true },
-  { name: "bots.edit", lets: "On the user's own press in its frame: change a bot's settings (every field of its user layer but the avatar: its name, instructions, model, voice, and whether its browser may reach the home network), its tab's layout switches, and its own plugin's settings for that bot; open MOSS's own key dialog for that bot's keys (the key never passes the plugin); read the model list and MOSS's layout settings", ok: "changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network", warns: true },
-  { name: "bots.avatar", lets: "On the user's own press in its frame: set a bot's avatar from a model file the user picks in MOSS's own file dialog (the path never reaches the plugin), and its avatar and credit fields", ok: "changes your bots' avatars to files you pick, and lists the avatar packs installed", warns: false },
+  { name: "bots.edit", lets: "On the user's own press in its frame: change a bot's settings (its name, instructions, model, voice, and whether its browser may reach the home network), its tab's layout switches, and its own plugin's settings for that bot; open MOSS's own key dialog for that bot's keys (the key never passes the plugin); read the model list and MOSS's layout settings", ok: "changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network", warns: true },
   { name: "plugins.read", lets: "Read every plugin's record and manifest, its settings (a secret only as set or not), sign-ins, development folders, granted files, commands and notification mutes, and the plugin indexes; it can change nothing", ok: "sees every plugin you have, its settings and what it may do", warns: true },
   /** Carries `plugins.read` (`IMPLIED_CAPABILITIES`). */
   { name: "plugins.manage", lets: "On the user's own press in its frame: install (each landing behind its own OK card), remove, update, pin, restart and switch plugins on and off; add and remove indexes and development folders (a folder only from MOSS's own picker); sign plugins in and out (a key only in MOSS's own key dialog); change any plugin's settings (never a key); take back picked files; mute a plugin's notifications. A removal, an update, a sign-out and a renewal still ask on MOSS's sealed card", ok: "installs, removes, switches on and off and changes the settings and sign-ins of your plugins when you press its controls", warns: true },
@@ -106,9 +95,8 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "network:<host>", lets: "Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host", ok: "connects to {host}", warns: false },
 ];
 
-/** What holding a capability also gives: `avatar.control.all` is `avatar.control` for every bot, so a plugin that
- *  declares only the first still has `avatar.cue`; `plugins.manage` reads what it manages (`plugins.read`). The router reads a plugin's grants through `withImplied`. */
-export const IMPLIED_CAPABILITIES: Readonly<Record<string, readonly string[]>> = { "avatar.control.all": ["avatar.control"], "plugins.manage": ["plugins.read"] };
+/** What holding a capability also gives: `plugins.manage` reads what it manages (`plugins.read`). The router reads a plugin's grants through `withImplied`. */
+export const IMPLIED_CAPABILITIES: Readonly<Record<string, readonly string[]>> = { "plugins.manage": ["plugins.read"] };
 
 /** `granted` and the capabilities they imply. */
 export function withImplied(granted: readonly string[]): readonly string[] {

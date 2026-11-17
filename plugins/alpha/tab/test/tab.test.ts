@@ -60,8 +60,6 @@ describe("Alpha's theme", () => {
     ["color.success", "color.surface", 4.5],
     ["bubble.user.text", "bubble.user.background", 7],
     ["composer.text", "composer.background", 7],
-    // The avatar's credit line sits on a plate of the surface colour, below the avatar.
-    ["stage.text", "color.surface", 4.5],
     ["color.text.placeholder", "color.surface", 4.5],
     ["composer.placeholder", "composer.background", 4.5],
   ];
@@ -146,8 +144,9 @@ describe("Alpha's layouts", () => {
 });
 
 describe("what Alpha's manifest names (spec §5.9's example)", () => {
-  test("the theme, the layout and the avatar are where it says", () => {
-    for (const path of ["tab/theme.json", "tab/layout.json", "assets/alpha.vrm", "assets/live2d/alpha.model3.json", "assets/live2d/alpha.moc3", "assets/live2d/alpha.png"]) expect(existsSync(join(ALPHA, path)), path).toBe(true);
+  test("the theme and the layout are where it says; her figure is her avatar pack's (moss/alpha-figure)", () => {
+    for (const path of ["tab/theme.json", "tab/layout.json"]) expect(existsSync(join(ALPHA, path)), path).toBe(true);
+    for (const path of ["vrm/alpha.vrm", "live2d/alpha.model3.json", "live2d/alpha.moc3", "live2d/alpha.png"]) expect(existsSync(join(ALPHA, "..", "moss", "plugins", "alpha-figure", path)), path).toBe(true);
     // The portrait is an SVG until a real one exists; the spec's example says portrait.webp.
     expect(existsSync(join(ALPHA, "assets/portrait.svg"))).toBe(true);
     expect(dirname(join(ALPHA, "tab", "theme.json"))).toBe(TAB);

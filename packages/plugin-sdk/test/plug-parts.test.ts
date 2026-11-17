@@ -25,12 +25,10 @@ describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
       "It reads your conversations with all your bots.",
       "It lets its own buttons move around MOSS's window.",
       "It sees which tab and panels are showing.",
-      "It sees your bot's figure.",
-      "It moves your bot's figure.",
       "Its components reach no host; its host code can reach any host.",
       "It adds an agent definition Study buddy: instructions an agent follows when your bot hands it work.",
       "Its server stage says this tool only reads, so at the default approval level it runs without asking: stage_status.",
-      "Its server stage says these tools only change its own display, so at the default level they run without asking: celebrate, pin_note, play_motion, set_expression, set_mood, set_scene, toggle_outfit, unpin_note.",
+      "Its server stage says these tools only change its own display, so at the default level they run without asking: celebrate, pin_note, set_mood, set_scene, unpin_note.",
     ]);
   });
 
@@ -88,8 +86,8 @@ describe("the new fields", () => {
   });
 
   test("an entry on a point another plugin declares is beside the bot; one on a point of its own tree is inside", () => {
-    const parts = pluginParts({ id: "mika", contributes: { bot: { name: "Mika" }, "island.line": [{ id: "day", handler: "line" }], "mika.scenes": [{ id: "beach" }], "avatar.formats": [{ id: "png" }] } });
-    expect(parts.beside.map((p) => [p.ref, p.kind])).toEqual([["island.line/0", "island.line"], ["avatar.formats/0", "avatar.formats"]]);
+    const parts = pluginParts({ id: "mika", contributes: { bot: { name: "Mika" }, "island.line": [{ id: "day", handler: "line" }], "mika.scenes": [{ id: "beach" }], "moss.voice.providers": [{ id: "png" }] } });
+    expect(parts.beside.map((p) => [p.ref, p.kind])).toEqual([["island.line/0", "island.line"], ["moss.voice.providers/0", "moss.voice.providers"]]);
     expect(parts.inside.map((p) => p.ref)).toEqual(["mika.scenes/0"]);
     // A child of a bot's tree: its parent's points are its tree's own.
     expect(pluginParts({ contributes: { bot: { name: "Kid" }, "mika.scenes": [{ id: "cave" }] } }, { id: "mika" }).inside.map((p) => p.ref)).toEqual(["mika.scenes/0"]);

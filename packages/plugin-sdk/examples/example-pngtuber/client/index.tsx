@@ -1,42 +1,68 @@
-// The picture-swap renderer, a whole character renderer in one file. The app's character part (moss/character) puts the `avatar`
-// spot on a bot's stage and picks the entry whose `key` is the bot's avatar format ("pngtuber" here); that entry draws it.
-// What this folder declares in moss.json is all the app needs to know about the format: the files it may serve (a small JSON
-// list and pictures, inside the model's own folder), the extension that picks it when a user imports a model, and the one thing
-// it can do (`lipsync`, `expressions`). It ships no engine: the pictures are plain <img> elements, and a second set, for the
-// `happy` expression, is drawn by code (an inline SVG), so there is nothing to ship for it.
+// The picture-swap renderer, a whole renderer for the avatar plugin in one file. The avatar plugin (moss/character) shows one
+// figure at a time; it asks its own UI spot `moss.character.renderer` for the drawing, keyed by the figure's format
+// ("pngtuber" here), and this entry draws it. What this folder declares in moss.json is all the avatar plugin needs to know:
+// the format and what it can do (`moss.character.formats`: `lipsync`, `expressions`), and one figure in it, Sunny
+// (`moss.character.packs`: the model's entry file, whose small JSON list and pictures beside it come along). It ships no
+// engine: the pictures are plain <img> elements, and a second set, for the `happy` expression, is drawn by code (an inline
+// SVG), so there is nothing to ship for it.
 //
-// The avatar contract (`useAvatarControl`): a bot plugin's cue arrives with `onCue`, the renderer says which expressions it has
-// with `setCatalogue`, and where the figure stands with `setBox`. A cue for an expression it doesn't list never gets here.
+// The avatar plugin's contract, point messages on its spot: it sends `{ mount, cue }` for this drawing's `mount`, and this
+// renderer sends back `{ mount, names }` (which expressions it has) and `{ mount, box }` (where the figure stands). The mouth
+// comes from MOSS Voice's own point `moss.voice.speech`, which this plugin fills: its levels, stamped in epoch milliseconds,
+// become a speech feed through the SDK's `TimedSpeech`. Each point it fills is a line on its OK card.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAvatarControl, useAvatarSpeech, useT } from "@waifucave/moss-plugin-sdk/ui";
+import { TimedSpeech, useT, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 
-/** What the app gives the `avatar` spot. `file` is the URL of the bot's `.pngtuber.json`. The speech comes from
- *  `useAvatarSpeech()`, not the props: in a plugin's frame it arrives as numbers the app sends on. */
+const RENDERER_SPOT = "moss.character.renderer";
+const SPEECH_POINT = "moss.voice.speech";
+
+/** What the avatar plugin gives its renderer spot. `file` is the URL of the figure's `.pngtuber.json`; `mount` names this
+ *  drawing in the point messages. */
 interface AvatarProps {
-  bot: { id: string; name?: string } | string;
+  mount?: string;
+  name?: string;
   file: string;
   format: string;
-  /** How the stage frames the figure, from the theme (CSS variables do not cross into a plugin's frame, so the stage reads them and
+  /** How the avatar plugin frames the figure, from the theme (CSS variables do not cross into a plugin's frame, so it reads them and
    *  sends them as data): the preset `mode`, or the part of the figure's height to `crop` to (0.2 to 1) with `headroom` above it.
    *  Absent: the whole picture, fitted. */
   framing?: { mode?: "full" | "bust" | "waist"; crop?: number; headroom?: number };
 }
 interface EntryProps { props: AvatarProps }
 
-/** The speech feed `useAvatarSpeech()` hands a renderer: loudness frames on the audio clock, a little ahead of when they play. */
-interface SpeechFrame { t: number; rms: number; centroid: number }
-interface SpeechFeed {
-  subscribe(listener: (frames: readonly SpeechFrame[]) => void): () => void;
-  now(): number;
+/** MOSS Voice's levels, kept by time (the SDK's `TimedSpeech`). */
+function useVoiceFeed(): TimedSpeech {
+  const api = usePluginApi();
+  const feed = useMemo(() => new TimedSpeech(), []);
+  useEffect(() => {
+    feed.reopen();
+    return () => feed.close();
+  }, [feed]);
+  useEffect(() => api.points.onMessage(SPEECH_POINT, (m) => feed.accept(m.value, m.from)), [api, feed]);
+  return feed;
+}
+
+/** The avatar plugin's cues for this drawing, and what goes back to it. */
+function useFigure(mount: string | undefined) {
+  const api = usePluginApi();
+  return useMemo(() => ({
+    onCue(listener: (cue: { type?: unknown; name?: unknown }) => void, ask?: () => void): () => void {
+      return api.points.onMessage(RENDERER_SPOT, (m) => {
+        const v = m.value as { mount?: unknown; cue?: unknown; ask?: unknown } | null;
+        if (mount === undefined || v?.mount !== mount) return;
+        // The avatar plugin asks again for what it may have missed: say it once more.
+        if (v.ask === "report") return ask?.();
+        if (typeof v.cue === "object" && v.cue !== null) listener(v.cue as { type?: unknown; name?: unknown });
+      });
+    },
+    say(what: Record<string, unknown>): void {
+      if (mount !== undefined) void api.points.send(RENDERER_SPOT, { mount, ...what }).catch(() => undefined);
+    },
+  }), [api, mount]);
 }
 
 /** The model's own file: three pictures, named relative to it. */
 interface Pictures { name?: string; idle: string; talk: string; blink: string }
-
-/** A frame this loud has the mouth open; a frame is heard for at most this long; the mouth is looked at this often while speech is due. */
-const OPEN_RMS = 0.04;
-const FRAME_SECONDS = 0.05;
-const LOOK_MS = 40;
 
 /** The three pictures, read from the model's JSON and resolved against its URL; undefined while loading, null if it can't be read. */
 function usePictures(file: string): { name?: string; urls: Record<"idle" | "talk" | "blink", string> } | null | undefined {
@@ -62,32 +88,15 @@ function usePictures(file: string): { name?: string; urls: Record<"idle" | "talk
   return state;
 }
 
-/** Whether the mouth is open now, from the feed. With no feed (the app is not describing speech to this frame) it stays
- *  shut. It looks only while speech is still due: a quiet bot runs no timer. */
-function useMouthOpen(feed: SpeechFeed | undefined): boolean {
-  const [open, setOpen] = useState(false);
+/** Whether the bot is speaking now: from its first level's time to a moment after its last (the feed's `speaking`). A
+ *  picture-swap figure shows its talking picture for all of it; it runs no timer of its own. */
+function useTalking(feed: TimedSpeech): boolean {
+  const [talking, setTalking] = useState(feed.speaking);
   useEffect(() => {
-    if (feed === undefined) return;
-    let frames: SpeechFrame[] = [];
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const look = (): void => {
-      timer = undefined;
-      const now = feed.now();
-      frames = frames.filter((f) => f.t + FRAME_SECONDS >= now);
-      setOpen(frames.some((f) => f.t <= now && now < f.t + FRAME_SECONDS && f.rms > OPEN_RMS));
-      if (frames.length > 0) timer = setTimeout(look, LOOK_MS);
-    };
-    const off = feed.subscribe((more) => {
-      frames = frames.concat(more).slice(-400);
-      if (timer === undefined) look();
-    });
-    return () => {
-      off();
-      if (timer !== undefined) clearTimeout(timer);
-      setOpen(false);
-    };
+    setTalking(feed.speaking);
+    return feed.onSpeaking(setTalking);
   }, [feed]);
-  return open;
+  return talking;
 }
 
 /** A blink every few seconds, for a moment. */
@@ -114,25 +123,25 @@ function useBlink(): boolean {
 const HAPPY = "happy";
 const HAPPY_MS = 8000;
 
-/** Listens for the bot's expression cue: whether the happy set is showing. It has just the one expression, held a few seconds. */
-function useHappy(): boolean {
-  const control = useAvatarControl();
+/** Listens for the expression cue: whether the happy set is showing. It has just the one expression, held a few seconds. */
+function useHappy(figure: ReturnType<typeof useFigure>): boolean {
   const [happy, setHappy] = useState(false);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    control.setCatalogue({ expressions: [HAPPY], motions: [], outfits: [] });
-    const off = control.onCue((cue) => {
+    const names = { expressions: [HAPPY], motions: [], outfits: [] };
+    figure.say({ names });
+    const off = figure.onCue((cue) => {
       if (cue.type !== "expression" || cue.name !== HAPPY) return;
       setHappy(true);
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(() => setHappy(false), HAPPY_MS);
-    });
+    }, () => figure.say({ names }));
     return () => {
       off();
       if (timer !== undefined) clearTimeout(timer);
-      control.setCatalogue(undefined);
+      figure.say({ names: null });
     };
-  }, [control]);
+  }, [figure]);
   return happy;
 }
 
@@ -170,13 +179,13 @@ const CSS = `
 
 export function PngtuberAvatar({ props }: EntryProps) {
   const t = useT();
-  const botName = typeof props.bot === "string" ? props.bot : (props.bot.name ?? props.bot.id);
+  const botName = props.name ?? "";
   const pictures = usePictures(props.file);
-  const mouthOpen = useMouthOpen(useAvatarSpeech().feed);
+  const mouthOpen = useTalking(useVoiceFeed());
   const blinking = useBlink();
-  const happy = useHappy();
-  // Where the figure stands: the stage's size and the picture's box, said when it shows and when it resizes (throttled by the app).
-  const control = useAvatarControl();
+  const figure = useFigure(props.mount);
+  const happy = useHappy(figure);
+  // Where the figure stands: its box's size and the picture's, said when it shows and when it resizes.
   const stage = useRef<HTMLDivElement>(null);
   const picture = useRef<HTMLElement | null>(null);
   // The stage's size and the picture's own, for the framing the stage asks for.
@@ -189,13 +198,13 @@ export function PngtuberAvatar({ props }: EntryProps) {
       const h = host.getBoundingClientRect();
       setHostSize((was) => (was.width === Math.round(h.width) && was.height === Math.round(h.height) ? was : { width: Math.round(h.width), height: Math.round(h.height) }));
       const p = picture.current?.getBoundingClientRect();
-      control.setBox({ canvas: { width: Math.round(h.width), height: Math.round(h.height) }, ...(p ? { figure: { x: Math.round(p.left - h.left), y: Math.round(p.top - h.top), width: Math.round(p.width), height: Math.round(p.height) } } : {}) });
+      figure.say({ box: { canvas: { width: Math.round(h.width), height: Math.round(h.height) }, ...(p ? { figure: { x: Math.round(p.left - h.left), y: Math.round(p.top - h.top), width: Math.round(p.width), height: Math.round(p.height) } } : {}) } });
     };
     const ro = new ResizeObserver(say);
     ro.observe(host);
     say();
-    return () => { ro.disconnect(); control.setBox(undefined); };
-  }, [control, pictures === undefined || pictures === null, happy]);
+    return () => { ro.disconnect(); figure.say({ box: null }); };
+  }, [figure, pictures === undefined || pictures === null, happy]);
   const shown = useMemo(() => {
     if (!pictures) return undefined;
     return mouthOpen ? pictures.urls.talk : blinking ? pictures.urls.blink : pictures.urls.idle;
@@ -203,7 +212,7 @@ export function PngtuberAvatar({ props }: EntryProps) {
   const framed = framePicture(props.framing, happy ? { width: 200, height: 200 } : natural, hostSize);
   const place = framed === undefined ? undefined : ({ left: framed.left, top: framed.top, width: framed.width, height: framed.height } as const);
   return (
-    <div ref={stage} className="pt" data-pngtuber={pictures === null ? "broken" : shown === undefined ? "loading" : happy ? "happy" : mouthOpen ? "talk" : blinking ? "blink" : "idle"}>
+    <div ref={stage} className="pt" data-pngtuber={/* the mouth shows on either face, so talking is said first */ pictures === null ? "broken" : shown === undefined ? "loading" : mouthOpen ? "talk" : happy ? "happy" : blinking ? "blink" : "idle"}>
       <style>{CSS}</style>
       {pictures === null ? <span className="pt__note">{t("example-pngtuber.cant")}</span> : shown === undefined ? null : happy
         ? <span ref={(el) => { picture.current = el; }} {...(place === undefined ? { style: { display: "contents" } } : { "data-framed": "", style: { ...place, display: "block" } })}><HappyFace open={mouthOpen} label={t("example-pngtuber.label", { name: botName })} /></span>

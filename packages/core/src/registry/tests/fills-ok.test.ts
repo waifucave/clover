@@ -71,6 +71,15 @@ describe("a point's fills line", () => {
     }
   });
 
+  test("a UI spot a plugin declares gives its `fills` line to the plugins that fill it through `ui`", () => {
+    const report = validateManifest({ manifest: 1, id: "skin", name: "Skin", engines: ENGINES, client: { entry: "client/index.tsx" }, contributes: { ui: [{ spot: "metronome.dial", id: "brass", component: "Brass" }] } }, { folderName: "skin" });
+    const fillsOf = (p: string) => (p === "metronome.dial" ? { by: "Metronome", id: "metronome", title: "Dial", ok: "it is handed every beat as it is played", tree: "metronome" } : undefined);
+    expect(fillsOkLines([report], fillsOf)).toEqual(['Fills Metronome\'s (metronome) "Dial": it is handed every beat as it is played.']);
+    // A stock spot's entry (no dot, the shell's) asks no declarer.
+    const plain = validateManifest({ manifest: 1, id: "plain", name: "Plain", engines: ENGINES, client: { entry: "client/index.tsx" }, contributes: { ui: [{ spot: "settings.section", id: "s", component: "S", title: "S" }] } }, { folderName: "plain" });
+    expect(fillsOkLines([plain], fillsOf)).toEqual([]);
+  });
+
   test("an edit that fills such a point asks again, even before anything else changed; one with no new line applies", () => {
     const snap = (okHash: string, fills?: string[]): OkSnapshot => ({ okHash, files: [], plugins: {}, cards: "", codePaths: [], ...(fills === undefined ? {} : { fills }) });
     expect(classifyChange(snap("a", []), snap("a", ["Fills X's \"Y\": z."]))).toBe("asks-again");

@@ -1,6 +1,6 @@
-// MOSS Voice's mouth (spec §6.6): what its player plays reaches a bot's stage as the avatar cue API's speech cue
-// (`avatar.cue({ type: "speech", frames }, { bot })`, with `avatar.control.all`). The stage takes its mouth from the cue
-// API only; this is how the speech the player schedules gets there.
+// MOSS Voice's mouth (spec §6.6): what its player plays reaches every plugin with an entry in MOSS Voice's own point
+// `moss.voice.speech` as a point message (`points.send`, `{ bot, frames, cut? }`), which a part that moves a mouth reads
+// (`points.onMessage`). Filling the point is what its `fills` line on that plugin's OK card says.
 //
 // * Each scheduled stretch of samples is measured in hops of HOP samples (5.3 ms at 24 kHz): loudness as the hop's RMS,
 //   brightness from its zero crossings. Four hops make one level (~21 ms: loudness the RMS of their loudness,
@@ -9,8 +9,8 @@
 // * The first batch of a burst goes at once; the rest every FLUSH_MS while any wait (one batch per tick), so a long
 //   stretch is spread under the core's per-second window. With nothing buffered no timer runs.
 // * An utterance the player stops or replaces sends `cut` (after what was already sent, in order): the unsent levels
-//   of that bot are forgotten and the stage drops what it holds.
-// * A call the core refuses or answers `no-renderer` is dropped: the mouth is a display, never a reason to fail the sound.
+//   of that bot are forgotten and a listener drops what it holds.
+// * A send the core refuses is dropped: the mouth is a display, never a reason to fail the sound.
 
 /** Levels in one batch at most (the SDK's `SPEECH_FRAMES_MAX`). */
 export const SPEECH_FRAMES_MAX = 128;
@@ -24,7 +24,7 @@ export const FLUSH_MS = 100;
 /** One hop as measured: its time on the audio clock (seconds), its loudness and its brightness (Hz). */
 export interface HopFrame { t: number; rms: number; centroid: number }
 export interface CueFrame { t: number; rms: number; centroid?: number }
-export type SendCue = (bot: string, cue: { type: "speech"; frames: readonly CueFrame[]; cut?: true }) => Promise<unknown> | unknown;
+export type SendCue = (bot: string, cue: { frames: readonly CueFrame[]; cut?: true }) => Promise<unknown> | unknown;
 
 /** The hops of `samples` (mono, -1..1) starting at `start` seconds on the audio clock. */
 export function measure(samples: Float32Array, sampleRate: number, start: number, hop = HOP): HopFrame[] {
@@ -90,7 +90,7 @@ export class SpeechCues {
 
   cut(bot: string): void {
     this.#buffers.delete(bot);
-    this.#post(bot, { type: "speech", frames: [], cut: true });
+    this.#post(bot, { frames: [], cut: true });
   }
 
   /** Stops for good: what is unsent is forgotten. */
@@ -117,7 +117,7 @@ export class SpeechCues {
       if (buffer.length === 0) this.#buffers.delete(bot);
       if (frames.length > 0) {
         this.sent += frames.length;
-        this.#post(bot, { type: "speech", frames });
+        this.#post(bot, { frames });
       }
     }
     if (this.#buffers.size > 0) this.#flushSoon();

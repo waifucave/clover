@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AVATAR_FILE_CAPS, clampAvatarCap, contributionLabels, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, ISLAND_LINE_OK_LINE, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { DATA_FILE_CAPS, clampDataFileCap, contributionLabels, PLUGIN_API_VERSION, backgroundOkLines, describeOk, hookOkLines, HOST_START_OK_LINES, ISLAND_LINE_OK_LINE, NOTIFIER_OK_LINE, PILL_TARGET_OK_LINE, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -14,7 +14,6 @@ const ALPHA = `{ "manifest": 1, "id": "alpha", "version": "1.111.1", "name": "Al
   "contributes": {
     "bot": { "name": "Alpha", "instructions": "bot/instructions.md", "greeting": "bot/greeting.md", "memory": "bot/memory",
              "model": { "default": "<qualified catalog id>", "effort": "medium" },
-             "avatar": { "file": "assets/alpha.vrm", "format": "vrm", "portrait": "assets/portrait.webp" },
              "theme": "alpha", "layout": "tab/layout.json" },
     "themes": [{ "id": "alpha", "file": "tab/theme.json" }] } }`;
 
@@ -505,10 +504,10 @@ describe("declared points (§5.4)", () => {
   });
 
   test("a well-known data point's entries are checked against the catalog now", () => {
-    const r = validateManifest({ ...min(), contributes: { "avatar.packs": [{ id: "chibi", file: "chibi.vrm", format: "vrm" }, { id: "bad" }] } });
+    const r = validateManifest({ ...min(), engines: { moss: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { "webhook.ingress": [{ id: "fwd", handler: "ingress" }, { id: "bad" }] } });
     expect(r.ok).toBe(true);
     expect(has(r, "schema", "entry")).toBe(true);
-    expect(r.manifest?.contributes?.["avatar.packs"]).toEqual([{ id: "chibi", file: "chibi.vrm", format: "vrm" }]);
+    expect(r.manifest?.contributes?.["webhook.ingress"]).toEqual([{ id: "fwd", handler: "ingress" }]);
   });
 });
 
@@ -860,50 +859,38 @@ describe("a hook's command never runs its stdin (its input) as a script", () => 
     }
   });
 
-  describe("avatar.formats: what a renderer declares about its format", () => {
-    const fmt = (over: Record<string, unknown> = {}) => ({
-      id: "pngtuber", format: "pngtuber", name: "PNGtuber", entry: { extensions: [".pngtuber.json"] },
-      files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 65536 }, { ext: [".png", ".webp"], type: "image", maxBytes: 4194304 }], find: "folder" },
-      import: { accepts: ["folder", "zip"] }, capabilities: ["lipsync"], ...over,
-    });
-    const run = (entry: unknown) => validateManifest({ ...min(), contributes: { "avatar.formats": [entry] } });
-    test("a declaration of kinds from the closed set passes, with the default finder", () => {
-      const r = run(fmt({ files: { kinds: [{ ext: [".png"], type: "image" }] } }));
-      expect(r.issues).toEqual([]);
-      expect((r.manifest?.contributes?.["avatar.formats"] as { files: { find: string } }[])[0]!.files.find).toBe("folder");
-    });
-    test("a kind outside the closed set (svg, html, script, wasm) is refused", () => {
-      for (const type of ["svg", "html", "script", "wasm", "css", "xml"]) {
-        const r = run(fmt({ files: { kinds: [{ ext: [".x"], type }], find: "folder" } }));
-        expect(has(r, "schema", "entry"), type).toBe(true);
-        expect(r.manifest?.contributes?.["avatar.formats"] ?? []).toEqual([]);
+  describe("files that come with a point's entries (`files` on a declaration; a word-list point, nothing about figures)", () => {
+    const declares = (files: unknown, list: Record<string, unknown> = { type: "string", format: "path" }) => validateManifest({ ...min(), engines: { moss: "^1.0.0" }, contributes: {}, ...{ host: { entry: "host/index.ts", declares: { "luna.lists": { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, list } }, files } } } } });
+    test("a kind that names a page, a script, a style, SVG or wasm is refused, whatever its type", () => {
+      for (const ext of [".svg", ".html", ".js", ".mjs", ".css", ".wasm"]) {
+        expect([ext, declares({ list: { kinds: [{ ext: [".json"], type: "json" }, { ext: [ext], type: ext === ".svg" ? "image" : "text" }] } }).issues.map((i) => i.code)]).toEqual([ext, ["point_files"]]);
       }
     });
-    test("a cap above the kind's limit and a finder the core does not have are refused", () => {
-      expect(has(run(fmt({ files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 9 * 1024 * 1024 }], find: "folder" } })), "schema", "entry")).toBe(true);
-      expect(has(run(fmt({ files: { kinds: [{ ext: [".json"], type: "json" }], find: "my-script" } })), "schema", "entry")).toBe(true);
+    test("kinds from the closed set on a `path` field pass", () => {
+      expect(declares({ list: { kinds: [{ ext: [".json"], type: "json", maxBytes: 65536 }, { ext: [".mp3", ".ogg"], type: "audio" }] } }).issues).toEqual([]);
     });
-    test("extensions are plain lower-case suffixes", () => {
-      expect(has(run(fmt({ entry: { extensions: ["../x"] } })), "schema", "entry")).toBe(true);
-      expect(has(run(fmt({ files: { kinds: [{ ext: [".PNG"], type: "image" }], find: "folder" } })), "schema", "entry")).toBe(true);
+    test("a kind outside the closed set (svg, html, script, wasm) is refused", () => {
+      for (const type of ["svg", "html", "script", "wasm", "css", "xml"]) expect(has(declares({ list: { kinds: [{ ext: [".x"], type }] } }), "schema"), type).toBe(true);
     });
-    test("the caps clamp what a renderer asks for", () => {
-      expect(clampAvatarCap("json", undefined)).toBe(AVATAR_FILE_CAPS.json);
-      expect(clampAvatarCap("json", 1 << 30)).toBe(AVATAR_FILE_CAPS.json);
-      expect(clampAvatarCap("image", 1000)).toBe(1000);
+    test("a cap above the kind's limit, an extension that isn't a plain lower-case suffix, and a field that isn't a path are refused", () => {
+      expect(has(declares({ list: { kinds: [{ ext: [".json"], type: "json", maxBytes: 9 * 1024 * 1024 }] } }), "schema")).toBe(true);
+      expect(has(declares({ list: { kinds: [{ ext: ["../x"], type: "json" }] } }), "schema")).toBe(true);
+      expect(has(declares({ list: { kinds: [{ ext: [".PNG"], type: "image" }] } }), "schema")).toBe(true);
+      expect(has(declares({ list: { kinds: [{ ext: [".json"], type: "json" }] } }, { type: "string" }), "point_files")).toBe(true);
+      expect(has(declares({ other: { kinds: [{ ext: [".json"], type: "json" }] } }), "point_files")).toBe(true);
+    });
+    test("the caps clamp what a declaration asks for", () => {
+      expect(clampDataFileCap("json", undefined)).toBe(DATA_FILE_CAPS.json);
+      expect(clampDataFileCap("json", 1 << 30)).toBe(DATA_FILE_CAPS.json);
+      expect(clampDataFileCap("image", 1000)).toBe(1000);
     });
   });
 
-  test("a bot's avatar file is checked early: a path inside the folder that names a file", () => {
-    const bot = (file: string, format = "live2d") => validateManifest({ ...min(), contributes: { bot: { name: "L", instructions: "bot/i.md", avatar: { file, format } } } });
-    expect(has(bot("assets/live2d/a.model3.json"), "schema")).toBe(false);
-    for (const file of ["../a.model3.json", "assets/../../a.model3.json", "/etc/a.model3.json", "C:/a.model3.json", "assets/live2d/", "assets/.."]) {
-      const r = bot(file);
-      expect(r.issues.length, file).toBeGreaterThan(0);
-    }
-    expect(bot("", "vrm").issues.length).toBeGreaterThan(0);
-    // The same for any format, a folder is no file.
-    expect(bot("assets/", "spine").issues.length).toBeGreaterThan(0);
+  test("a bot's own figure is retired: an older bot still loads, the field ignored, and the warning says where a figure goes now", () => {
+    const r = validateManifest({ ...min(), contributes: { bot: { name: "L", instructions: "bot/i.md", avatar: { file: "assets/a.vrm", format: "vrm" } } } });
+    expect(r.ok).toBe(true);
+    expect(r.issues.find((i) => i.code === "bot_avatar_retired")?.message).toMatch(/`contributes.bot.avatar` is retired: use the avatar plugin's own point `moss.character.packs`/);
+    expect((r.manifest?.contributes?.bot as Record<string, unknown> | undefined)?.avatar).toBeUndefined();
   });
 });
 

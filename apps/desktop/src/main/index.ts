@@ -79,7 +79,7 @@ import { guardContents, hardenSession, installIpc, installUiSession, registerSch
 import { FrameWatches } from "./ui/frame-watches";
 import { LAYER_SCHEME } from "./ui/documents";
 import { micHandlers } from "./ui/microphone";
-import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
+import { LayerError, surfaceSettingHolds, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
@@ -432,7 +432,7 @@ async function ready(): Promise<void> {
   const fileGrants = new FileGrants();
   installUiSession(ui, runtime, dirs, log, {
     grants: fileGrants,
-    unguardedLayers: new Set(unguarded), avatarsDir: join(home, "user-layers", "avatars"),
+    unguardedLayers: new Set(unguarded), pluginDataDir: join(home, "plugin-data"),
     // A plugin's icon for the Plugins page's lists: where it is (`plugin.iconSource`, the app's alone), read here.
     pluginIcon: (id) => pluginIconFile(async (pid) => {
       const c = pair?.client;
@@ -492,15 +492,14 @@ async function ready(): Promise<void> {
       const client = pair.client;
       if (client === undefined) throw new LayerError("MOSS Code isn't running");
       // An install or an update downloads (up to 30 minutes for a large one); everything else answers within 30 s.
-      return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : method === "bot.importAvatar" ? 5 * 60_000 : 30_000);
+      return client.request(method, params ?? {}, method === "plugin.install" || method === "plugin.update" ? 30 * 60_000 : 30_000);
     },
     // The Plugins page's picker (tree-calls.ts `ui.pick`): main's own dialog over the window; a headless test-marked or
     // acceptance build takes the path the harness named instead (never in a release, which compiles both marks out; the
     // marker gate's TEST_ONLY_APP_STRINGS checks it).
     pick: async (windowId, kind, filters, use) => {
-      // An avatar's pick has its own answer (MOSS_TEST_PICK_AVATAR), so one run can pick a plugin folder and a model.
       if ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && headless) {
-        const named = use === "bot.importAvatar" ? process.env.MOSS_TEST_PICK_AVATAR : process.env.MOSS_TEST_PICK;
+        const named = process.env.MOSS_TEST_PICK;
         // A `.pick` file names the folder at each pick, so one run picks several in turn (the harness rewrites it).
         const answer = named !== undefined && named.endsWith(".pick") ? (() => { try { return readFileSync(named, "utf8").split("\n")[0]!.trim(); } catch { return ""; } })() : named;
         if (answer !== undefined) return answer === "" ? undefined : answer;
@@ -1496,6 +1495,14 @@ function makePair(): Pair {
       }
     }
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found" || type === "plugin_ui_changed" || type === "methods_changed") scheduleReload();
+    // A plugin's setting changed (its key only): a surface of its that says `when.setting` reads them again.
+    if (type === "plugin_settings_changed") {
+      const id = (params as { pluginId?: unknown }).pluginId;
+      if (typeof id === "string" && runtime.surfaceEntries().some((w) => w.pluginId === id && w.setting !== undefined)) {
+        surfaceSettings.delete(id);
+        readSurfaceSettings(id);
+      }
+    }
     if (type === "card_requested") {
       const parsed = CardRequestedEvent.safeParse(params);
       if (parsed.success) cardArrivedNow(parsed.data.card);
@@ -1730,6 +1737,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   // A new connection's router starts the book afresh before its events can come (it is followed already, at the connection's
   // first subscription); a registry reload on the same one keeps what its events said.
   enginePlaces.follow(client);
+  // A surface's `when.setting` is read again on each connection (a setting changed while away sent no event here).
+  surfaceSettings.clear();
   await client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] }).catch(() => undefined);
   void reportPresence().then(() => client.request<unknown>("card.placement", {})).then((raw) => {
     const r = SURFACES_METHODS.cardPlacement.result.safeParse(raw);
@@ -2460,9 +2469,30 @@ function syncBackgrounds(): void {
 }
 app.on?.("before-quit", () => { for (const b of backgrounds.values()) if (!b.win.isDestroyed()) b.win.destroy(); });
 
+/** The settings of the plugins with a surface entry that says `when.setting`, as the core last said them (by plugin, then
+ *  key). A surface whose plugin's settings aren't known yet stays closed until they are; a change of one of that
+ *  plugin's settings (`plugin_settings_changed`, its key only) reads them again. Nothing is opened for a person who never
+ *  turned the setting on. */
+const surfaceSettings = new Map<string, ReadonlyMap<string, unknown>>();
+const surfaceSettingsAsked = new Set<string>();
+function readSurfaceSettings(pluginId: string): void {
+  const client = pair.client;
+  if (client === undefined || surfaceSettingsAsked.has(pluginId)) return;
+  surfaceSettingsAsked.add(pluginId);
+  void client.request<{ settings?: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: pluginId }, 10_000).then((r) => {
+    surfaceSettings.set(pluginId, new Map((r.settings ?? []).map((x) => [x.key, x.value])));
+  }, (err: unknown) => log(`surface: ${pluginId}'s settings couldn't be read (${why(err)}); its surfaces that need one stay closed`)).finally(() => {
+    surfaceSettingsAsked.delete(pluginId);
+    syncSurfaces();
+  });
+}
 function syncSurfaces(): void {
   // lane HS: only where the mount puts the screen's surfaces (one island: the host's once it runs).
-  const wanted = mountNow.surfaces ? runtime.surfaceEntries() : [];
+  const wanted = (mountNow.surfaces ? runtime.surfaceEntries() : []).filter((w) => {
+    const holds = surfaceSettingHolds(w.setting, surfaceSettings.get(w.pluginId));
+    if (holds === undefined) readSurfaceSettings(w.pluginId);
+    return holds === true;
+  });
   // By ref: a plugin's copy of an entry id another plugin has (a folder-installed copy of the island) is its own surface.
   for (const [ref, s] of [...surfaces]) {
     if (wanted.some((w) => w.ref === ref)) continue;
@@ -2470,10 +2500,12 @@ function syncSurfaces(): void {
     surfaces.delete(ref);
     surfaceModes.delete(ref);
     if (!s.win.isDestroyed()) s.win.destroy();
+    log(`surface: ${ref} closed`);
     refreshTray();
   }
   for (const w of wanted) {
     if (surfaces.has(w.ref)) continue;
+    log(`surface: ${w.ref} opened`);
     // A surface floats above everything, on every Space, when its plugin holds `overlay` (its OK card says so); no id decides it.
     const floats = w.floats;
     const wayland = session_ === "wayland";
@@ -3247,6 +3279,9 @@ async function smoke(): Promise<void> {
   // Texts the run waits for, all of them (`|` between), and mounts it waits for (per kind, "kind:n" each, `,` between):
   // a part's frames are placed a beat after its document draws, so a test that counts mounts waits for its own counts.
   const waitTexts = (process.env.MOSS_SMOKE_WAIT_TEXT ?? "").split("|").filter((t) => t !== "");
+  // A surface the run waits to see open and then close again (its id), as a setting turns it off.
+  const waitGone = process.env.MOSS_SMOKE_WAIT_SURFACE_GONE;
+  let goneSeen = false;
   const waitMounts = Object.fromEntries((process.env.MOSS_SMOKE_WAIT_MOUNTS ?? "").split(",").filter((t) => t.includes(":")).map((t) => [t.slice(0, t.indexOf(":")), Number(t.slice(t.indexOf(":") + 1))])) as Partial<Record<"root" | "frame" | "inline" | "web", number>>;
   let hung = false;
   let dropped = false;
@@ -3278,7 +3313,8 @@ async function smoke(): Promise<void> {
     // only the fixture layer's sealed frames laid out, not the shell.
     const sealedWait = SMOKE_SEALED_CLICK !== undefined || SMOKE_SEALED_FALLBACK;
     if (sealedWait && sealedClicked) break;
-    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
+    if (waitGone !== undefined && surfaceFacts.some((x) => x.id === waitGone)) goneSeen = true;
+    if (drawn && (waitGone === undefined || (goneSeen && !surfaceFacts.some((x) => x.id === waitGone))) && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
     // The hang test (`MOSS_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
     // rendered (its frames aren't in the main window's, so `drawn` doesn't wait for it), the surface's layer is made
     // to hang (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says

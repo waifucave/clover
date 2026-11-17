@@ -3,7 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PushedSpeech } from "@waifucave/moss-plugin-sdk/ui";
-import type { AvatarBox as FigureBox, AvatarCatalogueNames as FigureNames, AvatarCue as FigureCue } from "@waifucave/moss-plugin-sdk";
+import type { FigureBox, FigureNames, FigureCue } from "../src/ui/figure-cues";
 import { placeholderFiles } from "../src/placeholder/model";
 import { Live2dAvatar, VIEW_OPTIONS, type AvatarFrames, type Live2dView, type ViewFactory } from "../src/ui/Live2dAvatar";
 import { Live2dAvatarEntry } from "../src/ui/entry";
@@ -262,13 +262,13 @@ describe("no microphone, no sound of its own", () => {
 });
 
 describe("the entry the manifest names", () => {
-  test("is an export of the client entry, keyed live2d in the avatar spot", async () => {
-    expect(manifest.contributes.ui).toEqual([{ spot: "avatar", id: "live2d", key: "live2d", component: "Live2dAvatarSpot" }]);
+  test("is an export of the client entry, keyed live2d in the avatar plugin's renderer spot", async () => {
+    expect(manifest.contributes.ui).toEqual([{ spot: "moss.character.renderer", id: "live2d", key: "live2d", component: "Live2dAvatarSpot" }]);
     expect(typeof (client as Record<string, unknown>).Live2dAvatarSpot).toBe("function");
   });
 
-  test("takes the spot's props: the bot's name and its file", () => {
-    render(<Live2dAvatarEntry props={{ bot: { id: "alpha", name: "Alpha" }, file: "https://plugins.test/none.model3.json", format: "live2d", speaking: false }} />);
+  test("takes the spot's props: the figure's name and its file", () => {
+    render(<Live2dAvatarEntry props={{ name: "Alpha", file: "https://plugins.test/none.model3.json", format: "live2d", speaking: false }} />);
     expect(screen.getByRole("status").textContent).toBe("Getting Alpha ready…");
   });
 });

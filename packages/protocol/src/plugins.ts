@@ -8,7 +8,7 @@ import { z } from "zod";
 import { utf16 } from "./strings";
 import {
   AnyPluginId, BotId, Caller, MAX_CHILD_PLUGINS, CardId, ChangeResult, ComputerName, Empty, HostProcess, Ok, Scope, SemverVersion, Text,
-  SessionId, Timestamp, TopPluginId, TreeHash,
+  SessionId, SessionKind, Timestamp, TopPluginId, TreeHash,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -245,21 +245,20 @@ export type PluginAuthView = z.infer<typeof PluginAuthView>;
  *  are the app runtime's scheme, which the daemon fills from `assetBase`. */
 /** What a layer needs of a plugin (lane E's asks). The registry always sends `source`, `enabledAt`, `capabilities`,
  *  `css` and `networkHosts`; a view without them (an older daemon, a test's fake) means none of each. */
-/** A model format a renderer plugin declares (`avatar.formats`), as the app needs it to serve a model's files: the extensions
- *  its entry file may have, and the kinds of file a model is made of, each with its extensions, its closed kind (`json`,
- *  `binary`, `image`, `audio`, `text`: each served as one fixed, inert media type) and a cap already clamped by the core. */
-export const AvatarFormatView = z.object({
-  format: utf16(32, 1),
-  extensions: z.array(utf16(32, 2)).max(8),
+/** Files that come with a plugin's entries on a point that declares them (`files` on a point's declaration, the SDK's
+ *  `catalogs/data-files.ts`): a folder of the plugin's (relative to `assetBase`, `""` for its root) whose files of the
+ *  listed kinds, that folder and below, the app serves to every layer, each as its kind's one fixed, inert media type
+ *  (`json`, `binary`, `image`, `audio`, `text`), with a cap the core already clamped. Only for active entries of a
+ *  running declaration. */
+export const DataFilesView = z.object({
+  folder: utf16(4096),
   kinds: z.array(z.object({
     ext: z.array(utf16(32, 2)).max(16),
     type: z.enum(["json", "binary", "image", "audio", "text"]),
     maxBytes: z.number().int().min(1).max(128 * 1024 * 1024),
   })).max(16),
-  find: z.enum(["folder", "cubism-model3"]),
-  maxFiles: z.number().int().min(1).max(512).optional(),
 });
-export type AvatarFormatView = z.infer<typeof AvatarFormatView>;
+export type DataFilesView = z.infer<typeof DataFilesView>;
 
 export const UiPluginView = z.object({
   pluginId: AnyPluginId,
@@ -276,18 +275,16 @@ export const UiPluginView = z.object({
   css: z.array(utf16(4096, 1)).max(32).optional(),
   /** The hosts its `network:` capabilities declare, for the layer's CSP and `Connection-Allowlist`. */
   networkHosts: z.array(utf16(300, 1)).max(256).optional(),
-  /** For a bot's plugin: the bot's name, the theme its tab wears (one of `themes`), the layout file its tab is
-   *  arranged by (a file in its folder) and the avatar its manifest names (a file in its folder and its format), which
-   *  the app reads to serve a Live2D model's own JSON files to that bot only. `userLayout` is the user's own layout for
-   *  the tab (the user layer's `layout`, a layout file's JSON), which the app makes last, over the bot's and any
-   *  plugin's patches. */
-  bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional(), userLayout: utf16(4096).optional(), avatar: z.object({ file: utf16(4096, 1), format: utf16(32, 1) }).optional() }).optional(),
-  /** The model formats this plugin draws (its `avatar.formats`): what the app serves of a bot's model files, by kind. */
-  avatarFormats: z.array(AvatarFormatView).max(16).optional(),
+  /** For a bot's plugin: the bot's name, the theme its tab wears (one of `themes`) and the layout file its tab is
+   *  arranged by (a file in its folder). `userLayout` is the user's own layout for the tab (the user layer's `layout`, a
+   *  layout file's JSON), which the app makes last, over the bot's and any plugin's patches. */
+  bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional(), userLayout: utf16(4096).optional() }).optional(),
+  /** The files that come with its entries on points that declare them (`DataFilesView`). */
+  dataFiles: z.array(DataFilesView).max(64).optional(),
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `moss` shares `moss`. */
   layer: utf16(128),
-  /** Its picture for lists (the Plugins page): the manifest's `icon` (svg, png or webp), else a bot's avatar portrait;
-   *  a file in its folder, which the app serves as an image only (`/_t/`). */
+  /** Its picture for lists (the Plugins page): the manifest's `icon` (svg, png or webp), a file in its folder, which
+   *  the app serves as an image only (`/_t/`). */
   icon: utf16(4096).optional(),
   assetBase: utf16(2048),
   /** The built ES module the layer loads (`CLIENT_BARE_IMPORTS` only as bare imports), under `assetBase`: the
@@ -746,9 +743,7 @@ export const PLUGINS_METHODS = {
        *  own settings' values, a `secret` field only as `{ set }`; `settings.set`, a change to one of its own plain
        *  settings with no card (§5.4: never a secret, a bot value or a setting written into what it runs or reaches);
        *  `points.entries`, the entries of a point its own tree declares (§5.4: the declarer reads them), as its host
-       *  half reads them. The settings and points calls only while the plugin is on and running. `avatar.cue`,
-       *  `avatar.catalogue` and `avatar.box`: its own bot's figure (the plugin's top-level id is the bot), each by its
-       *  capability; `avatar.report`: the bundled stage telling the core which renderer drew, its names and its box.
+       *  half reads them. The settings and points calls only while the plugin is on and running.
        *  `confirm` and `confirmCard`: a question to the user on the app's own sealed card naming the plugin (§5.4);
        *  `plugins.install`: an install through the user's door, behind its OK card (capability `plugins.install`). */
       //
@@ -1049,7 +1044,13 @@ export const PluginUiChangedEvent = coreEvent("plugin_ui_changed", { pluginIds: 
 export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: utf16(4000) });
 /** A plugin's host half sent its components a message (`ui.send`): the app gives it to the components that listen
  *  (`host.on(event)`). */
-export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
+/** A host half's message to its own components (`ui.send`). Sent while it serves a session's call (a tool call), it says
+ *  whose (`call`: the core's own record of that call, never anything the plugin wrote), so a component can act for that
+ *  session or bot only. */
+export const PluginUiMessageEvent = coreEvent("plugin_ui_message", {
+  pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown(),
+  call: z.object({ session: SessionId, kind: SessionKind, bot: BotId.optional() }).optional(),
+});
 export const PluginStoreChangedEvent = coreEvent("plugin_store_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
 /** A watch's value (`plugin.layer.watch`): a component's listener member (`files.watch`, `logs.follow`, `usage.watch`
  *  …) called on its own layer connection; each value the core's listener got, as JSON (bytes as `{ $bytes }`), for that
@@ -1121,9 +1122,9 @@ export const PLUGINS_EVENTS = {
     doc: "A value of one of a component's watches (`plugin.layer.watch`): only the layer connection that opened it gets it, and `ended` once when the watch is over.",
   }),
   pluginSettingsChanged: defineEvent({
-    type: "plugin_settings_changed", owner: "B", roles: ["layer"], schema: PluginSettingsChangedEvent, transient: true,
+    type: "plugin_settings_changed", owner: "B", roles: ["layer", "app"], schema: PluginSettingsChangedEvent, transient: true,
     fixture: { type: "plugin_settings_changed", ts: 1781270000000, pluginId: "luna", key: "deck" },
-    doc: "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
+    doc: "One of a plugin's settings changed (its key, never its value): of the plugins, only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`; the app's main process gets it too, to open or close a surface entry whose `when.setting` names it.",
   }),
   pluginStoreChanged: defineEvent({
     type: "plugin_store_changed", owner: "D", roles: ["layer"], schema: PluginStoreChangedEvent, transient: true,

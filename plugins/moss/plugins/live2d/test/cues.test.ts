@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SwitchDriver, catalogOf, cleanName, paramNames, readTable, switchNamed, switchesOf } from "../src/cues";
-import type { AvatarBox as FigureBox, AvatarCatalogueNames as FigureNames, AvatarCue as FigureCue } from "@waifucave/moss-plugin-sdk";
+import type { FigureBox, FigureNames, FigureCue } from "../src/ui/figure-cues";
 import { FigureCues } from "../src/ui/figure-cues";
 
 // A model made for a VTuber app, described the way its display info does, in its maker's language. The names are the

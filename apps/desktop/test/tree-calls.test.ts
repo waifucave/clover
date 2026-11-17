@@ -46,7 +46,7 @@ describe("the door for parts: by capability, never by id (F2)", () => {
       expect(LAYER_METHODS.has(m)).toBe(true);
       for (const part of ["moss/conversation", "moss/sidebar"]) expect(verdict(part, m, { patch: { appearance: "dark" } })).toMatchObject({ ok: false, owned: false });
     }
-    for (const m of ["tool.setPermission", "tool.setAvailability", "point.active.set", "plugin.remove", "ui.secret", "ui.pick", "bot.importAvatar"]) {
+    for (const m of ["tool.setPermission", "tool.setAvailability", "point.active.set", "plugin.remove", "ui.secret", "ui.pick"]) {
       expect(LAYER_METHODS.has(m)).toBe(false);
       expect(verdict("moss/conversation", m)).toMatchObject({ ok: false, owned: true });
       expect(verdict("moss/conversation", m).ok === false && (verdict("moss/conversation", m) as { why: string }).why).toContain("capability");
@@ -180,7 +180,7 @@ describe("routing a part's call", () => {
     expect(calls).toEqual(["layer"]);
   });
 
-  test("a bot's user layer is the bot editor's (and the avatar's two fields the character plugin's), with the user's click; no other part's", async () => {
+  test("a bot's user layer is the bot editor's, with the user's click; no other part's; the retired avatar fields are refused", async () => {
     const patch = { id: "alpha", patch: { instructions: "x" } };
     const editor = { windowId: 1, pluginId: "moss/bot-editor" };
     expect(await routeCall(route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: true }).r)).toBe("app");
@@ -196,6 +196,12 @@ describe("routing a part's call", () => {
     }
     // A third party's bot editor with bots.edit passes.
     expect(await routeCall(route({ tree: { windowId: 1, pluginId: "my-editor" }, caps: ["bots.edit"], method: "bot.setUserLayer", params: patch, gesture: true }).r)).toBe("app");
+    // The figure is the avatar plugin's own setting now: a layer patch naming it is refused, alone or mixed, before any press is spent.
+    for (const p of [{ avatar: null }, { avatarCredit: "x" }, { avatar: null, theme: null }]) {
+      const r = route({ tree: editor, method: "bot.setUserLayer", params: { id: "alpha", patch: p }, gesture: true });
+      await expect(routeCall(r.r)).rejects.toThrow("avatar plugin's own setting");
+      expect(r.calls).toEqual([]);
+    }
   });
 
   test("another plugin's settings take plugins.read (a read) and plugins.manage (a write, on a press); a part's own go through the plugin API, not this door", async () => {
@@ -335,7 +341,6 @@ const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
   "plugin.settings.get": { needs: ["plugins.read"], gesture: false },
   "plugin.settings.set": { needs: ["plugins.manage"], gesture: true },
   "bot.setUserLayer": { needs: ["bots.edit"], gesture: true },
-  "bot.importAvatar": { needs: ["bots.avatar"], gesture: true },
   "session.resend": { needs: ["user.send"], gesture: true },
   "conversation.messageAction": { needs: [], gesture: true },
   "ui.pick": { needs: ["plugins.manage"], gesture: true },
@@ -365,7 +370,6 @@ async function appConnection(method: string): Promise<unknown> {
   if (method === "plugin.get") return { plugin: { id: "tarot", manifest: { settings: { k: { type: "string" }, region: { type: "string" }, token: { type: "secret" } } } } };
   if (method === "bot.list") return { bots: [{ id: "alpha" }, { id: "tarot-panel" }] };
   if (method === "session.resend") return { seq: 9 };
-  if (method === "bot.importAvatar") return { format: "live2d", files: 3, bytes: 99 };
   if (method === "plugin.auth.list") return { auth: [{ index: 0, method: "api-key", state: "signed-out" }, { index: 1, method: "oauth-pkce", state: "signed-out" }] };
   return "app";
 }
@@ -382,10 +386,9 @@ const WORST: Record<string, Worst> = {
   "ui.set": "harmless change", // appearance and notification choices, the settings part's own, nothing that runs code
   "plugin.settings.get": "read", // a key's value never: only whether one is set
   "plugin.settings.set": "sealed card", // a setting a host, env, args, hook or backend takes from cards; a key is refused (noSecret, and main looks the kind up); the rest are plain
-  "bot.importAvatar": "harmless change", // behind an app-owned dialog: a model the user picked in main's dialog, copied into their avatars for an existing bot and made its avatar; only a token of that use, nothing runs
   "conversation.messageAction": "harmless change", // runs one handler of the entry's own plugin's `ui` table, as that plugin (what its own component could call), with the session and the message's seq only
   "session.resend": "starts a model turn", // like the composer's own send: the daemon sends the user's own message that began the latest failed turn again, as a new message from the app, when it checks every condition; a model runs on it
-  "bot.setUserLayer": "harmless change", // the user's own words for a bot, from the bot editor (every field but the avatar's) and the character plugin's avatar section (the avatar's two), on their click; no capability moves
+  "bot.setUserLayer": "harmless change", // the user's own words for a bot, from the bot editor, on their click; no capability moves
   "account.status": "read",
   "archive.history": "read",
   "archive.list": "read",
@@ -441,7 +444,7 @@ function paramsFor(method: string, part: string, tokens: PickTokens, cap = ""): 
     case "plugin.settings.set":
       return { id: "tarot", key: "k", value: "v" };
     case "bot.setUserLayer":
-      return { id: "alpha", patch: cap === "bots.avatar" ? { avatar: null } : { theme: null } };
+      return { id: "alpha", patch: { theme: null } };
     case "plugin.install":
       return { source: { from: "folder", path: tokens.issue(part, "/picked/tarot", "plugin.install") } };
     case "plugin.dev.add":
@@ -461,9 +464,7 @@ function paramsFor(method: string, part: string, tokens: PickTokens, cap = ""): 
     case "notify.setMuted":
       return { pluginId: "tarot", muted: true };
     case "ui.pick":
-      return { kind: "folder", use: cap === "bots.avatar" ? "bot.importAvatar" : "plugin.install" };
-    case "bot.importAvatar":
-      return { id: "alpha", path: tokens.issue(part, "/picked/avatar", "bot.importAvatar") };
+      return { kind: "folder", use: "plugin.install" };
     case "ui.secret":
       return { id: cap === "bots.edit" ? "alpha" : "tarot", key: "token" };
     case "session.resend":
@@ -524,7 +525,6 @@ describe("the door, table by table: what each entry needs, with what press", () 
       "moss/settings": ["ui.settings", "ui.set", "plugin.setEnabled", "plugin.logs", "plugin.list", "plugin.ui", "account.status", "tool.permissions", "tool.setPermission", "tool.setAvailability", "point.active.list", "point.active.set", "computer.list"],
       [PLUGINS_PART]: ["plugin.install", "plugin.remove", "plugin.get", "plugin.settings.get", "plugin.settings.set", "ui.pick", "ui.secret", "plugin.logs", "notify.setMuted", "computer.list", "command.list"],
       [BOT_EDITOR_PART]: ["bot.setUserLayer", "models.list", "plugin.list", "plugin.ui", "ui.secret", "ui.settings"],
-      [CHARACTER_PART]: ["bot.importAvatar", "plugin.list"],
       [CONVERSATION_PART]: ["archive.history", "session.resend", "conversation.messageAction"],
       [SHELL_PART]: ["account.status", "computer.list"],
       "moss/sidebar": ["account.status", "computer.list"],
@@ -532,7 +532,7 @@ describe("the door, table by table: what each entry needs, with what press", () 
       "moss/panel-diff": ["session.diff"],
       "moss/archive": ["archive.list", "archive.history"],
     };
-    for (const [part, methods] of Object.entries(makes)) for (const m of methods) expect([part, m, verdict(part, m, paramsFor(m, part, new PickTokens(), part === CHARACTER_PART ? "bots.avatar" : part === BOT_EDITOR_PART ? "bots.edit" : "")).ok]).toEqual([part, m, true]);
+    for (const [part, methods] of Object.entries(makes)) for (const m of methods) expect([part, m, verdict(part, m, paramsFor(m, part, new PickTokens(), part === BOT_EDITOR_PART ? "bots.edit" : "")).ok]).toEqual([part, m, true]);
     const src = readFileSync(join(import.meta.dir, "../src/main/ui/tree-calls.ts"), "utf8");
     expect(src).not.toMatch(/"moss\/[a-z-]+"/);
   });
@@ -801,191 +801,6 @@ describe("the Plugins page's calls as main sends them", () => {
         expect([part, lines, sent]).toEqual([part, lines, [{ id: "tarot", lines: want }]]);
       }
     }
-  });
-});
-
-describe("the character plugin's avatar section: a pick of main's, then one import of exactly that pick", () => {
-  const editor = (method: string, params: unknown, extra: Partial<TreeRoute> = {}) => {
-    const sent: { method: string; params: unknown }[] = [];
-    const { r, logs } = route({
-      tree: { windowId: 1, pluginId: CHARACTER_PART }, method, params, gesture: true,
-      request: async (m, p) => {
-        if (m === "bot.list") return appConnection(m);
-        // The core's installed formats: VRM imports a .vrm or .glb file, Live2D a folder or zip.
-        if (m === "bot.avatarFormats") return { formats: [{ format: "vrm", name: "VRM", accepts: ["file"], files: [".vrm", ".glb"], entries: [".vrm"] }, { format: "live2d", name: "Live2D (Cubism)", accepts: ["folder", "zip"], files: [], entries: [".model3.json"] }] };
-        sent.push({ method: m, params: p });
-        return appConnection(m);
-      },
-      ...extra,
-    });
-    return { r, sent, logs };
-  };
-  const pickFor = async (tokens: PickTokens, params: unknown, path = "/Users/someone/Models/Mochi‮.zip") => {
-    const got = (await routeCall(editor("ui.pick", params, { tokens, pick: async () => path }).r)) as { token: string; name: string };
-    return got;
-  };
-
-  test("the avatar dialog's filter is what the installed renderers import: another format's file joins it, and with no answer any file shows", async () => {
-    const filtersWith = async (answer: unknown) => {
-      const seen: unknown[] = [];
-      const { r } = route({
-        tree: { windowId: 1, pluginId: CHARACTER_PART }, method: "ui.pick", params: { kind: "file", use: "bot.importAvatar" }, gesture: true,
-        request: async (m) => (m === "bot.avatarFormats" ? answer : appConnection(m)),
-        tokens: new PickTokens(), pick: async (_w, _kind, filters) => { seen.push(filters); return "/Users/someone/hero.sprite.json"; },
-      });
-      await routeCall(r);
-      return seen[0];
-    };
-    expect(await filtersWith({ formats: [{ accepts: ["file"], files: [".sprite.json", "../evil"] }, { accepts: ["zip"], files: [] }] })).toEqual([{ name: "Avatar", extensions: ["zip", "json"] }]);
-    expect(await filtersWith(undefined)).toBeUndefined();
-  });
-
-  test("the pick is for one use: the page names it, main issues the token for it alone and sets the dialog's filter, and the page gets a neutralised name", async () => {
-    const tokens = new PickTokens();
-    const seen: { kind: string; filters?: unknown }[] = [];
-    const got = (await routeCall(editor("ui.pick", { kind: "file", use: "bot.importAvatar", filters: [{ name: "Anything", extensions: ["exe"] }] }, { tokens, pick: async (_w, kind, filters) => { seen.push({ kind, filters }); return "/Users/someone/Models/Mochi‮.zip"; } }).r)) as { token: string; name: string };
-    expect(seen).toEqual([{ kind: "file", filters: [{ name: "Avatar", extensions: ["zip", "vrm", "glb"] }] }]);
-    expect(got.name).toBe("Mochi.zip");
-    expect(JSON.stringify(got)).not.toContain("/Users");
-    // Only bot.importAvatar redeems it, never an install or a development folder.
-    expect(tokens.redeem(got.token, CHARACTER_PART, "plugin.install")).toBeUndefined();
-    const again = await pickFor(tokens, { kind: "folder", use: "bot.importAvatar" });
-    expect(tokens.redeem(again.token, CHARACTER_PART, "plugin.dev.add")).toBeUndefined();
-    // And the reverse: a Plugins page token is no avatar's.
-    const install = tokens.issue(PLUGINS_PART, "/picked/tarot", "plugin.install");
-    expect(tokens.redeem(install, PLUGINS_PART, "bot.importAvatar")).toBeUndefined();
-    // Each part asks only for its own uses; no use, or another's, is refused before any dialog.
-    for (const [part, use] of [[CHARACTER_PART, "plugin.install"], [CHARACTER_PART, "plugin.dev.add"], [CHARACTER_PART, undefined], [PLUGINS_PART, "bot.importAvatar"], [PLUGINS_PART, undefined]] as const) {
-      let opened = 0;
-      const { r } = route({ tree: { windowId: 1, pluginId: part }, method: "ui.pick", params: { kind: "folder", use }, gesture: true, tokens, pick: async () => { opened++; return "/x"; } });
-      await expect(routeCall(r)).rejects.toThrow(/and says which|capability/);
-      expect(opened).toBe(0);
-    }
-  });
-
-  test("a valid token imports once: only {id, path} goes to the core, with the real path; the page gets format, files and bytes", async () => {
-    const tokens = new PickTokens();
-    const { token } = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
-    const ok = editor("bot.importAvatar", { id: "alpha", path: token, client: "cli", role: "cli", extra: 1 }, { tokens });
-    expect(await routeCall(ok.r)).toEqual({ format: "live2d", files: 3, bytes: 99 });
-    expect(ok.sent).toEqual([{ method: "bot.importAvatar", params: { id: "alpha", path: "/Users/someone/Models/Mochi‮.zip" } }]);
-    // Replay.
-    const replay = editor("bot.importAvatar", { id: "alpha", path: token }, { tokens });
-    await expect(routeCall(replay.r)).rejects.toThrow("comes from the file picker");
-    expect(replay.sent).toEqual([]);
-  });
-
-  test("refused: a page-supplied real path, another use's token, another part's token, an expired one, an unknown bot id", async () => {
-    const tokens = new PickTokens();
-    for (const path of ["/Users/someone/Models/Mochi.zip", "pick-guess", "", 5, undefined]) {
-      const r = editor("bot.importAvatar", { id: "alpha", path }, { tokens });
-      await expect(routeCall(r.r)).rejects.toThrow("comes from the file picker");
-      expect(r.sent).toEqual([]);
-    }
-    for (const [part, use] of [[CHARACTER_PART, "plugin.install"], [CHARACTER_PART, "plugin.dev.add"], [PLUGINS_PART, "bot.importAvatar"], ["moss/settings", "bot.importAvatar"]] as const) {
-      const r = editor("bot.importAvatar", { id: "alpha", path: tokens.issue(part, "/picked/x", use as never) }, { tokens });
-      await expect(routeCall(r.r)).rejects.toThrow("comes from the file picker");
-      expect(r.sent).toEqual([]);
-    }
-    let now = 0;
-    const timed = new PickTokens(() => now);
-    const late = timed.issue(CHARACTER_PART, "/picked/x", "bot.importAvatar");
-    now = PICK_TOKEN_MS + 1;
-    const expired = editor("bot.importAvatar", { id: "alpha", path: late }, { tokens: timed });
-    await expect(routeCall(expired.r)).rejects.toThrow("comes from the file picker");
-    // An id main's own listing doesn't hold (a free string, a plugin that isn't a bot, a path): refused, the token kept.
-    const held = tokens.issue(CHARACTER_PART, "/picked/x", "bot.importAvatar");
-    for (const id of ["nobody", "moss/composer", "../alpha", "", 7, undefined]) {
-      const r = editor("bot.importAvatar", { id, path: held }, { tokens });
-      await expect(routeCall(r.r)).rejects.toThrow("which bot?");
-      expect(r.sent).toEqual([]);
-    }
-    const still = editor("bot.importAvatar", { id: "tarot-panel", path: held }, { tokens });
-    await routeCall(still.r);
-    expect(still.sent.length).toBe(1);
-    // Another part, no click: the table refuses before anything else.
-    const other = route({ tree: { windowId: 1, pluginId: PLUGINS_PART }, method: "bot.importAvatar", params: { id: "alpha", path: held }, gesture: true, tokens });
-    await expect(routeCall(other.r)).rejects.toThrow("bot.importAvatar needs the bots.avatar capability");
-    const none = editor("bot.importAvatar", { id: "alpha", path: held }, { tokens, takeGesture: () => false });
-    await expect(routeCall(none.r)).rejects.toThrow("only right after");
-  });
-
-  test("a refusal from the core shows its plain reason with no path in it, capped", async () => {
-    const tokens = new PickTokens();
-    const { token } = await pickFor(tokens, { kind: "folder", use: "bot.importAvatar" }, "/Users/someone/Models/Mochi");
-    const bad = editor("bot.importAvatar", { id: "alpha", path: token }, {
-      tokens,
-      request: async (m) => {
-        if (m === "bot.list") return appConnection(m);
-        throw new Error(`nothing at /Users/someone/Models/Mochi, and /private/tmp/x/y is no model ${"x".repeat(400)}`);
-      },
-    });
-    const err = await routeCall(bad.r).then(() => undefined, (e: Error) => e);
-    expect(err?.message).not.toContain("/Users");
-    expect(err?.message).not.toContain("/private");
-    expect(err?.message).toContain("nothing at Mochi");
-    expect([...(err?.message ?? "")].length).toBeLessThanOrEqual(300);
-  });
-
-  test("the model's own note comes back as plain text, 300 characters at most; none, none", async () => {
-    const tokens = new PickTokens();
-    const { token } = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
-    const noted = editor("bot.importAvatar", { id: "alpha", path: token }, {
-      tokens,
-      request: async (m) => (m === "bot.list" ? appConnection(m) : { format: "vrm", files: 1, bytes: 5, credit: `Free \u202efor personal use\n${"z".repeat(400)}` }),
-    });
-    const got = (await routeCall(noted.r)) as { credit?: string; format: string };
-    expect(got.format).toBe("vrm");
-    expect(got.credit?.startsWith("Free for personal use zz")).toBe(true);
-    expect([...got.credit!].length).toBe(300);
-    expect(got.credit).not.toContain("\u202e");
-    const second = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
-    expect(await routeCall(editor("bot.importAvatar", { id: "alpha", path: second.token }, { tokens }).r)).toEqual({ format: "live2d", files: 3, bytes: 99 });
-  });
-
-  test("the bot editor's part gets neither the pick nor the import: the table refuses it before anything else, and the character part's token stays good for the character part", async () => {
-    const tokens = new PickTokens();
-    let opened = 0;
-    const asEditor = (method: string, params: unknown) =>
-      route({ tree: { windowId: 1, pluginId: BOT_EDITOR_PART }, method, params, gesture: true, tokens, pick: async () => { opened++; return "/x"; } });
-    await expect(routeCall(asEditor("ui.pick", { kind: "file", use: "bot.importAvatar" }).r)).rejects.toThrow("capability");
-    expect(opened).toBe(0);
-    const held = tokens.issue(CHARACTER_PART, "/picked/x", "bot.importAvatar");
-    const imp = asEditor("bot.importAvatar", { id: "alpha", path: held });
-    await expect(routeCall(imp.r)).rejects.toThrow("capability");
-    expect(imp.calls).toEqual([]);
-    const mine = editor("bot.importAvatar", { id: "alpha", path: held }, { tokens });
-    await routeCall(mine.r);
-    expect(mine.sent.length).toBe(1);
-  });
-
-  test("the result names the renderer's own format id and its name, as plain text", async () => {
-    const tokens = new PickTokens();
-    const { token } = await pickFor(tokens, { kind: "file", use: "bot.importAvatar" });
-    const got = await routeCall(editor("bot.importAvatar", { id: "alpha", path: token }, { tokens, request: async (m) => (m === "bot.list" ? appConnection(m) : { format: "pngtuber", name: "Picture swap\u202e", files: 2, bytes: 8 }) }).r);
-    expect(got).toEqual({ format: "pngtuber", name: "Picture swap", files: 2, bytes: 8 });
-  });
-
-  test("the avatar's two layer fields are the character plugin's alone: it writes nothing else, and the bot editor writes neither", async () => {
-    const as = (part: string, patch: unknown) => route({ tree: { windowId: 1, pluginId: part }, method: "bot.setUserLayer", params: { id: "alpha", patch }, gesture: true });
-    for (const patch of [{ avatar: { file: "assets/a.vrm", format: "vrm" } }, { avatar: null }, { avatarCredit: "Free for personal use" }, { avatar: null, avatarCredit: null }]) {
-      expect(await routeCall(as(CHARACTER_PART, patch).r)).toBe("app");
-      // The editor lacks bots.avatar: the layer door (the core's card for a user-layer change), never the app's connection.
-      const refused = as(BOT_EDITOR_PART, patch);
-      expect(await routeCall(refused.r)).toBe("layer");
-      expect(refused.calls).toEqual(["layer"]);
-    }
-    for (const patch of [{ model: "x/y" }, { avatar: null, lan: true }, { name: "n" }, {}, undefined, []]) {
-      // Never the app's connection: refused (a mixture, nothing), or, for other fields than the avatar's (bots.edit, which
-      // the stage lacks), the layer door and its card.
-      const wide = as(CHARACTER_PART, patch);
-      const got = await routeCall(wide.r).then((v) => v, () => "refused");
-      expect([patch, got, wide.calls]).toEqual([patch, got === "layer" ? "layer" : "refused", got === "layer" ? ["layer"] : []]);
-      expect(wide.calls).not.toContain("app:bot.setUserLayer");
-    }
-    expect(await routeCall(as(BOT_EDITOR_PART, { model: "x/y", theme: null }).r)).toBe("app");
-    const none = route({ tree: { windowId: 1, pluginId: CHARACTER_PART }, method: "bot.setUserLayer", params: { id: "alpha", patch: { avatar: null } }, gesture: false });
-    await expect(routeCall(none.r)).rejects.toThrow("only right after");
   });
 });
 

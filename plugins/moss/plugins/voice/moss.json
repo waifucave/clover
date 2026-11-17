@@ -108,6 +108,25 @@
           "ok": "sets the voice its bot speaks with; if you have set up that voice's provider, its bot's replies are sent to that provider on your account, and what it writes down from your push-to-talk is sent to your bot as your message, with nothing shown to you first",
           "warns": true
         }
+      },
+      "moss.voice.speech": {
+        "shape": "list",
+        "fields": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          }
+        },
+        "doc": "What MOSS Voice is saying and when, for a part that moves a mouth by it: MOSS Voice sends each plugin with an entry here, as point messages (`points.onMessage(\"moss.voice.speech\")`), `{ bot, frames: [{ t, rms, centroid? }], cut? }`: mouth levels stamped in epoch milliseconds, loudness 0 to 1 and brightness in Hz, in batches a little ahead of when they sound, and `cut` when what was not yet sounded was stopped or replaced. Never the words, never the sound.",
+        "title": "Speech",
+        "fills": {
+          "ok": "it is told when your bots speak aloud, which bot and how loud, moment by moment, never their words"
+        }
       }
     }
   },
@@ -119,7 +138,6 @@
   },
   "capabilities": [
     "audio",
-    "avatar.control.all",
     "conversation.read",
     "sessions.read",
     "microphone",
@@ -216,11 +234,6 @@
         "component": "BotVoiceSection",
         "title": "Voice",
         "order": 400
-      },
-      {
-        "spot": "bot.stage.action",
-        "id": "chip",
-        "component": "VoiceChip"
       },
       {
         "spot": "conversation.message.action",

@@ -17,13 +17,11 @@ import { StageStore, type StageApi } from "./store";
 import { replyGist } from "./stage";
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { ConversationApi, PluginSelf, SettingsApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
-import type { AvatarApi } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
 import { runStageTool, STAGE_TOOLS } from "./tools";
 
 interface AlphaApi extends StageApi {
   readonly plugin?: Pick<PluginSelf, "id">;
   readonly settings: Pick<SettingsApi, "get"> & Partial<Pick<SettingsApi, "set">>;
-  readonly avatar?: Pick<AvatarApi, "cue" | "catalogue" | "watch">;
   /** `conversation.read`: the pin reads the reply it pins from the log. */
   readonly conversation?: Partial<Pick<ConversationApi, "get" | "history">>;
 }

@@ -10,7 +10,7 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
-import type { AvatarDown, AvatarUp, LayerMessage, LocaleValue, SpeechMessage, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/moss-plugin-sdk/ui/bridge";
+import type { LayerMessage, LocaleValue, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/moss-plugin-sdk";
 import { STOCK_KEYS, spotInfo } from "@waifucave/moss-plugin-sdk";
 import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
@@ -135,9 +135,16 @@ export const TRAY_LINES_PER_PLUGIN = 3;
 export const TRAY_LINES_MAX = 12;
 
 /** A surface to open (see `surfaceEntries`). */
-export interface SurfaceEntry { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]>; floats: boolean; cards: boolean; stepsAside: boolean; tap: boolean }
+export interface SurfaceEntry { id: string; ref: string; pluginId: string; window: NonNullable<UiEntry["window"]>; floats: boolean; cards: boolean; stepsAside: boolean; tap: boolean; /** Its `when.setting`: the surface is opened only while its plugin's settings hold these values. */ setting?: Readonly<Record<string, unknown>> }
 /** A line a plugin adds to the tray menu (see `trayEntries`): `surface` is the ref of the surface it hides and shows. */
 export interface TrayEntry { ref: string; pluginId: string; /** Its plugin's name (a command's line says whose it is). */ pluginName: string; title: string; surface?: string; command?: string }
+
+/** Whether a surface's `when.setting` holds now (undefined: not known yet). */
+export function surfaceSettingHolds(want: Readonly<Record<string, unknown>> | undefined, have: ReadonlyMap<string, unknown> | undefined): boolean | undefined {
+  if (want === undefined) return true;
+  if (have === undefined) return undefined;
+  return Object.entries(want).every(([k, v]) => JSON.stringify(have.get(k) ?? null) === JSON.stringify(v ?? null));
+}
 
 export class LayerError extends Error {
   constructor(message: string) {
@@ -1004,32 +1011,6 @@ export class UiRuntime {
     if (m.kind === "frame" && !same) this.post(m.id, { type: "props", mount: m.id, props });
   }
 
-  /** The speech an `avatar` frame lip-syncs to, from the document that placed it (`childOf`: only its parent), already
-   *  numbers only (`cleanSpeechMessage`). Any other child gets none. */
-  speech(frame: FrameRef, child: string, speech: SpeechMessage): void {
-    const m = this.childOf(frame, child);
-    // Only a bound document hears it (an asleep or not-yet-loaded frame has none).
-    if (m.kind !== "frame" || m.spot !== "avatar" || m.frame === undefined) return;
-    this.post(m.id, { type: "speech", mount: m.id, speech });
-  }
-
-  /** A cue for an `avatar` frame, from the document that placed it (`childOf`: only its parent), already plain data
-   *  (`cleanAvatarDown`). Any other child gets none. */
-  avatarDown(frame: FrameRef, child: string, message: AvatarDown): void {
-    const m = this.childOf(frame, child);
-    if (m.kind !== "frame" || m.spot !== "avatar" || m.frame === undefined) return;
-    this.post(m.id, { type: "avatar", mount: m.id, message });
-  }
-
-  /** An `avatar` frame's state (what its model has, where the figure stands) for its parent document only, already
-   *  plain data (`cleanAvatarUp`). A frame that isn't an `avatar` entry says nothing this way. */
-  avatarUp(frame: FrameRef, message: AvatarUp): void {
-    const m = this.requireDoc(frame);
-    if (m.kind !== "frame" || m.spot !== "avatar" || m.parent === undefined) return;
-    const parentDoc = this.docOf(this.mounts.get(m.parent)!);
-    if (parentDoc !== undefined) this.post(parentDoc.id, { type: "avatar-up", child: m.id, message });
-  }
-
   /** A frame calls a callback its parent handed it: the call goes to the parent's document. */
   callback(frame: FrameRef, id: string, args: unknown[]): void {
     const m = this.requireDoc(frame);
@@ -1143,6 +1124,7 @@ export class UiRuntime {
           cards: e.window.cards === true && caps.has("approvals") && caps.has("approvals.all"),
           stepsAside: e.window.front === "steps-aside",
           tap: e.window.summon?.includes("tap") === true,
+          ...(e.when?.setting !== undefined ? { setting: e.when.setting } : {}),
         });
       }
     }

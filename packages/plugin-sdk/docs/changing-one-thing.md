@@ -178,20 +178,20 @@ the window shows it once. The shell still draws it and a press on it is the app'
   another plugin's own component isn't rearranged (the patches wait).
 * **What can move.** Only what the tab's layout places (see the top of this page): never a button inside the composer.
 
-## Where a bot's model shows
+## Where a figure shows
 
-The bot names its model in its manifest; the stage draws it with the renderer installed for that format.
+MOSS has no avatar of its own, and a bot's manifest names none (`bot.avatar` is retired: ignored with a warning). The
+bundled avatar plugin (`moss/character`) shows one figure at a time, in a panel of MOSS Code's window beside a session
+and, when the person turns it on, on the screen. A figure is an entry in its point `moss.character.packs`, which any
+plugin may fill:
 
 ```json
-"bot": {
-  "name": "Luna", "instructions": "bot/instructions.md",
-  "avatar": { "file": "assets/luna.model3.json", "format": "live2d" }
+"contributes": {
+  "moss.character.packs": [{ "id": "luna", "name": "Luna", "file": "assets/luna.model3.json", "format": "live2d" }]
 }
 ```
 
-MOSS draws `vrm` and `live2d`; a renderer plugin adds a format (`avatar.formats`, and an `avatar` entry keyed by
-it; see `examples/example-pngtuber`). A bot with no layout of its own gets the shell's stock tab: the stage
-(`bot.stage`) on top, only when the bot has an avatar, and the conversation over the composer below it. That tab is
-drawn as `DEFAULT_TAB_LAYOUT` (the same parts in the same order) once anything rearranges it: the bot's own patch,
-another plugin's, or the user's. A layout moves the stage like any part (the example above puts it on the left). With
-no renderer installed for the format, the stage shows the bot's portrait if it has one.
+The model's files beside `file` come along, by the kinds the point declares. MOSS draws `vrm` and `live2d`; a renderer
+plugin adds a format (an entry in `moss.character.formats`, and a `ui` entry in the avatar plugin's spot
+`moss.character.renderer` keyed by it; see `examples/example-pngtuber`). The person picks the figure in the avatar
+plugin's own Settings section.

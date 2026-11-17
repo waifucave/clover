@@ -35,6 +35,7 @@ export interface ListenerArg {
 export const LISTENER_ARGS = {
   "points.watch": { at: 1 },
   "points.onActive": { at: 1 },
+  "points.onMessage": { at: 1 },
   "host.on": { at: 1 },
   "storage.synced.watch": { at: 0 },
   "settings.watch": { at: 1 },
@@ -52,7 +53,6 @@ export const LISTENER_ARGS = {
   "shell.watch": { at: 0 },
   "usage.watch": { at: 0 },
   "logs.follow": { at: 1 },
-  "avatar.watch": { at: 0 },
   // A take is a watch on the wire (its events are its listener's; ending the watch leaves the queue or ends the turn),
   // whose `Turn` the SDK's own `take` makes in both halves.
   "turns.take": { at: 2 },

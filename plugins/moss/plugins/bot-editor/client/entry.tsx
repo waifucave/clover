@@ -198,7 +198,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   return (
     <BotEditor
       bot={{ id: bot.id, name: plain(bot.name), ...(bot.portrait ? { portraitUrl: bot.portrait } : {}) }}
-      own={bot.userLayer.filter((f): f is BotField => f !== "avatar")}
+      own={bot.userLayer as BotField[]}
       model={{ value: bot.model, ...(bot.effort ? { effort: bot.effort } : {}), models }}
       sections={
         <>

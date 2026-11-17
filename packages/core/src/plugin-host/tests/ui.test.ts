@@ -40,7 +40,7 @@ describe("plugin.ui and plugin.layer.api", () => {
       }),
       "package.json": JSON.stringify({ type: "module" }),
       // What its components may call is its `ui` table only; `onToolAfter` stands for a tool's or a hook's handler.
-      "host/index.js": "export const onToolAfter = async () => \"a hook ran\";\nconst draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
+      "host/index.js": "export const onToolAfter = async () => \"a hook ran\";\nexport const tell = async (args, ctx) => { await ctx.api.ui.send(\"told\", { n: 1 }); return \"told\"; };\nconst draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
         + "const big = async (args, ctx) => { try { await ctx.api.ui.send(\"big\", \"x\".repeat(70000)); return \"sent\"; } catch (e) { return e.message; } };\n"
         + "const remember = async (args, ctx) => { for (let i = 0; i < 5; i++) await ctx.api.storage.synced.set(\"stage\", { v: 1, n: i, ...args }); return { by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
         + "export const ui = { draw: (a, c) => draw(a, c), big: (a, c) => big(a, c), spam: (a, c) => spam(a, c), remember: (a, c) => remember(a, c) };\n"
@@ -84,6 +84,12 @@ describe("plugin.ui and plugin.layer.api", () => {
       const api = ui.methods[PLUGINS_METHODS.pluginLayerApi.name]!;
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "draw", { card: "The Star" }), session: "s_1" }, ctx))
         .toEqual({ result: { drew: "The Star", by: "plugin", as: "tarot", session: "s_1" } });
+      // A component's call is the plugin's: its message names no call. One sent while serving a session's call (a tool
+      // call, here a handler the core invokes for a coding session) says whose, from the core's own record.
+      expect(events.find((e) => e.type === "plugin_ui_message" && e.event === "drawn")!.call).toBeUndefined();
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "tell", args: null, caller: { kind: "session", sessionId: "s_code", sessionKind: "coding" } })).toBe("told");
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "tell", args: null, caller: { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" } })).toBe("told");
+      expect(events.filter((e) => e.type === "plugin_ui_message" && e.event === "told").map((e) => e.call)).toEqual([{ session: "s_code", kind: "coding" }, { session: "s_alpha", kind: "bot", bot: "alpha" }]);
       // ui.send: a value over 64 KiB is refused, and so is a plugin's 51st message in a second (#333's review).
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "big", null) }, ctx)).toEqual({ result: expect.stringContaining("at most 65536") });
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "spam", null) }, ctx)).toEqual({ result: [expect.any(Number), expect.stringContaining("more than 50 UI messages this second")] });
@@ -231,12 +237,23 @@ describe("plugin.ui and plugin.layer.api", () => {
     expect([layerOf("moss"), layerOf("moss/island"), layerOf("luna"), layerOf("luna/tarot-panel"), layerOf("mossish")]).toEqual(["moss", "moss", "luna", "luna--tarot-panel", "mossish"]);
   });
 
-  test("a renderer's avatar.formats reach the view: its kinds, the extensions that pick it, the finder; a size over the format's ceiling is clamped, a renderer with no UI still shows", () => {
-    const record = { id: "pic", name: "Pic", enabled: true, state: "running", treeHash: "sha256:x", source: "local", granted: [], folder: "/p/pic", manifest: { manifest: 1, id: "pic", name: "Pic" } };
-    const declared = { id: "pngtuber", format: "pngtuber", name: "Pngtuber", entry: { extensions: [".pngtuber.json"] }, files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 99_999_999 }, { ext: [".png"], type: "image", maxBytes: 4_194_304 }], find: "folder", maxFiles: 16 } };
-    const registry = { list: () => [record], entries: (point: string) => (point === "avatar.formats" ? [{ pluginId: "pic", state: "active", value: declared }, { pluginId: "pic", state: "waiting", value: { ...declared, format: "unfinished" } }] : []) } as never;
+  test("files that come with a point's entries reach the view (a word-list point, nothing about figures): the folder of each active entry's path, the declared kinds, a cap over the kind's ceiling clamped; a data plugin with no UI still shows", () => {
+    const record = { id: "words-en", name: "English words", enabled: true, state: "running", treeHash: "sha256:x", source: "local", granted: [], folder: "/p/words-en", manifest: { manifest: 1, id: "words-en", name: "English words" } };
+    const decl = { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, list: { type: "string", format: "path" } } }, files: { list: { kinds: [{ ext: [".json"], type: "json", maxBytes: 99_999_999 }, { ext: [".mp3"], type: "audio", maxBytes: 1_000 }] } } };
+    const registry = {
+      list: () => [record],
+      points: () => [{ name: "spell.lists", shape: "list", declaredBy: { pluginId: "spell", ref: "host" }, spot: false, active: true, decl }],
+      entries: (point: string) => (point === "spell.lists" ? [
+        { pluginId: "words-en", state: "active", value: { id: "common", list: "lists/common/words.json" } },
+        { pluginId: "words-en", state: "waiting", value: { id: "later", list: "lists/later/words.json" } },
+        { pluginId: "words-en", state: "active", value: { id: "bad", list: "../out/words.json" } },
+      ] : []),
+    } as never;
     const [view] = uiPluginViews(registry);
-    expect(view?.avatarFormats).toEqual([{ format: "pngtuber", extensions: [".pngtuber.json"], kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".png"], type: "image", maxBytes: 4_194_304 }], find: "folder", maxFiles: 16 }]);
+    expect(view?.dataFiles).toEqual([{ folder: "lists/common", kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".mp3"], type: "audio", maxBytes: 1_000 }] }]);
+    // The declaration gone (its declarer off): no files come along.
+    const off = { ...(registry as Record<string, unknown>), points: () => [] } as never;
+    expect(uiPluginViews(off)[0]?.dataFiles).toBeUndefined();
   });
 });
 

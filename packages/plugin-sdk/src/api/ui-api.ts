@@ -244,14 +244,6 @@ export interface UiApi {
   useViewFrame?(name: string): (element: unknown) => void;
   /** Questions waiting in any session the plugin may read, with their text (`conversation.read`). */
   useQuestions?(): { readonly questions: readonly PendingQuestion[]; subscribe(listener: () => void): Unsubscribe };
-  /** In an `avatar` renderer: the speech of the bot it draws (`feed`: frames `{ t, rms, centroid }` on the audio clock,
-   *  and the clock; `speaking`). The same in the app's own renderers and a plugin's frame; numbers only reach a frame. */
-  useAvatarSpeech?(): { readonly feed: SpeechFeed | undefined; readonly speaking: boolean };
-  /** In an `avatar` renderer: take the bot plugin's cues (`onCue`: an expression, a motion, an outfit part, the pace, a
-   *  point to look at, only the kinds its `avatar.formats` `capabilities` list) and publish the model's catalogue
-   *  (`setCatalogue`) and the figure's box with its anchors (`setBox`). The same in the app's own renderers and a
-   *  plugin's frame; plain data only reaches a frame. */
-  useAvatarControl?(): { onCue(listener: (cue: unknown) => void): () => void; setCatalogue(names: unknown): void; setBox(box: unknown): void };
   /** Sends the user's own words (lane G's ask, the pill), in place of `conversation.send`, whose turns are the
    *  plugin's. Only the bundled `moss` tree's surfaces have it. Call it synchronously inside the key press or click
    *  that sends: the runtime counts it only within that frame's transient user activation (§5.5), and otherwise
@@ -263,9 +255,8 @@ export interface UiApi {
 // `useLayerMessage()` (the app's commands from shortcuts and menus) stays lane E's, for the `moss` layer only, and
 // is not part of these declarations: no third-party part hears the app's commands.
 
-/** One frame of the speech the app plays for a bot, for lip-sync: what the `avatar` spot's `speech` feed hands on, so
- *  an avatar needs no `audio` capability. Provisional: lane G proposes the shape, and lane E, whose runtime carries
- *  the feed across layers, agrees it. */
+/** One frame of speech, for lip-sync: when it sounds, how loud and how bright, never the sound itself, so a part that
+ *  moves a mouth by it needs no `audio` capability. */
 export interface SpeechFrame {
   /** When it plays: seconds on the layer's audio clock, output latency already added. */
   t: number;
@@ -275,7 +266,7 @@ export interface SpeechFrame {
   centroid: number;
 }
 
-/** The `avatar` spot's `speech` prop. */
+/** A feed of speech frames (the SDK's `TimedSpeech` makes one from stamped mouth levels). */
 export interface SpeechFeed {
   /** Frames as they're made, in time order, a little ahead of when they play. */
   subscribe(listener: (frames: readonly SpeechFrame[]) => void): Unsubscribe;

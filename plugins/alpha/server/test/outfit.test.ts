@@ -5,7 +5,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AvatarCatalogue, AvatarCue, AvatarCueResult } from "../../../../packages/plugin-sdk/src/catalogs/avatar-cues";
+import type { FigureCatalogue as AvatarCatalogue, FigureCue as AvatarCue, FigureCueResult as AvatarCueResult } from "../../../moss/plugins/character/client/figure-cues";
 import * as tab from "../../client/outfits";
 import { glbJson } from "../../../moss/plugins/vrm/src/vrm/glb";
 import { OUTFITS as MODEL_OUTFITS } from "../../../moss/plugins/vrm/src/placeholder/model";
@@ -14,6 +14,7 @@ import { DEFAULT_OUTFIT, OUTFIT_VALUES, OUTFITS, outfitCues, pickOutfit, wearsHe
 import { STAGE_KEY } from "../stage";
 import { StageStore } from "../store";
 import { runStageTool } from "../tools";
+import { changeBy } from "./fakes";
 import { ALPHA, fakeApi, fakeAvatar, MODEL } from "./fakes";
 
 const HERS: AvatarCatalogue = {
@@ -28,12 +29,12 @@ function setup(o: { catalogue?: AvatarCatalogue; answer?: (cue: AvatarCue) => Av
   const a = fakeAvatar({ ...(o.catalogue !== undefined ? { catalogue: o.catalogue } : {}), ...(o.answer ? { answer: o.answer } : {}) });
   let t = 0;
   const api = {
-    ...f.api, avatar: a.avatar,
+    ...f.api,
     settings: { get: async <T>(k: string) => settings[k] as T | undefined, set: async (k: string, v: unknown) => { set.push([k, v]); settings[k] = v; } },
     bots: { get: async (id: string) => ({ id, userLayer: o.userLayer ?? [] }) },
   };
-  const s = new StageStore(api, { now: () => (t += 200), bot: "alpha" });
-  return { f, a, s, set, settings, run: (name: string, args: unknown = {}) => runStageTool(name, args, s, api.settings.get) };
+  const s = new StageStore(api, { now: () => (t += 200), bot: "alpha", figure: a.avatar });
+  return { f, a, s, set, settings, run: (name: string, args: Record<string, unknown> = {}) => (name === "stage_status" ? runStageTool(name, args, s, api.settings.get) : changeBy(s, name, args)) };
 }
 
 describe("her outfit, on her own model", () => {
@@ -61,7 +62,7 @@ describe("her outfit, on her own model", () => {
     const f = fakeApi();
     const set: [string, unknown][] = [];
     const mod = await import("../index");
-    await mod.start({ ...f.api, settings: { get: async () => undefined, set: async (k: string, v: unknown) => void set.push([k, v]) }, bots: { get: async () => ({ userLayer: [] }) }, avatar: fakeAvatar({ catalogue: HERS }).avatar } as never);
+    await mod.start({ ...f.api, settings: { get: async () => undefined, set: async (k: string, v: unknown) => void set.push([k, v]) }, bots: { get: async () => ({ userLayer: [] }) } } as never);
     try {
       expect(await outfitCommand({ part: "yellow-raincoat", on: true })).toEqual({ text: "Outfit: Yellow raincoat" });
       expect(set).toEqual([["outfit", "yellow-raincoat"]]);
@@ -112,7 +113,7 @@ describe("one list of her outfits", () => {
     expect(tab.OUTFITS.map((o) => ({ ...o }))).toEqual(OUTFITS.map((o) => ({ ...o })));
     expect(tab.DEFAULT_OUTFIT).toBe(DEFAULT_OUTFIT);
     expect([...MODEL_OUTFITS]).toEqual([...OUTFIT_VALUES]);
-    const json = glbJson(new Uint8Array(readFileSync(join(ALPHA, "assets", "alpha.vrm")))) as { nodes: { extras?: { moss?: { outfit?: string; on?: boolean } } }[] };
+    const json = glbJson(new Uint8Array(readFileSync(join(ALPHA, "..", "moss", "plugins", "alpha-figure", "vrm", "alpha.vrm")))) as { nodes: { extras?: { moss?: { outfit?: string; on?: boolean } } }[] };
     const marked = [...new Set(json.nodes.flatMap((n) => (n.extras?.moss?.outfit !== undefined ? [n.extras.moss.outfit] : [])))];
     expect(marked).toEqual([...OUTFIT_VALUES]);
     // Shown at load: the default only, so her look with nothing set is the one she always had.

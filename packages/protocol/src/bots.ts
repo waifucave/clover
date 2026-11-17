@@ -25,8 +25,7 @@
 // * The one-time move (`BotMoveJournal`): each bot a plugin brought (the old `bot` entry, sessions.ts `BotView`) becomes a
 //   record with the same id, its plugin's instructions, greeting and model, the user's layer over them,
 //   and its memory, transcripts and routines where they already are. To be retired once moved: the plugin bot format
-//   (`plugin-bot.ts`), `bot.setUserLayer`, `bot.importAvatar`, `bot.avatarFormats` and `BotView`'s `avatar`, `theme` and
-//   `layout` (§6.1, G7, G8).
+//   (`plugin-bot.ts`), `bot.setUserLayer` and `BotView`'s `theme` and `layout` (§6.1, G8).
 import { z } from "zod";
 import { utf16 } from "./strings";
 import { AnyPluginId, BotId, ChangeResult, Ok, SessionId, Text, Timestamp } from "./common";

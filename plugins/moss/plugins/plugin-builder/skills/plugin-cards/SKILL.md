@@ -16,7 +16,7 @@ builder, and one line for each thing it may do:
 
 - each capability, in the words plugin-catalog's "the OK card says" column gives (some with a warning:
   `computers.control`, `approvals`, `project.write`, `browser`, `terminal`, `plugins.install`, `plugins.watch`,
-  `avatar.report`, `audio`, `microphone`, `network:public`). Any plugin may ask for any capability: none is kept for
+  `audio`, `microphone`, `network:public`). Any plugin may ask for any capability: none is kept for
   MOSS's own plugins, and the card is the gate;
 - each network host (`network:<host>`, and the hosts of its model endpoints, `web` entries and `auth` URLs);
 - that it runs code (a host half, a client half, a `stdio` server, a hook command), its hook events, its add-ons;
@@ -51,10 +51,10 @@ plugin: a child plugin's lists don't count):
 
 - `readOnly`: tools that only read. Their calls run without a card, but only while nothing in the tree can reach the
   network (no `network:` capability, no `http` server) and the plugin is running as OK'd.
-- `contained`: tools whose only effect is the plugin's own display (a scene, a pin, the avatar's expression). Same
+- `contained`: tools whose only effect is the plugin's own display (a scene, a pin, a figure's expression). Same
   conditions, and besides, the tree holds no capability beyond reading MOSS's own state: `conversation.read`,
   `memory.read`, `bots.read`, `routines.read`, `computers.read`, `devices.read`, `usage.read`, `shell.read`,
-  `shell.control`, `avatar.read`, `avatar.control`.
+  `shell.control`.
 
 - `webSearch`: tools that search the web (the plugin needs a `network:` capability). A call is judged as a web search:
   at the default level it runs without a card. The card warns that what a bot searches goes to the plugin.

@@ -4,8 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AVATAR_CHANGED_EVENT as CORE_CHANGED, AVATAR_CUE_EVENT as CORE_CUE } from "../../../packages/core/src/plugin-host/api/avatar";
-import { AVATAR_CHANGED_EVENT, AVATAR_CUE_EVENT, LAYER_METHODS, LayerLinks, OWN_EVENT_KEYS, OwnEventMailbox } from "../src/main/layer-links";
+import { LAYER_METHODS, LayerLinks, OWN_EVENT_KEYS, OwnEventMailbox } from "../src/main/layer-links";
 import { Pair } from "../src/main/pair/pair";
 import { appHello, readAppToken } from "../src/main/pair/start";
 import { daemonEndpoint, dial } from "../src/main/protocol/client";
@@ -122,19 +121,13 @@ describe("a plugin's own events, latest-wins", () => {
     expect(got[0]![1]).toMatchObject({ event: "t10" });
   });
 
-  test("every figure cue goes on, in order (an outfit's off never gives way to the next on); a figure's catalogue and box are kept apart", () => {
-    expect([AVATAR_CUE_EVENT, AVATAR_CHANGED_EVENT]).toEqual([CORE_CUE, CORE_CHANGED]);
-    const got: [string, unknown][] = [];
-    const box = new OwnEventMailbox((p, e) => got.push([p, e]), 5);
-    const cue = (part: string, on: boolean) => ({ type: "plugin_ui_message", event: AVATAR_CUE_EVENT, value: { bot: "alpha", cue: { type: "outfit", part, on } } });
-    const cues = [cue("lilac-dress", false), cue("yellow-raincoat", false), cue("navy-uniform", true)];
-    for (const c of cues) box.offer("moss", c);
-    box.offer("alpha", { type: "plugin_ui_message", event: AVATAR_CHANGED_EVENT, value: { kind: "catalogue", catalogue: { outfits: [] } } });
-    box.offer("alpha", { type: "plugin_ui_message", event: AVATAR_CHANGED_EVENT, value: { kind: "box", box: { canvas: { width: 1, height: 1 } } } });
-    box.offer("alpha", { type: "plugin_ui_message", event: AVATAR_CHANGED_EVENT, value: { kind: "box", box: { canvas: { width: 2, height: 2 } } } });
+  test("a point message (the core's plugin_api_event) is never held or coalesced: every one goes on at once, in order", () => {
+    const got: unknown[] = [];
+    const box = new OwnEventMailbox((_p, e) => got.push(e), 5);
+    const msg = (n: number) => ({ type: "plugin_api_event", topic: "points.onMessage", value: { point: "luna.beat", from: "luna", value: { n } } });
+    for (let i = 0; i < 5; i++) expect(box.offer("dancer", msg(i))).toBe(false);
     box.flush();
-    expect(got.filter(([p]) => p === "moss").map(([, e]) => e)).toEqual(cues);
-    expect<unknown>(got.filter(([p]) => p === "alpha").map(([, e]) => (e as { value: unknown }).value)).toEqual([{ kind: "catalogue", catalogue: { outfits: [] } }, { kind: "box", box: { canvas: { width: 2, height: 2 } } }]);
+    expect(got).toEqual([]);
   });
 });
 

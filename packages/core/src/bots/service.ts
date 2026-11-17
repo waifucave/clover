@@ -77,7 +77,6 @@ export interface EffectiveBot {
    *  asks nothing, like the user's own choice. Only with `modelFrom: "plugin"`. */
   modelBundled?: true;
   effort?: string;
-  avatar?: { file: string; format: string; portrait?: string; credit?: string };
   theme?: string;
   layout?: string;
   greeting?: string;
@@ -749,10 +748,10 @@ export class BotService {
   }
 
   /** Today's Edit page on a record bot (`bot.setUserLayer`): its name, instructions, model and effort change the record;
-   *  the LAN switch stays the user layer's; the plugin bot's look (avatar, theme, layout) has no place on a record. */
+   *  the LAN switch stays the user layer's; the plugin bot's look (theme, layout) has no place on a record. */
   async #setRecordLayer(id: string, parsed: ReturnType<typeof parseUserLayerPatch>, model: unknown): Promise<ChangeResult> {
-    if (parsed.avatar !== undefined || parsed.theme !== undefined || parsed.layout !== undefined || parsed.avatarCredit !== undefined) {
-      throw new ContractError("invalid", "a bot that is engine data has no avatar, theme or layout of its own");
+    if (parsed.theme !== undefined || parsed.layout !== undefined) {
+      throw new ContractError("invalid", "a bot that is engine data has no theme or layout of its own");
     }
     if (typeof model === "string" && this.#o.modelOffer?.(model) === "absent") throw new ContractError("invalid", `${model} isn't offered by any plugin that is on: pick another model`);
     const patch: BotPatch = {
@@ -1061,7 +1060,6 @@ export class BotService {
     // MOSS's own bundled plugin, as staged: what it chose asks nothing (the owner's ruling, revising #298/#311's).
     // Decided once per load (`#bundled`), against the verified bytes' own tags.
     const bundled = plugin.bundled;
-    const avatar = layer.avatar ?? entry.avatar;
     const theme = layer.theme ?? entry.theme;
     const layout = layer.layout ?? entry.layout;
     return {
@@ -1072,7 +1070,6 @@ export class BotService {
       modelFrom,
       ...(bundled?.model === true && modelFrom === "plugin" ? { modelBundled: true as const } : {}),
       ...(effort === undefined ? {} : { effort }),
-      ...(avatar === undefined ? {} : { avatar: structuredClone(avatar) }),
       ...(theme === undefined ? {} : { theme }),
       ...(layout === undefined ? {} : { layout }),
       ...(plugin.greeting === undefined ? {} : { greeting: plugin.greeting }),
@@ -1235,18 +1232,6 @@ export class BotService {
     return status === "prompting" || status === "cancelling" || status === "starting" ? "thinking" : "idle";
   }
 
-  /** The URL a layer loads the avatar from. The user's own model is `user:<folder>/<file>`, kept in the core's folder and
-   *  served from `/_a/<bot>/…`; any other file a user layer names is a raw path, never handed to a layer. */
-  #avatarSrc(live: Live, eff: { avatar?: { file: string; format: string; credit?: string }; userLayer: readonly string[] }): string {
-    const avatar = eff.avatar;
-    if (avatar === undefined) return "";
-    if (eff.userLayer.includes("avatar")) {
-      if (!avatar.file.startsWith("user:")) return "";
-      return `/_a/${botSegment(live.id)}/${avatar.file.slice(5).split("/").map(encodeURIComponent).join("/")}`;
-    }
-    return this.#o.assetUrl?.(live.id, avatar.file) ?? avatar.file;
-  }
-
   #view(live: Live): BotView {
     const eff = this.#effective(live);
     if (live.plugin === undefined) {
@@ -1255,20 +1240,12 @@ export class BotService {
         ...(eff.lan === true ? { lan: true } : {}), userLayer: eff.userLayer, state: this.#state(live), computer: this.#runner(), mainSession: live.mainSession,
       };
     }
-    const avatarSrc = this.#avatarSrc(live, eff);
-    // The user's own avatar brings its own portrait when it has one; otherwise the bot keeps the plugin's (her face in the dock
-    // and the lists, not a letter, while the model on her stage is the one the user chose).
-    const portraitPath = live.plugin.entry.avatar?.portrait;
-    const ownPortrait = eff.userLayer.includes("avatar") ? eff.avatar?.portrait : undefined;
-    const portrait = ownPortrait ?? (portraitPath === undefined ? undefined : this.#o.assetUrl?.(live.id, portraitPath));
     return {
       id: live.id,
       name: eff.name,
-      ...(portrait === undefined ? {} : { portrait }),
       model: eff.model,
       ...(eff.effort === undefined ? {} : { effort: eff.effort }),
       ...(eff.theme === undefined ? {} : { theme: eff.theme }),
-      ...(avatarSrc === "" || eff.avatar === undefined ? {} : { avatar: { src: avatarSrc, format: eff.avatar.format, ...(eff.userLayer.includes("avatar") && eff.avatar.credit !== undefined ? { credit: eff.avatar.credit } : {}) } }),
       ...(eff.lan === true ? { lan: true } : {}),
       userLayer: eff.userLayer,
       state: this.#state(live),

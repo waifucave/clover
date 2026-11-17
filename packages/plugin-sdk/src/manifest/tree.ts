@@ -3,8 +3,6 @@
 // to. Nothing runs. The reader is how the folder is reached: the real file system for the CLI and the registry, or an
 // in-memory folder in tests.
 import { MAX_CHILD_PLUGINS, type ValidationIssue } from "@waifucave/moss-protocol";
-import { avatarFileProblem, BUNDLED_AVATAR_FORMATS, extensionOf, live2dReferences, type AvatarFormatDecl } from "../catalogs/avatars";
-import { AvatarFormatEntry } from "../catalogs/points";
 import { BOT_TAB_INSIDE, spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
 import { DEFAULT_TAB_LAYOUT, LayoutContributionSchema, LayoutFileSchema, contributionProblems, isLayoutPatch, layoutPaths, layoutSpots, resolveLayoutFile } from "../formats/layout";
@@ -51,10 +49,6 @@ export interface TreeReport {
 
 interface Cards {
   styled: boolean; window: boolean; skins: string[];
-  /** Each bot's avatar, checked once every format the tree declares is known (after its children are read). */
-  avatars: { base: string; file: string; avatar: { file: string; format: string } }[];
-  /** The `avatar.formats` entries the tree's own plugins declare. */
-  formats: AvatarFormatDecl[];
 }
 
 /** JSON with every object's keys in order, so two spellings of one block compare equal. */
@@ -93,9 +87,6 @@ class TreeFindings {
 /** Validates the plugin folder the reader shows. `folderName` is its name in the plugins directory. */
 export async function validateTree(reader: PluginFolderReader, opts: {
   folderName: string; bundled?: boolean; apiVersion?: string;
-  /** The installed renderers' `avatar.formats` declarations, which a bot's avatar is checked by (its file, how its
-   *  model's files are found); the ones MOSS ships when left out. The tree's own declarations count too. */
-  avatarFormats?: readonly AvatarFormatDecl[];
 }): Promise<TreeReport> {
   const findings = new TreeFindings();
   const text = await reader.readText(MANIFEST_FILE);
@@ -111,7 +102,7 @@ export async function validateTree(reader: PluginFolderReader, opts: {
   const top = validateManifest(text, { folderName: opts.folderName, bundled: opts.bundled, apiVersion: opts.apiVersion });
   const topId = top.id ?? opts.folderName;
   const namespace = top.namespace ?? topId;
-  const cards: Cards = { styled: top.restylesCards, window: false, skins: [], avatars: [], formats: [] };
+  const cards: Cards = { styled: top.restylesCards, window: false, skins: [] };
   if (top.manifest) await checkFiles(reader, "", top.manifest, topId, top.bot, findings, cards);
 
   const children: { folder: string; ok: boolean; report: ManifestReport }[] = [];
@@ -139,10 +130,6 @@ export async function validateTree(reader: PluginFolderReader, opts: {
     }
     children.push({ folder, ok: report.ok, report });
   }
-
-  // Each bot's avatar, by its format's declaration: the installed ones (or MOSS's own) and the tree's.
-  const formats = [...cards.formats, ...(opts.avatarFormats ?? BUNDLED_AVATAR_FORMATS)];
-  for (const a of cards.avatars) await checkAvatar(reader, a.base, a.file, a.avatar, formats, findings);
 
   // Across the tree: tool names are unique within a top-level plugin (§5.9), and command names within its namespace.
   const tools = new Map<string, string>();
@@ -191,16 +178,9 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
   const c = m.contributes ?? {};
   if (c.bot) {
     for (const k of ["instructions", "greeting", "memory"] as const) await must(c.bot[k], ["contributes", "bot", k], "contribution");
-    if (c.bot.avatar && (await must(c.bot.avatar.file, ["contributes", "bot", "avatar", "file"], "contribution"))) {
-      cards.avatars.push({ base, file, avatar: c.bot.avatar });
-    }
     if (c.bot.layout && (await must(c.bot.layout, ["contributes", "bot", "layout"], "contribution"))) {
       await checkLayout(reader, base, c.bot.layout, file, isBot, f);
     }
-  }
-  for (const raw of ((c as Record<string, unknown>)["avatar.formats"] as unknown[] | undefined) ?? []) {
-    const parsed = AvatarFormatEntry.safeParse(raw);
-    if (parsed.success) cards.formats.push(parsed.data);
   }
   for (const [i, theme] of (c.themes ?? []).entries()) {
     if (await must(theme.file, ["contributes", "themes", i, "file"], "entry") && (await checkTheme(reader, base, theme.file, topId, f, cards))) cards.styled = true;
@@ -286,43 +266,6 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
     for (const name of SHELL_NOT_OFFERED) if (named.has(name)) f.warn(full, "shell_not_offered", ["shell", name], SHELL_NOT_OFFERED_WORDS(name));
   }
   return setsCardTokens(t);
-}
-
-/** A bot's avatar by its format's declaration: its file (the bot schema already holds MOSS's own formats to theirs),
- *  and, for a format whose files are found by a check the core implements (`files.find`), that check. A format no
- *  declaration names isn't checked: its renderer, once installed, knows its files. */
-async function checkAvatar(reader: PluginFolderReader, base: string, file: string, avatar: { file: string; format: string }, formats: readonly AvatarFormatDecl[], f: TreeFindings): Promise<void> {
-  const decl = formats.find((d) => d.format === avatar.format);
-  if (decl === undefined) return;
-  if (!BUNDLED_AVATAR_FORMATS.some((b) => b.format === avatar.format)) {
-    const problem = avatarFileProblem(avatar.format, avatar.file, [decl]);
-    if (problem) {
-      f.error(file, "contribution", "file_format", ["contributes", "bot", "avatar", "file"], problem);
-      return;
-    }
-  }
-  // An archive is checked when the core unpacks it.
-  if (extensionOf(avatar.file, decl.entry.extensions) === ".zip") return;
-  if (decl.files.find === "cubism-model3") await checkCubismModel3(reader, base, avatar.file, f);
-}
-
-/** `cubism-model3`: a Cubism `model3.json` names files beside it (`live2dReferences`); each must exist and stay inside
- *  the folder. */
-async function checkCubismModel3(reader: PluginFolderReader, base: string, path: string, f: TreeFindings): Promise<void> {
-  const full = `${base}${path.startsWith("./") ? path.slice(2) : path}`;
-  const value = await readFormat(reader, base, path, full, f);
-  if (value === undefined) return;
-  const refs = live2dReferences(value);
-  if (refs === null) {
-    f.error(full, "contribution", "file_format", [], "not a Cubism model3.json: it needs FileReferences with a Moc and Textures");
-    return;
-  }
-  const dir = full.includes("/") ? full.slice(0, full.lastIndexOf("/") + 1) : "";
-  for (const ref of refs) {
-    const problem = manifestPathProblem(`${dir.slice(base.length)}${ref}`);
-    if (problem) f.error(full, "contribution", "path_escape", [], `"${ref}" has ${problem}`);
-    else if (!(await reader.exists(`${dir}${ref}`))) f.error(full, "contribution", "file_missing", [], `"${ref}" doesn't exist`);
-  }
 }
 
 async function checkLayout(reader: PluginFolderReader, base: string, path: string, file: string, isBot: boolean, f: TreeFindings): Promise<void> {

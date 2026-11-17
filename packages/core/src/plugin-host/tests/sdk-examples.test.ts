@@ -121,7 +121,7 @@ describe("the SDK's examples install as they ship", () => {
     }
   });
 
-  test("example-pngtuber: a third-party character renderer installs from its folder; its manifest holds the format it declares and its TSX builds to the layer's imports only", async () => {
+  test("example-pngtuber: a third-party renderer for the avatar plugin installs from its folder; it waits for the plugins whose points it fills, and its TSX builds to the layer's imports only", async () => {
     const home = temp("moss-d-pngtuber-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const opened = await openPluginRegistry({ mossHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
@@ -130,10 +130,9 @@ describe("the SDK's examples install as they ship", () => {
       const r = (await m["plugin.install"]!({ source: { from: "folder", path: join(EXAMPLES, "example-pngtuber") } }, APP)) as { id: string; treeHash: string };
       expect(await opened.registry.approve(r.id, r.treeHash)).toBe("approved");
       expect(opened.registry.get("example-pngtuber")?.state).toBe("running");
-      // Its spot `avatar` is declared by a stage, which a bare registry has not got: the plugin waits for it. `avatar.formats`
-      // is the platform's own point (no plugin declares it), so it waits for nothing; the view's `avatarFormats` is tested
-      // against the part in ui.test.ts.
-      expect(opened.registry.get("example-pngtuber")?.waitingFor).toEqual(["avatar"]);
+      // Every point it plugs into is a plugin's own (the avatar plugin's spot, formats and packs; MOSS Voice's speech), which a
+      // bare registry has not got: it waits for each. Nothing of it is the platform's.
+      expect([...(opened.registry.get("example-pngtuber")?.waitingFor ?? [])].sort()).toEqual(["moss.character.formats", "moss.character.packs", "moss.character.renderer", "moss.voice.speech"]);
       const built = await buildPluginModule({ entry: join(home, "plugins", "example-pngtuber", "client", "index.tsx"), outFile: join(temp("moss-d-pt-out-"), "index.js"), side: "client" });
       for (const spec of built.imports) expect([spec, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([spec, true]);
     } finally {

@@ -6,7 +6,7 @@
 // user installed, over a bundled one"), `enabledAt` (rule 7, "the most recently enabled") and `capabilities` (`needs`).
 // Until they are, `readUiPlugins` takes them from `plugin.list` and the plugin's detail when given, and otherwise
 // falls back to: bundled for the `moss` tree and `alpha`, the order the daemon listed them in, and no capabilities.
-import { UiPluginView as UiPluginViewSchema, type AvatarFormatView, type UiPluginView } from "@waifucave/moss-protocol";
+import { UiPluginView as UiPluginViewSchema, type DataFilesView, type UiPluginView } from "@waifucave/moss-protocol";
 import { SPOTS } from "@waifucave/moss-plugin-sdk";
 
 /** Where a plugin came from, as the resolver's rule 6 sees it. */
@@ -100,10 +100,9 @@ export interface UiPlugin {
   botLayout?: string;
   /** For a bot: the user's own layout for its tab (the user layer's `layout`, a layout file's JSON), made last. */
   userLayout?: string;
-  /** The model formats it draws (its `avatar.formats`), by kind of file: what the app may serve of a bot's model (`modelFileKind`). */
-  avatarFormats: readonly AvatarFormatView[];
-  /** For a bot: the avatar its manifest names (a file in its folder, and its format). */
-  botAvatar?: { file: string; format: string };
+  /** The files that come with its entries on points that declare them (`DataFilesView`): folders of its own whose files of
+   *  the declared kinds the app serves to every layer (`dataFile`). */
+  dataFiles: readonly DataFilesView[];
   /** The manifest's `client.isolated`: its layer's frames may be cross-origin isolated (SharedArrayBuffer). */
   isolated?: true;
   /** Its picture for lists (the view's `icon`): a file in its folder, served as an image only (`/_t/`). */
@@ -162,7 +161,6 @@ export interface UiPluginExtras {
   botTheme?: string;
   botLayout?: string;
   userLayout?: string;
-  botAvatar?: { file: string; format: string };
   name?: string;
   css?: readonly string[];
 }
@@ -264,8 +262,6 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
   const botTheme = typeof bot?.theme === "string" ? bot.theme : typeof v.botTheme === "string" ? v.botTheme : undefined;
   const botLayout = typeof bot?.layout === "string" ? bot.layout : typeof v.botLayout === "string" ? v.botLayout : undefined;
   const userLayout = typeof bot?.userLayout === "string" ? bot.userLayout : undefined;
-  const av = bot?.avatar !== null && typeof bot?.avatar === "object" ? (bot.avatar as Record<string, unknown>) : undefined;
-  const botAvatar = typeof av?.file === "string" && typeof av.format === "string" ? { file: av.file, format: av.format } : undefined;
   return {
     ...(source !== undefined ? { source: source as UiSource } : {}),
     ...(typeof v.enabledAt === "number" ? { enabledAt: v.enabledAt } : {}),
@@ -274,7 +270,6 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
     ...(botTheme !== undefined ? { botTheme } : {}),
     ...(botLayout !== undefined ? { botLayout } : {}),
     ...(userLayout !== undefined ? { userLayout } : {}),
-    ...(botAvatar !== undefined ? { botAvatar } : {}),
     ...(typeof v.name === "string" ? { name: v.name } : {}),
     ...(strings(v.css) ? { css: strings(v.css)! } : {}),
   };
@@ -325,9 +320,8 @@ export function readUiPlugins(views: readonly unknown[], extras: Readonly<Record
       ...(x.name !== undefined ? { name: x.name } : {}),
       ...(x.botTheme !== undefined ? { botTheme: x.botTheme } : {}),
       ...(x.botLayout !== undefined ? { botLayout: x.botLayout } : {}),
-      ...(x.botAvatar !== undefined ? { botAvatar: x.botAvatar } : {}),
       ...((view as { isolated?: unknown }).isolated === true ? { isolated: true as const } : {}),
-      avatarFormats: view.avatarFormats ?? [],
+      dataFiles: view.dataFiles ?? [],
       ...(typeof view.icon === "string" ? { icon: view.icon } : {}),
       themes: view.themes,
       locales: view.locales,

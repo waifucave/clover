@@ -22,11 +22,11 @@
 //   that connection alone, until it is unwatched, the connection closes, or the plugin stops, is turned off, removed or
 //   loses the capability (`ended`, with why).
 import {
-  API_CALLS, apiCallAllowed, clampAvatarCap, isComponentCall, listenerArgOf, fromLayerWire, responseToLayerWire, toLayerWire,
-  type ApiCallInfo, type AvatarFormatEntry,
+  API_CALLS, apiCallAllowed, clampDataFileCap, isComponentCall, listenerArgOf, fromLayerWire, responseToLayerWire, toLayerWire,
+  type ApiCallInfo, type DataFileType,
 } from "@waifucave/moss-plugin-sdk";
 import { randomUUID } from "node:crypto";
-import { PLUGINS_EVENTS, PLUGINS_METHODS, topPluginIdOf, type UiPluginView } from "@waifucave/moss-protocol";
+import { PLUGINS_EVENTS, PLUGINS_METHODS, topPluginIdOf, type DataFilesView, type UiPluginView } from "@waifucave/moss-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import { mossProcessOnly, type ApiRouter } from "../contracts/plugin-host";
@@ -41,13 +41,13 @@ export function layerOf(pluginId: string): string {
   return pluginId === "moss" || pluginId.startsWith("moss/") ? "moss" : pluginId.replace(/\//g, "--");
 }
 
-type Entries = Pick<PluginRegistry, "entries">;
+type Entries = Pick<PluginRegistry, "entries"> & Partial<Pick<PluginRegistry, "points">>;
 
 function activeValues<T>(registry: Entries, point: string, pluginId: string): T[] {
   return registry.entries(point).filter((c) => c.pluginId === pluginId && c.state === "active").map((c) => c.value as T);
 }
 
-/** A plugin's picture: its manifest's `icon`, else its bot's avatar portrait (each a file in its folder). */
+/** A plugin's picture: its manifest's `icon` (a file in its folder). */
 /** Only a path inside its own folder that a view can hold (UiPluginView's icon): never one that would fail the list. */
 const inFolder = (p: unknown): p is string => typeof p === "string" && p !== "" && p.length <= 4096 && !p.startsWith("/") && !p.includes("\\") && !/^[a-z][a-z0-9+.-]*:/i.test(p) && !p.split("/").some((s) => s === ".." || s === "." || s === "");
 
@@ -58,11 +58,30 @@ export function manifestIconOf(m: unknown): string | undefined {
 }
 
 export function iconOf(m: unknown): string | undefined {
-  const x = m as { icon?: unknown; contributes?: { bot?: { avatar?: { portrait?: unknown } } } };
-  const own = manifestIconOf(m);
-  if (own !== undefined) return own;
-  const portrait = x.contributes?.bot?.avatar?.portrait;
-  return inFolder(portrait) ? portrait : undefined;
+  return manifestIconOf(m);
+}
+
+/** The files that come with a plugin's entries (`DataFilesView`): for each point a running declaration declares with
+ *  `files`, each active entry of the plugin's there, each such field naming a path in its folder: that path's folder,
+ *  with the declared kinds, each cap clamped. */
+export function dataFilesOf(registry: Pick<PluginRegistry, "entries"> & Partial<Pick<PluginRegistry, "points">>, pluginId: string): DataFilesView[] {
+  if (registry.points === undefined) return [];
+  const out: DataFilesView[] = [];
+  for (const p of registry.points()) {
+    const files = p.decl?.files as Record<string, { kinds: { ext: string[]; type: DataFileType; maxBytes?: number }[] }> | undefined;
+    if (!p.active || p.spot || p.declaredBy === "core" || files === undefined) continue;
+    for (const c of registry.entries(p.name)) {
+      const value = c.value as Record<string, unknown> | null;
+      if (c.pluginId !== pluginId || c.state !== "active" || value === null || typeof value !== "object") continue;
+      for (const [field, spec] of Object.entries(files)) {
+        const path = value[field];
+        if (!inFolder(path)) continue;
+        const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+        out.push({ folder, kinds: spec.kinds.slice(0, 16).map((k) => ({ ext: [...k.ext], type: k.type, maxBytes: clampDataFileCap(k.type, k.maxBytes) })) });
+      }
+    }
+  }
+  return out.slice(0, 64);
 }
 
 /** One plugin's view, or undefined when it shows no UI. */
@@ -82,16 +101,10 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
   const ui = activeValues<Record<string, unknown>>(registry, "ui", r.id);
   const themes = activeValues<{ id: string; file: string }>(registry, "themes", r.id).map((t) => ({ id: t.id, file: t.file }));
   const locales = activeValues<{ lang: string; file: string }>(registry, "locales", r.id).map((l) => ({ lang: l.lang, file: l.file }));
-  const bot = activeValues<{ name: string; theme?: string; layout?: string; avatar?: { file?: unknown; format?: unknown } }>(registry, "bot", r.id)[0];
-  const avatarFormats = activeValues<AvatarFormatEntry>(registry, "avatar.formats", r.id).map((f) => ({
-    format: f.format,
-    extensions: [...f.entry.extensions],
-    kinds: f.files.kinds.map((k) => ({ ext: [...k.ext], type: k.type, maxBytes: clampAvatarCap(k.type, k.maxBytes) })),
-    find: f.files.find,
-    ...(f.files.maxFiles !== undefined ? { maxFiles: f.files.maxFiles } : {}),
-  }));
+  const bot = activeValues<{ name: string; theme?: string; layout?: string }>(registry, "bot", r.id)[0];
+  const dataFiles = dataFilesOf(registry, r.id);
   const client = m.client;
-  if (client === undefined && ui.length === 0 && themes.length === 0 && locales.length === 0 && bot === undefined && avatarFormats.length === 0) return undefined;
+  if (client === undefined && ui.length === 0 && themes.length === 0 && locales.length === 0 && bot === undefined && dataFiles.length === 0) return undefined;
   const networkHosts = r.granted.filter((c) => c.startsWith("network:")).map((c) => c.slice("network:".length)).filter((h) => h !== "");
   return {
     pluginId: r.id,
@@ -101,8 +114,8 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
     capabilities: [...r.granted],
     ...(client?.css !== undefined && client.css.length > 0 ? { css: [...client.css] } : {}),
     ...(networkHosts.length > 0 ? { networkHosts } : {}),
-    ...(avatarFormats.length > 0 ? { avatarFormats } : {}),
-    ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}), ...(userLayout?.(r.id) !== undefined ? { userLayout: userLayout(r.id)! } : {}), ...(typeof bot.avatar?.file === "string" && bot.avatar.file !== "" && bot.avatar.file.length <= 4096 && typeof bot.avatar.format === "string" && bot.avatar.format !== "" && bot.avatar.format.length <= 32 ? { avatar: { file: bot.avatar.file, format: bot.avatar.format } } : {}) } } : {}),
+    ...(dataFiles.length > 0 ? { dataFiles } : {}),
+    ...(bot !== undefined ? { bot: { name: bot.name, ...(bot.theme !== undefined ? { theme: bot.theme } : {}), ...(bot.layout !== undefined ? { layout: bot.layout } : {}), ...(userLayout?.(r.id) !== undefined ? { userLayout: userLayout(r.id)! } : {}) } } : {}),
     layer: layerOf(r.id),
     ...(iconOf(m) !== undefined ? { icon: iconOf(m) } : {}),
     assetBase: r.folder,
@@ -116,7 +129,7 @@ export function uiViewOf(registry: Entries, r: PluginRecord, builds?: Pick<Clien
   };
 }
 
-export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries">, builds?: Pick<ClientBuildLookup, "get">, userLayout?: UserLayoutOf): UiPluginView[] {
+export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries"> & Partial<Pick<PluginRegistry, "points">>, builds?: Pick<ClientBuildLookup, "get">, userLayout?: UserLayoutOf): UiPluginView[] {
   const out: UiPluginView[] = [];
   for (const r of registry.list()) {
     const v = uiViewOf(registry, r, builds, userLayout);
@@ -126,7 +139,7 @@ export function uiPluginViews(registry: Pick<PluginRegistry, "list" | "entries">
 }
 
 export interface PluginUiOptions {
-  registry: Pick<PluginRegistry, "list" | "entries" | "watch"> & Partial<Pick<PluginRegistry, "get">>;
+  registry: Pick<PluginRegistry, "list" | "entries" | "watch"> & Partial<Pick<PluginRegistry, "get" | "points">>;
   /** A plugin's settings as its own layer reads and changes them (`PluginSettings.layerView`, `layerSet`). Absent: both
    *  are refused. */
   settings?: { layerView(pluginId: string, key?: string, bot?: string): Promise<unknown>; layerSet(pluginId: string, key: string, value: unknown, bot?: string): void };

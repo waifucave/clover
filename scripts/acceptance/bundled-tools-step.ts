@@ -12,6 +12,7 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { STAGE_TOOLS } from "../../plugins/alpha/server/tools";
+import { FIGURE_TOOLS } from "../../plugins/moss/plugins/character/server/tools";
 import { TOOL_NAME as BROWSER_TOOL } from "../../plugins/moss/plugins/browser/src/schema";
 import { WEB_TOOLS } from "../../plugins/moss/plugins/web/src/tools";
 import { TOOLS as BUILDER_TOOLS, TOOL_NEW } from "../../plugins/moss/plugins/plugin-builder/src/tools";
@@ -26,12 +27,13 @@ const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins");
 const SERVERS: Record<string, readonly string[]> = {
   "alpha/stage": STAGE_TOOLS.map((t) => t.name),
   "moss/browser/browser": [BROWSER_TOOL],
+  "moss/character/figure": FIGURE_TOOLS.map((t) => t.name),
   "moss/plugin-builder/builder": BUILDER_TOOLS.map((t) => t.name),
   "moss/web/web": WEB_TOOLS.map((t) => t.name),
 };
 const WEB: ReadonlySet<string> = new Set(WEB_TOOLS.map((t) => t.name));
 
-/** One harmless call per tool: it reads, or changes only Alpha's display, and undoes what it pins. */
+/** One harmless call per tool: it reads, or changes only a display (Alpha's room, the avatar), and undoes what it pins. */
 const INPUTS: Record<string, Record<string, unknown>> = {
   stage_status: {},
   set_scene: { scene: "meadow" },
@@ -41,7 +43,8 @@ const INPUTS: Record<string, Record<string, unknown>> = {
   celebrate: {},
   set_expression: { name: "acceptance-smoke" },
   play_motion: { name: "acceptance-smoke" },
-  toggle_outfit: { part: "acceptance-smoke" },
+  toggle_outfit: { part: "acceptance-smoke", on: true },
+  figure_status: {},
   [BROWSER_TOOL]: { verb: "tabs" },
   WebSearch: { query: "acceptance smoke" },
   WebFetch: { url: `https://${FAKE_PUBLIC_SITE}/article` },
@@ -49,14 +52,13 @@ const INPUTS: Record<string, Record<string, unknown>> = {
   [TOOL_NEW]: { template: "theme", id: "acceptance-smoke", name: "Acceptance smoke" },
 };
 
-/** The honest refusals a harmless call may get, by tool: the run's window shows Alpha headless, with no model of hers
- *  loaded, so a model's names aren't there (her stage's own words, plugins/alpha/server/stage.ts). */
+/** The honest refusals a harmless call may get, by tool: the avatar plugin's tools (plugins/moss/plugins/character/server)
+ *  say so when no avatar is shown for the session, or when the model shown has no such name. */
 const HONEST: Record<string, RegExp> = {
-  set_expression: /Her tab hasn't loaded a model yet|The model has no expression/,
-  play_motion: /Her tab hasn't loaded a model yet|The model has no motion/,
-  // On her own model a name that isn't one of her outfits is refused with their names (plugins/alpha/server/store.ts), so the
-  // smoke's call changes nothing.
-  toggle_outfit: /Her tab hasn't loaded a model yet|The model has no outfit part|Her outfits are lilac-dress, navy-uniform, yellow-raincoat/,
+  set_expression: /no avatar is shown|this model has no expression|nothing is drawing the figure/,
+  play_motion: /no avatar is shown|this model has no motion|nothing is drawing the figure|doesn't do motions/,
+  toggle_outfit: /no avatar is shown|this model has no outfit part|nothing is drawing the figure|doesn't do outfits/,
+  figure_status: /no avatar is shown/,
 };
 
 /** What a bundled plugin calling into a core that doesn't serve the call looks like. */

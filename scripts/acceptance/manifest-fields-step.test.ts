@@ -55,10 +55,10 @@ test("R1: the plugin that asks for the six that were MOSS's own validates, its O
   const card = JSON.stringify(v.okText ?? []);
   const okLines = Object.fromEntries(ONCE_MOSS_OWN.map((cap) => [cap, CAPABILITIES.find((x) => x.name === cap)!.ok]));
   for (const cap of ONCE_MOSS_OWN) expect(CAPABILITIES.find((x) => x.name === cap)?.warns).toBe(true);
-  const all = { card, granted: [...ONCE_MOSS_OWN], okLines, terminal: "opened t1", avatar: "answered", install: "found acc-asked-npm", fetched: "{\"text\":\"ACCEPTANCE-ARTICLE-TEXT\"}" };
+  const all = { card, granted: [...ONCE_MOSS_OWN], okLines, terminal: "opened t1", install: "found acc-asked-npm", fetched: "{\"text\":\"ACCEPTANCE-ARTICLE-TEXT\"}" };
   expect(asksAllWrong(all)).toEqual([]);
   expect(asksAllWrong({ card, granted: [...ONCE_MOSS_OWN], okLines })).toEqual([]);
-  expect(asksAllWrong({ ...all, granted: ["browser"], terminal: "refused: terminal isn't granted" })).toHaveLength(6);
+  expect(asksAllWrong({ ...all, granted: ["browser"], terminal: "refused: terminal isn't granted" })).toHaveLength(5);
 });
 
 test("the plugin with a bot validates and its OK lines are the ones the row looks for; a bot's entry on the sidebar is refused with its words", async () => {

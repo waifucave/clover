@@ -199,7 +199,7 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       const spot = (c.value as { spot?: string }).spot ?? "";
       return CORE_SPOTS.includes(spot) ? undefined : spot;
     }
-    // A point the platform itself reads (`avatar.formats`) has no declarer to wait for.
+    // A point the platform itself reads (the catalog's `platform`) has no declarer to wait for.
     if (opts.catalog(c.point)?.platform === true) return undefined;
     return c.point.includes(".") ? c.point : undefined;
   };

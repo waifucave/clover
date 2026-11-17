@@ -187,29 +187,6 @@
             ],
             "doc": "Buttons in the tab's header."
           },
-          "bot.stage": {
-            "shape": "single",
-            "props": {
-              "type": "object",
-              "properties": {
-                "bot": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            },
-            "context": [
-              "bot"
-            ],
-            "doc": "The stage, where the avatar stands."
-          },
           "bot.side": {
             "shape": "single",
             "props": {

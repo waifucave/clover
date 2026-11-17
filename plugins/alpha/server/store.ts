@@ -6,7 +6,15 @@
 // reaction is dropped; a tool says to try again).
 // Types only (erased when it runs): her server has no dependencies, so the SDK is named by its path.
 import type { PointsApi, SettingsApi, SyncedStore, UiSendApi } from "../../../packages/plugin-sdk/src/api/plugin-api";
-import type { AvatarApi, AvatarCue, AvatarCueResult } from "../../../packages/plugin-sdk/src/catalogs/avatar-cues";
+import type { FigureCatalogue, FigureCue as AvatarCue, FigureCueResult as AvatarCueResult } from "../../moss/plugins/character/client/figure-cues";
+
+/** The figure calls her stage was written for (handed in as `figure`). The platform's avatar API is retired (the figure is the avatar plugin's,
+ *  `moss/character`): no API carries it, so these stay unset and her stage's cues are a no-op until lane MC1 reworks it. */
+export interface AvatarApi {
+  cue(cue: AvatarCue): Promise<AvatarCueResult>;
+  catalogue(): Promise<FigureCatalogue | undefined>;
+  watch(listener: (change: unknown) => void): () => void;
+}
 import { DEFAULT_OUTFIT, isOutfit, OUTFIT_SETTING, OUTFIT_VALUES, outfitCues, outfitOf, outfitTitle, pickOutfit, wearsHerOutfits } from "./outfits";
 import {
   applyStage, CATALOG_KEY, CATALOG_WRITES_PER_MINUTE, CONTROLS, OWN_SCENES, readCatalog, readStage, SCENES_KEY, STAGE_KEY, STAGE_MAX_BYTES, STAGE_TOPIC,
@@ -23,7 +31,6 @@ export interface StageApi {
   readonly bots?: { get(bot: string): Promise<{ readonly userLayer?: readonly string[] }> };
   readonly points?: Pick<PointsApi, "entries">;
   /** The public avatar calls (`avatar.control`, `avatar.read`): how her stage reaches her figure, whatever draws it. */
-  readonly avatar?: Pick<AvatarApi, "cue" | "catalogue">;
 }
 
 /** The expressions a celebration tries, best first. */
@@ -48,6 +55,8 @@ function readScenes(raw: unknown): Scene[] | undefined {
 
 export class StageStore {
   readonly #api: StageApi;
+  /** The figure calls she is handed (`figure`), none today. */
+  readonly #figure: Pick<AvatarApi, "cue" | "catalogue"> | undefined;
   readonly #now: () => number;
   /** Her bot's id (her plugin's). */
   readonly #bot: string;
@@ -55,8 +64,10 @@ export class StageStore {
   #window = { start: 0, n: 0 };
   #catalogWindow = { start: 0, n: 0 };
 
-  constructor(api: StageApi, o: { now?: () => number; bot?: string } = {}) {
+  constructor(api: StageApi, o: { now?: () => number; bot?: string; figure?: Pick<AvatarApi, "cue" | "catalogue"> } = {}) {
     this.#api = api;
+    // Never read off the plugin API (its proxy refuses a member it hasn't got): handed in, or none.
+    this.#figure = o.figure;
     this.#now = o.now ?? Date.now;
     this.#bot = o.bot ?? "alpha";
   }
@@ -85,7 +96,7 @@ export class StageStore {
     // The renderer's no comes first, from what it says it does (the catalogue the core judges cues by), so a refusal saves
     // nothing. Then the setting, then the cues: her tab dresses her from the setting too, and a cue sent before the setting
     // changed would have it dress her back in the old one.
-    const drawn = await this.#api.avatar?.catalogue().catch(() => undefined);
+    const drawn = await this.#figure?.catalogue().catch(() => undefined);
     if (drawn !== undefined && !drawn.capabilities.includes("outfits")) return { ok: false, said: `this renderer (${drawn.renderer}) doesn't do outfits` };
     await set.call(this.#api.settings, OUTFIT_SETTING, next);
     if (drawn !== undefined) for (const cue of outfitCues(next)) if ((await this.#cue(cue)).ok === false) break;
@@ -134,14 +145,14 @@ export class StageStore {
   }
 
   async #syncCatalogue(): Promise<void> {
-    const c = await this.#api.avatar?.catalogue().catch(() => undefined);
+    const c = await this.#figure?.catalogue().catch(() => undefined);
     if (c === undefined) return;
     await this.#keepCatalog({ v: 1, expressions: c.expressions, motions: c.motions, outfit: c.outfits.map((o) => o.name) });
   }
 
   /** A cue to her figure; undefined when it was played. */
   async #cue(cue: AvatarCue): Promise<AvatarCueResult> {
-    const a = this.#api.avatar;
+    const a = this.#figure;
     if (a === undefined) return { ok: true };
     try { return await a.cue(cue); } catch (e) { return { ok: false, reason: "invalid", message: e instanceof Error ? e.message : "her figure could not be reached" }; }
   }

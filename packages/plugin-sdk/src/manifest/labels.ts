@@ -7,7 +7,6 @@ const UI_SPOT_LABELS: Readonly<Record<string, string>> = {
   "island.tab": "Island tab",
   "settings.section": "Settings section",
   "sidebar.app": "App page",
-  avatar: "Avatar renderer",
   "pill.target": "Pill target",
   "app.background": "Background",
   status: "Status line",
@@ -25,7 +24,7 @@ const STOCK_PANELS: readonly string[] = ["session", "terminal", "diff", "browser
 /** The order the labels appear in, so a row reads the same everywhere. */
 export const CONTRIBUTION_LABEL_ORDER = [
   "Bot", "Tools", "Skills", "Agent", "Agent backend", "Model", "Theme", "Panel", "Island tab", "App page", "Background", "Pill target", "Settings section",
-  "Editor section", "Status line", "Avatar renderer", "File preview", "Message look", "Message action", "Tool result look", "Commands", "Hooks",
+  "Editor section", "Status line", "File preview", "Message look", "Message action", "Tool result look", "Commands", "Hooks",
   "Trigger", "Notifier", "Relay", "Companion", "Computer", "Translation",
 ] as const;
 

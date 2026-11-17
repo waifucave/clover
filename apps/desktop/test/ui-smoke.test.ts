@@ -164,6 +164,17 @@ beforeAll(() => {
   writeFileSync(registries.manage, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-composer"))], listPlugins: true }));
   registries.web = join(work, "web.json");
   writeFileSync(registries.web, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-web"), 1005)] }));
+  // A surface entry that opens only while its plugin's setting says so (`when.setting`), nothing to do with figures: on at
+  // the start, turned off a few seconds after the app connects.
+  const gated = join(work, "fixture-gated");
+  cpSync(join(FIXTURES, "fixture-surface"), gated, { recursive: true });
+  const gm = JSON.parse(readFileSync(join(gated, "moss.json"), "utf8")) as { id: string; contributes: { ui: Record<string, unknown>[] } };
+  gm.id = "fixture-gated";
+  gm.contributes.ui[0]!.id = "gated";
+  gm.contributes.ui[0]!.when = { setting: { shown: true } };
+  writeFileSync(join(gated, "moss.json"), JSON.stringify(gm));
+  registries.gated = join(work, "gated.json");
+  writeFileSync(registries.gated, JSON.stringify({ plugins: [...base, folderView(gated, 1008)], pluginSettings: { "fixture-gated": { shown: true } }, pluginSettingsLater: { afterMs: 4_000, pluginId: "fixture-gated", key: "shown", value: false } }));
   registries.spin = join(work, "spin.json");
   writeFileSync(registries.spin, JSON.stringify({ plugins: [...base, folderView(join(FIXTURES, "fixture-spin"), 1004)] }));
   registries.dns = join(work, "dns.json");
@@ -287,6 +298,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(fixture, r.output).toMatchObject({ visible: false, bounds: { width: 360, height: 120 } });
     const surfaceFrame = fixture!.frames.find((x) => x.origin === "moss-plugin://fixture-surface");
     expect(surfaceFrame, r.output).toMatchObject({ text: "Menu: second", node: false, bridge: "object" });
+    // The avatar plugin's on-screen figure (`when.setting: { onScreen: true }`) has no window: its setting is off.
     expect(surfaces.map((x) => x.id).sort()).toEqual(["fixture", "island", "pill"]);
     expect(r.facts!.mounts).toMatchObject({ root: 5, frame: 6 });
     for (const x of surfaces) expect(x.visible).toBe(false);
@@ -299,6 +311,18 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(at[0]!.y).toBeGreaterThan(300);
     expectBothStopped(r);
     expectQuiet(r);
+  }, 120_000);
+
+  test("a surface entry with `when.setting` opens only while its plugin's setting holds, and closes when it no longer does", () => {
+    const r = smoke(electron(), [root], "gated", { MOSS_SMOKE_WAIT_SURFACE_GONE: "gated" });
+    expectShell(r);
+    const opened = r.all.indexOf("surface: fixture-gated#gated opened");
+    const closed = r.all.indexOf("surface: fixture-gated#gated closed");
+    expect(opened, r.output).toBeGreaterThan(-1);
+    expect(closed, r.output).toBeGreaterThan(opened);
+    // The avatar plugin's on-screen figure, gated the same way on its `onScreen` (off): never opened.
+    expect(r.all).not.toContain("surface: moss/character#on-screen opened");
+    expect((r.facts!.surfaces as { id: string }[]).map((x) => x.id)).not.toContain("gated");
   }, 120_000);
 
   test("a third-party layer that hangs has its process stopped; the app doesn't restart into safe mode", () => {

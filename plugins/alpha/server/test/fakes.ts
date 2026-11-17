@@ -1,9 +1,11 @@
+import type { StageChange } from "../stage";
+import type { StageStore } from "../store";
 // A fake plugin API for Alpha's server: an in-memory store, the messages sent to her tab, settings, and her scenes
 // point's entries; and timers the test runs by hand.
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import type { PointEntry } from "../../../../packages/plugin-sdk/src/api/plugin-api";
-import type { AvatarCatalogue, AvatarCue, AvatarCueResult } from "../../../../packages/plugin-sdk/src/catalogs/avatar-cues";
+import type { FigureCatalogue as AvatarCatalogue, FigureCue as AvatarCue, FigureCueResult as AvatarCueResult } from "../../../moss/plugins/character/client/figure-cues";
 import type { StageApi } from "../store";
 
 export const ALPHA = join(import.meta.dir, "..", "..");
@@ -28,7 +30,7 @@ export function fakeApi(o: { settings?: Record<string, unknown>; scenes?: { plug
   return { api, store, sent, writes };
 }
 
-/** A fake `api.avatar`: the cues it was given, the catalogue it answers, and what it says to a cue. */
+/** A fake of the figure calls her store is handed (`figure`): the cues it was given, the catalogue it answers, and what it says to a cue. */
 export function fakeAvatar(o: { catalogue?: AvatarCatalogue; answer?: (cue: AvatarCue) => AvatarCueResult } = {}) {
   const cues: AvatarCue[] = [];
   const state = { catalogue: o.catalogue as AvatarCatalogue | undefined };
@@ -56,4 +58,15 @@ export function diskReader(dir: string) {
       return real === root || real.startsWith(root + sep);
     },
   };
+}
+
+/** What her room's buttons and commands ask of her store for her figure (an expression, a motion, an outfit part), which
+ *  her server no longer offers as tools (the avatar plugin's own do): the store's answer as words, an error when it refused. */
+export async function changeBy(store: StageStore, name: string, args: Record<string, unknown> = {}): Promise<{ content: { type: "text"; text: string }[]; isError?: true }> {
+  const s = (k: string) => (typeof args[k] === "string" ? (args[k] as string) : "");
+  const change: StageChange = name === "set_expression" ? { kind: "expression", name: s("name") }
+    : name === "play_motion" ? { kind: "motion", name: s("name") }
+    : { kind: "outfit", part: s("part"), ...(typeof args.on === "boolean" ? { on: args.on } : {}) };
+  const r = await store.change(change);
+  return r.ok ? { content: [{ type: "text", text: r.said }] } : { content: [{ type: "text", text: r.said }], isError: true };
 }

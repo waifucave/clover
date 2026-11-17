@@ -1,6 +1,6 @@
 // MOSS Voice's background part (`app.background`, spec §6.6): the player. It accepts the host half's speech streams
 // (`streams.accept("speech")`), plays them one at a time in the device's speech turn (`src/player.ts`), sends the
-// bots' mouths as speech cues (`src/levels.ts`, `avatar.control.all`), and hears the host half's stops and push-to-talk
+// bots' mouths to the plugins that fill its `moss.voice.speech` point (`src/levels.ts`, point messages), and hears the host half's stops and push-to-talk
 // holds (`host.on`, the host half's `ui.send`) and its own "Speak replies" setting (off: what plays stops). It draws
 // nothing. Both messages carry the whole state (the held utterances; each bot's stop count, which only goes up), since
 // the app hands a part only the newest message of each name within a tick; on mount it asks its host half for that
@@ -15,6 +15,8 @@ declare const __MOSS_ACCEPTANCE_BUILD__: string | false | undefined;
 
 /** The device's speech turn, which every plugin that speaks takes (P2). */
 export const DEVICE_SPEECH = "device/speech";
+/** MOSS Voice's own point, whose fillers hear what it says and when (its mouth levels). */
+export const SPEECH_POINT = "moss.voice.speech";
 
 let made: (() => AudioContextLike) | undefined;
 /** Test seam: the next players' AudioContext (undefined: the browser's). */
@@ -27,7 +29,7 @@ export function Player() {
   useEffect(() => {
     // The run's counters on the document's root (test and acceptance builds only; compiled out of a real build).
     const marked = (typeof __MOSS_TEST_BUILD__ === "string" && __MOSS_TEST_BUILD__ !== "") || (typeof __MOSS_ACCEPTANCE_BUILD__ === "string" && __MOSS_ACCEPTANCE_BUILD__ !== "");
-    const cues = new SpeechCues((bot, cue) => api.avatar?.cue?.(cue, { bot }));
+    const cues = new SpeechCues((bot, cue) => api.points.send(SPEECH_POINT, { bot, ...cue }));
     const show = (): void => {
       if (!marked || typeof document === "undefined") return;
       const c = player.counters();

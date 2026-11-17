@@ -89,8 +89,6 @@ describe("contrast", () => {
     ["card.muted", "card.background", 4.5],
     ["card.approve.text", "card.approve.background", 4.5],
     ["card.deny.text", "card.deny.background", 4.5],
-    // The avatar's credit line sits on a plate of the surface colour, below the avatar (avatar.css).
-    ["stage.text", "color.surface", 4.5],
     // Placeholders are words, and the compact pill's is its only label.
     ["color.text.placeholder", "color.surface", 4.5],
     // An input's placeholder sits on the control fill (lane F flagged it at 4.16:1).
@@ -182,7 +180,7 @@ describe("checkTheme", () => {
         theme: 2,
         name: "",
         extra: true,
-        tokens: { "color.text": "red", "space.s": 8, "Bad.name": "#000", "font.weight.bold": "700", "stage.background": "url(x.png)" },
+        tokens: { "color.text": "red", "space.s": 8, "Bad.name": "#000", "font.weight.bold": "700", "color.surface": "url(x.png)" },
         css: "../outside.css",
       },
       { strict: true },
@@ -194,7 +192,7 @@ describe("checkTheme", () => {
     expect(problems.some((p) => p.includes("space.s"))).toBe(true);
     expect(problems.some((p) => p.includes("Bad.name"))).toBe(true);
     expect(problems.some((p) => p.includes("font.weight.bold"))).toBe(true);
-    expect(problems.some((p) => p.includes("stage.background"))).toBe(true);
+    expect(problems.some((p) => p.includes("color.surface"))).toBe(true);
     expect(problems).toContain(`"css" must be a path inside the plugin`);
   });
 

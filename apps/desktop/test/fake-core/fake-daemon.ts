@@ -15,6 +15,10 @@ import { daemonEndpoint } from "../../src/main/protocol/client";
 
 export interface FakeOptions {
   home: string;
+  /** `plugin.settings.get`'s answers, by plugin and key (none: no settings). */
+  pluginSettings?: Record<string, Record<string, unknown>>;
+  /** One setting changed a while after the app connects: the value set and `plugin_settings_changed` (its key) sent. */
+  pluginSettingsLater?: { afterMs: number; pluginId: string; key: string; value: unknown };
   /** `plugin.ui`'s answer. */
   ui?: unknown[];
   /** `ui.settings`'s answer. */
@@ -171,6 +175,14 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
       }
       authed.add(s);
       if (opts.release?.mode === "ahead") doorOnly.add(s);
+      const later = opts.pluginSettingsLater;
+      if (later !== undefined) {
+        setTimeout(() => {
+          opts.pluginSettings = { ...opts.pluginSettings, [later.pluginId]: { ...opts.pluginSettings?.[later.pluginId], [later.key]: later.value } };
+          send(s, { jsonrpc: "2.0", method: "core.event", params: { type: "plugin_settings_changed", ts: Date.now(), pluginId: later.pluginId, key: later.key } });
+          record(opts.home, "setting-changed", { pluginId: later.pluginId, key: later.key });
+        }, later.afterMs);
+      }
       void sendInitialEvents(s);
       return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "user", via: "app" }, device: "devfake0000000001", features: [], ...(opts.release !== undefined ? { release: { standing: "ahead", engine: opts.release.engine } } : {}) });
     }
@@ -243,6 +255,8 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         return reply({ to: null });
       case "plugin.ui":
         return reply({ plugins: opts.ui ?? [] });
+      case "plugin.settings.get":
+        return reply({ settings: Object.entries(opts.pluginSettings?.[String(params.id)] ?? {}).map(([key, value]) => ({ key, value })) });
       case "ui.settings":
         return reply({ picks: [], lists: [], ...opts.settings });
       case "layer.token": {
@@ -396,13 +410,13 @@ async function main(argv: string[]): Promise<void> {
   }
   if (cmd === "daemon") {
     const uiFile = process.env.MOSS_FAKE_UI;
-    const ui = uiFile !== undefined && existsSync(uiFile) ? (JSON.parse(readFileSync(uiFile, "utf8")) as { plugins?: unknown[]; status?: Record<string, unknown>; settings?: Record<string, unknown>; models?: FakeModel[]; listPlugins?: boolean }) : {};
+    const ui = uiFile !== undefined && existsSync(uiFile) ? (JSON.parse(readFileSync(uiFile, "utf8")) as { plugins?: unknown[]; status?: Record<string, unknown>; settings?: Record<string, unknown>; models?: FakeModel[]; listPlugins?: boolean; pluginSettings?: FakeOptions["pluginSettings"]; pluginSettingsLater?: FakeOptions["pluginSettingsLater"] }) : {};
     let fake: FakeDaemon;
     // The pid first, for the tests that stop it.
     mkdirSync(fakeDir(home), { recursive: true });
     writeFileSync(join(fakeDir(home), "daemon.pid"), String(process.pid));
     try {
-      fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}), ...(ui.models ? { models: ui.models } : {}), ...(ui.listPlugins ? { listPlugins: true } : {}), prove: process.env.MOSS_FAKE_PROVE === "refuse" || process.env.MOSS_FAKE_PROVE === "wrong" ? process.env.MOSS_FAKE_PROVE : Number(process.env.MOSS_FAKE_APP_PID ?? process.pid) });
+      fake = await startFakeDaemon({ home, ui: ui.plugins ?? [], ...(ui.status ? { status: ui.status } : {}), ...(ui.settings ? { settings: ui.settings } : {}), ...(ui.models ? { models: ui.models } : {}), ...(ui.listPlugins ? { listPlugins: true } : {}), ...(ui.pluginSettings ? { pluginSettings: ui.pluginSettings } : {}), ...(ui.pluginSettingsLater ? { pluginSettingsLater: ui.pluginSettingsLater } : {}), prove: process.env.MOSS_FAKE_PROVE === "refuse" || process.env.MOSS_FAKE_PROVE === "wrong" ? process.env.MOSS_FAKE_PROVE : Number(process.env.MOSS_FAKE_APP_PID ?? process.pid) });
     } catch (err) {
       record(home, "listen-failed", { error: String(err) });
       process.exit(0);

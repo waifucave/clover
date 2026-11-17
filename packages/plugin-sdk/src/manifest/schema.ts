@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { Os, Platform, RunsOn, Scope, SemverVersion, SessionKind, TopPluginId, COMPUTER_NAME_RE, utf16 } from "@waifucave/moss-protocol";
 import { AUTH_SCHEME_RE } from "../api/keyed-fetch";
-import { avatarFileProblem } from "../catalogs/avatars";
+import { DATA_FILE_CAPS, DATA_FILE_TYPES } from "../catalogs/data-files";
 import { TURN_LOCAL_NAME } from "../catalogs/turns";
 import {
   ComponentName, EntryId, HandlerName, JsonSchema, KEY_CHORD_RE, COMMAND_NAME_RE, LangTag, NAMESPACE_RE, Path, PathGlob,
@@ -40,8 +40,22 @@ export const PointDeclSchema = z.strictObject({
    *  `fills` line names the point by it. */
   title: Text.optional(),
   /** The line its fillers' OK cards show (`fillsOkLines`): what a plugin that fills this point is given or does, in the
-   *  declarer's words, shown as plain text and attributed to the declarer. `warns`: shown as a caution. */
+   *  declarer's words, shown as plain text and attributed to the declarer. `warns`: shown as a caution. A point declared
+   *  without it carries no point messages: `points.send` and `points.onMessage` on it are refused, since no OK card told
+   *  the person what goes between the plugins. */
   fills: z.strictObject({ ok: utf16(300, 1), warns: z.boolean().optional() }).optional(),
+  /** Files that come with each entry (`catalogs/data-files.ts`): by the name of a top-level `path` field of `fields`, the
+   *  kinds of inert data file that sit beside the file it names, in its folder and below, which the app then serves to
+   *  every layer as the kind's one fixed media type (a model's binaries, a word list's JSON, a sound bank's audio). */
+  files: z.record(utf16(64, 1), z.strictObject({
+    kinds: z.array(z.strictObject({
+      ext: z.array(utf16(32, 2).regex(/^\.[a-z0-9]+(\.[a-z0-9]+)*$/)).min(1).max(16),
+      type: z.enum(DATA_FILE_TYPES),
+      maxBytes: z.number().int().min(1).max(Math.max(...Object.values(DATA_FILE_CAPS))).optional(),
+    }).superRefine((k, ctx) => {
+      if (k.maxBytes !== undefined && k.maxBytes > DATA_FILE_CAPS[k.type]) ctx.addIssue({ code: "custom", path: ["maxBytes"], message: `a ${k.type} file may be at most ${DATA_FILE_CAPS[k.type]} bytes` });
+    })).min(1).max(16),
+  })).optional(),
 });
 
 export const DeclaresSchema = z.record(PointName, PointDeclSchema);
@@ -101,14 +115,8 @@ export const BotSchema = z.strictObject({
   instructions: Path,
   /** A qualified catalog id; with no key for it, the user's default model. */
   model: z.strictObject({ default: utf16(200, 1), effort: utf16(32, 1).optional() }).optional(),
-  /** `format` is `vrm` or `live2d` (`AVATAR_FORMATS`), or one a renderer plugin brings; a `live2d` file is a Cubism
-   *  `.model3.json` or a `.zip` holding one. */
-  avatar: z.strictObject({ file: Path, format: utf16(32, 1).regex(/^[a-z0-9-]+$/), portrait: Path.optional() })
-    .superRefine((a, ctx) => {
-      const problem = avatarFileProblem(a.format, a.file);
-      if (problem) ctx.addIssue({ code: "custom", path: ["file"], message: problem });
-    })
-    .optional(),
+  /** Retired (spec revision 19, G7): a bot has no figure of its own; a figure is an avatar pack. Read only to say so. */
+  avatar: z.unknown().optional(),
   /** A theme id from this plugin, and a layout file; both apply in its tab. */
   theme: EntryId.optional(),
   layout: Path.optional(),
@@ -155,7 +163,7 @@ export const McpServerSchema = z.strictObject({
    *  call to one runs without an approval card at the default level. Never a hint a server gives at run time; a change
    *  to the list asks for the OK again. */
   readOnly: z.array(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/)).max(256).optional(),
-  /** The tools of this server whose only effect is the plugin's own display (an avatar's expression, a stage's scene,
+  /** The tools of this server whose only effect is the plugin's own display (a figure's expression, a scene,
    *  a pinned card): named on the OK card, and only as that card shows them, a call to one counts as a contained call
    *  (effect `other`), which runs without a card at the default level, asks at "ask" and is refused at read-only. They
    *  hold only where the tree can't reach the network and holds no capability beyond reading MOSS's own state

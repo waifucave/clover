@@ -19,7 +19,7 @@ export interface Live2dStory {
 }
 
 /** Where the gallery serves Alpha's Live2D placeholder (the same path it has in the repo). */
-export const ALPHA_LIVE2D = "plugins/alpha/assets/live2d/alpha.model3.json";
+export const ALPHA_LIVE2D = "plugins/moss/plugins/alpha-figure/live2d/alpha.model3.json";
 
 /** Resolves once every 2D model avatar in the frame has drawn (or failed), and one more frame has passed. */
 export async function live2dSettled(timeoutMs = 25_000): Promise<void> {

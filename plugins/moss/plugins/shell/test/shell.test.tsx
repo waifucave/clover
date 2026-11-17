@@ -417,7 +417,7 @@ describe("the shell", () => {
 });
 
 describe("a bot's own layout's header", () => {
-  const withAvatar: BotView = { ...bot("luna", "Luna"), model: "anthropic/claude-sonnet-5-5", portrait: "/_t/luna/p.svg", avatar: { src: "/_t/luna/a.vrm", format: "vrm" } };
+  const withAvatar: BotView = { ...bot("luna", "Luna"), model: "anthropic/claude-sonnet-5-5", portrait: "/_t/luna/p.svg" };
   async function mountPart(Part: EntryComponent, b: BotView) {
     const api = fakeApi({ bots: { list: async () => [b], get: async () => b, watch: () => () => undefined } });
     const AvatarStub: EntryComponent = ({ props }) => <div data-stub="avatar">{JSON.stringify(props)}</div>;
@@ -450,7 +450,8 @@ describe("a bot's own layout's header", () => {
     });
     render(<TestLayer runtime={runtime}>{React.createElement(DefaultBotTab as never, { props: { bot: { id: "luna", name: "Luna" } } } as never)}</TestLayer>);
     await act(() => settle(20));
-    expect([...document.querySelectorAll("[data-part]")].map((e) => e.getAttribute("data-part"))).toEqual(layoutSpots(DEFAULT_TAB_LAYOUT.root));
+    // `bot.stage` is retired: no part fills it, so the tab draws the rest in the stock order.
+    expect([...document.querySelectorAll("[data-part]")].map((e) => e.getAttribute("data-part"))).toEqual(layoutSpots(DEFAULT_TAB_LAYOUT.root).filter((s) => s !== "bot.stage"));
   });
 
   test("the header names the bot and its model", async () => {

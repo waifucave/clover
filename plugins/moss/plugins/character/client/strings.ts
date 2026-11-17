@@ -1,34 +1,23 @@
-// The avatar section's words (the bot editor's `bot.editor.section` entry this part fills).
-const or = (xs: readonly string[]) => (xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
-
+// The avatar plugin's words: its panel, its window on the screen and its Settings section.
 export const S = {
   avatar: "Avatar",
-  avatarDetail: "Avatar packs are plugins. Each adds avatar files with their portraits.",
-  noAvatars: "No avatar packs are installed yet. Find one in the plugin index.",
-  /** No renderer is installed and on: nothing here can draw an avatar, so no pack and no import is offered. */
-  noRenderer: "Nothing installed can draw avatars yet. Install or turn on a renderer plugin (VRM, Live2D or another) and this section offers avatars again.",
-  chooseAvatar: "Choose avatar…",
-  chooseFolder: "Choose a folder instead",
-  chosen: (name: string) => `Picked: ${name}`,
-  importAvatar: "Import and use",
-  replaces: "This replaces the avatar you imported before.",
-  importing: "Importing…",
-  pickCancelled: "Nothing picked.",
-  imported: (format: string, files: number, size: string) => `Imported a ${format} model (${files} ${files === 1 ? "file" : "files"}, ${size}). It is the avatar now.`,
-  failed: (why: string) => `That didn't work: ${why}`,
-  credit: "From the model's own notes",
-  creditEdit: "Credit note",
-  creditSave: "Save note",
-  creditClear: "Clear",
-  reset: "Reset",
-  resetAvatar: "Reset the avatar",
-  waiting: "Waiting for your answer on the card.",
-  /** What the installed renderers import (`avatar.formats`), each format's ways in its own words. */
-  avatarOwnDetail: (takes: readonly string[]) => `Your own model: ${takes.join("; ")}. It is copied into MOSS; the original stays where it is.`,
-  /** One format's ways in: "a folder or .zip with a .model3.json (Live2D (Cubism))", "a .vrm or .glb file (VRM)". */
-  avatarTakes: (name: string, held: readonly string[], files: readonly string[]) => [
-    ...(held.length > 0 ? [`a folder or .zip with a ${or(held)}`] : []),
-    ...(files.length > 0 ? [`a ${or(files)} file`] : []),
-  ].join(", or ") + ` (${name})`,
-  avatarFrom: (pack: string) => `From ${pack}`,
+  noFigure: "No figure to show yet. Add an avatar pack and a renderer plugin that draws its format.",
+  noRenderer: (format: string) => `Nothing installed draws ${format} figures. Install or turn on a renderer plugin for it.`,
+  settingsDetail: "One figure at a time, beside your sessions and, if you like, on your screen. Figures come from avatar packs; renderer plugins draw them.",
+  pick: "Figure",
+  none: "No avatar packs are installed yet. Find one in the plugin index.",
+  from: (by: string) => `From ${by}`,
+  own: "Your own model",
+  notDrawn: (format: string) => `Nothing draws ${format} figures now`,
+  onScreen: "Show it on the screen",
+  onScreenDetail: "The figure stands over your other windows while MOSS runs.",
+  followBots: "Follow my bots too",
+  yours: "Your own models",
+  yoursDetail: "A model of yours, from a folder or a file: a copy is kept with this plugin, only for you.",
+  addFolder: "Add a model folder…",
+  addFile: "Add a model file…",
+  remove: (name: string) => `Remove ${name}`,
+  adding: "Copying your model…",
+  added: (name: string) => `${name} was added.`,
+  license: "Licence",
 } as const;

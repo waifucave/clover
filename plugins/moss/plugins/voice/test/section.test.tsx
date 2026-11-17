@@ -1,13 +1,12 @@
 // MOSS Voice's parts in the window: Settings › Voice ("Speak replies" in its own settings; which voice speaks is the
 // platform's one-at-a-time picker, not this section's), the section of a bot's editor (the bot's voice: the user's, or
-// the default from the plugin that brings it, with why it can't speak) and the stage's chip (speaking from the device's speech turn; its
-// press stops or mutes).
+// the default from the plugin that brings it, with why it can't speak).
 import { fakeApi, settle, runtimeWith, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
 import type { BotRef } from "../client/local";
 import type { EntryProps } from "@waifucave/moss-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { BotVoiceSection, VoiceChip, VoiceSection } from "../client";
+import { BotVoiceSection, VoiceSection } from "../client";
 import type { PluginApi, PointEntry, TurnState } from "@waifucave/moss-plugin-sdk";
 
 afterEach(cleanup);
@@ -104,37 +103,3 @@ describe("a bot's editor: its voice", () => {
   });
 });
 
-describe("the stage's chip", () => {
-  test("none for a bot with no voice", async () => {
-    mount(api(), <VoiceChip {...alpha} />);
-    await act(() => settle(6));
-    expect(document.querySelector("button.cl-bot-stage__chip")).toBeNull();
-  });
-
-  test("mutes and unmutes; while the bot holds the device's speech turn it stops it", async () => {
-    const calls: { name: string; args: unknown }[] = [];
-    const a = api({ settings: { "provider@alpha": "fish-audio", "voice@alpha": "abc" }, calls });
-    mount(a, <VoiceChip {...alpha} />);
-    await act(() => settle(6));
-    const chip = () => document.querySelector("button.cl-bot-stage__chip")!;
-    expect(chip().getAttribute("data-voice")).toBe("on");
-    await act(async () => { fireEvent.click(chip()); await settle(4); });
-    expect(a.stored.get("speakReplies")).toBe(false);
-    expect(chip().getAttribute("data-voice")).toBe("muted");
-    await act(async () => { fireEvent.click(chip()); await settle(4); });
-    expect(a.stored.get("speakReplies")).toBe(true);
-    await act(async () => {
-      for (const w of a.turnWatchers) w({ name: "device/speech", holder: { plugin: "moss/voice", note: "alpha", since: 0, until: 1 }, waiting: 0 });
-      await settle(2);
-    });
-    expect(chip().getAttribute("data-voice")).toBe("speaking");
-    await act(async () => { fireEvent.click(chip()); await settle(4); });
-    expect(calls).toEqual([{ name: "stop", args: { bot: "alpha" } }]);
-    // Another plugin's speech, or another bot's, isn't this bot speaking.
-    await act(async () => {
-      for (const w of a.turnWatchers) w({ name: "device/speech", holder: { plugin: "acme-voice", note: "alpha", since: 0, until: 1 }, waiting: 0 });
-      await settle(2);
-    });
-    expect(chip().getAttribute("data-voice")).toBe("on");
-  });
-});

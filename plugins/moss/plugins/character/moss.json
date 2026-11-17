@@ -1,7 +1,7 @@
 {
   "manifest": 1,
-  "name": "Character",
-  "description": "The stage's character area: it stands a bot's avatar on its stage and asks the `avatar` spot, keyed by the avatar file's format, for the drawing. A renderer plugin fills that spot for a format and declares the format in `avatar.formats`; an avatar pack is a data plugin for `avatar.packs`. Small controls on the stage (`bot.stage.action`, such as MOSS Voice's chip) are other plugins' entries. It also adds the Avatar section to a bot's editor: the packs, the user's own model and its credit note.",
+  "name": "Avatar",
+  "description": "MOSS Code's avatar: one figure at a time, shown in a panel beside your sessions and, when you turn it on, on your screen. It follows what your sessions are doing (thinking, working, asking, done) and, when MOSS Voice speaks, moves its mouth with it. Figures come from avatar packs, and renderer plugins draw them by their format; both plug into this plugin's own points.",
   "engines": {
     "moss": "^1.0.0"
   },
@@ -11,25 +11,67 @@
       "client/styles.css"
     ]
   },
+  "host": {
+    "entry": "server/index.ts",
+    "runtime": "bun"
+  },
   "capabilities": [
-    "bots.read",
-    "avatar.report",
-    "bots.avatar",
-    "plugins.read"
+    "activity.read.sessions",
+    "activity.read.bots",
+    "overlay",
+    "files"
   ],
+  "settings": {
+    "figure": {
+      "type": "string",
+      "title": "Figure",
+      "description": "The figure shown: a pack's (`pack:<plugin>#<entry>`), or one of your own models kept with this plugin (`own:<format>:<file>`). Empty: the first pack a renderer draws.",
+      "default": ""
+    },
+    "onScreen": {
+      "type": "boolean",
+      "title": "On the screen",
+      "description": "The figure also stands on your screen, over other windows, while MOSS runs.",
+      "default": false,
+      "scope": "device"
+    },
+    "followBots": {
+      "type": "boolean",
+      "title": "Follow your bots",
+      "description": "The figure also follows what your bots are doing, on the screen, and takes their calls to its tools (an expression, a motion), not only your coding sessions'.",
+      "default": true
+    },
+    "ownModels": {
+      "type": "string",
+      "title": "Your own models",
+      "description": "The models of your own this plugin keeps in its own data (added in its Settings section, or moved from an earlier MOSS), as a list. They are shared with this plugin's own pages, where the bundled 2D and 3D renderers draw; a renderer plugin of another publisher can't draw them yet.",
+      "default": ""
+    }
+  },
   "contributes": {
     "ui": [
       {
-        "spot": "bot.stage",
-        "id": "bot-stage",
-        "component": "BotStage",
+        "spot": "panel",
+        "id": "figure",
+        "key": "figure",
+        "title": "Avatar",
+        "component": "FigurePanel",
         "declares": {
-          "avatar": {
+          "moss.character.renderer": {
             "shape": "keyed",
             "props": {
               "type": "object",
               "properties": {
+                "mount": {
+                  "type": "string"
+                },
                 "src": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "format": {
                   "type": "string"
                 },
                 "name": {
@@ -37,38 +79,249 @@
                 },
                 "portrait": {
                   "type": "string"
-                }
-              }
-            },
-            "context": [
-              "bot"
-            ],
-            "doc": "The bot's avatar, keyed by its file's format (vrm, live2d, or a renderer plugin's own)."
-          },
-          "bot.stage.action": {
-            "shape": "list",
-            "props": {
-              "type": "object",
-              "properties": {
-                "bot": {
+                },
+                "framing": {
                   "type": "object"
                 }
               }
             },
-            "context": [
-              "bot"
-            ],
-            "doc": "Small controls on the stage (a voice plugin's chip, say), each drawn by its plugin for the bot."
+            "title": "Figure renderers",
+            "doc": "Draws the figure, keyed by its model's format (`vrm`, `live2d`, or a renderer plugin's own, which it declares in `moss.character.formats`). Props: `mount` (this drawing's id), `src` (the model's entry file, as a URL), `format`, `name`, `portrait?`, `framing?`. The avatar plugin sends the renderer `{ mount, cue }` as point messages (`points.onMessage(\"moss.character.renderer\")`), and the renderer sends back `{ mount, names?, box? }` (`points.send`): what its model answers to and where the figure stands. Its mouth comes from MOSS Voice's `moss.voice.speech`, which a renderer fills itself.",
+            "fills": {
+              "ok": "it draws the figure the avatar plugin shows: it is handed the figure's model files and the avatar plugin's cues"
+            }
           }
         }
       },
       {
-        "spot": "bot.editor.section",
-        "id": "avatar",
-        "component": "AvatarSection",
+        "spot": "app.surface",
+        "id": "on-screen",
+        "title": "Avatar on screen",
+        "component": "FigureOnScreen",
+        "when": {
+          "setting": {
+            "onScreen": true
+          }
+        },
+        "window": {
+          "type": "overlay",
+          "alwaysOnTop": true,
+          "transparent": true,
+          "placement": {
+            "macos": "bottom-right",
+            "windows": "bottom-right",
+            "linux": "bottom-right"
+          }
+        },
+        "declares": {
+          "moss.character.renderer": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "mount": {
+                  "type": "string"
+                },
+                "src": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "format": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "portrait": {
+                  "type": "string"
+                },
+                "framing": {
+                  "type": "object"
+                }
+              }
+            },
+            "title": "Figure renderers",
+            "doc": "Draws the figure, keyed by its model's format (`vrm`, `live2d`, or a renderer plugin's own, which it declares in `moss.character.formats`). Props: `mount` (this drawing's id), `src` (the model's entry file, as a URL), `format`, `name`, `portrait?`, `framing?`. The avatar plugin sends the renderer `{ mount, cue }` as point messages (`points.onMessage(\"moss.character.renderer\")`), and the renderer sends back `{ mount, names?, box? }` (`points.send`): what its model answers to and where the figure stands. Its mouth comes from MOSS Voice's `moss.voice.speech`, which a renderer fills itself.",
+            "fills": {
+              "ok": "it draws the figure the avatar plugin shows: it is handed the figure's model files and the avatar plugin's cues"
+            }
+          }
+        }
+      },
+      {
+        "spot": "settings.section",
+        "id": "settings",
         "title": "Avatar",
-        "order": 300
+        "order": 650,
+        "component": "FigureSettings",
+        "declares": {
+          "moss.character.formats": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": [
+                "id",
+                "format",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "format": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9-]{1,32}$"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "capabilities": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "lipsync",
+                      "expressions",
+                      "motions",
+                      "outfits",
+                      "lookat",
+                      "pace"
+                    ]
+                  }
+                },
+                "entry": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^\\.[A-Za-z0-9.]{1,24}$"
+                  }
+                }
+              }
+            },
+            "title": "Figure formats",
+            "doc": "A model format a renderer draws (its entry in `moss.character.renderer` has this format as its key): its id, its name, what it can do beyond drawing (`lipsync`, `expressions`, `motions`, `outfits`, `lookat`, `pace`), and `entry`, the extensions of the file that names a model of it (`.model3.json`), when the person may add their own models of it in the avatar's Settings."
+          },
+          "moss.character.packs": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": [
+                "id",
+                "file",
+                "format"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string",
+                  "format": "path"
+                },
+                "format": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9-]{1,32}$"
+                },
+                "portrait": {
+                  "type": "string",
+                  "format": "path"
+                },
+                "license": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              }
+            },
+            "files": {
+              "file": {
+                "kinds": [
+                  {
+                    "ext": [
+                      ".json"
+                    ],
+                    "type": "json",
+                    "maxBytes": 8388608
+                  },
+                  {
+                    "ext": [
+                      ".moc3",
+                      ".vrm",
+                      ".glb",
+                      ".bin"
+                    ],
+                    "type": "binary",
+                    "maxBytes": 134217728
+                  },
+                  {
+                    "ext": [
+                      ".png",
+                      ".webp",
+                      ".jpg",
+                      ".jpeg"
+                    ],
+                    "type": "image",
+                    "maxBytes": 134217728
+                  },
+                  {
+                    "ext": [
+                      ".wav",
+                      ".mp3",
+                      ".ogg"
+                    ],
+                    "type": "audio",
+                    "maxBytes": 16777216
+                  },
+                  {
+                    "ext": [
+                      ".txt"
+                    ],
+                    "type": "text",
+                    "maxBytes": 1048576
+                  }
+                ]
+              }
+            },
+            "title": "Avatar packs",
+            "doc": "A figure: its model's entry file (a path in the pack's folder; the files beside it, of the kinds listed, come along), its format (a renderer's `moss.character.formats` id), a name, a portrait and a licence note.",
+            "fills": {
+              "ok": "its figures are offered in the avatar plugin's picker, and the renderer that draws one reads its model files"
+            }
+          },
+          "moss.character.figure": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                }
+              }
+            },
+            "title": "Figure",
+            "doc": "A plugin that moves the figure: with an entry here it sends cues as point messages (`points.send(\"moss.character.figure\", cue)`: an expression, a motion, an outfit part with on or off, the pace, a point to look at), each answered `{ result }`, and hears `{ catalogue, box }` (what the figure's model answers to and where it stands) as they change.",
+            "fills": {
+              "ok": "it moves the figure the avatar plugin shows (its expressions, motions, outfit parts and where it looks) and hears what the figure's model has"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "mcpServers": {
+      "figure": {
+        "type": "host",
+        "tools": {
+          "*": "on-demand"
+        },
+        "instructions": "server/instructions.md"
+      }
+    }
   }
 }

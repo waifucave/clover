@@ -3439,26 +3439,6 @@
                     "userLayout": {
                       "type": "string",
                       "maxLength": 4096
-                    },
-                    "avatar": {
-                      "type": "object",
-                      "properties": {
-                        "file": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 4096
-                        },
-                        "format": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 32
-                        }
-                      },
-                      "required": [
-                        "file",
-                        "format"
-                      ],
-                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -3466,25 +3446,15 @@
                   ],
                   "additionalProperties": false
                 },
-                "avatarFormats": {
-                  "maxItems": 16,
+                "dataFiles": {
+                  "maxItems": 64,
                   "type": "array",
                   "items": {
                     "type": "object",
                     "properties": {
-                      "format": {
+                      "folder": {
                         "type": "string",
-                        "minLength": 1,
-                        "maxLength": 32
-                      },
-                      "extensions": {
-                        "maxItems": 8,
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "maxLength": 32,
-                          "minLength": 2
-                        }
+                        "maxLength": 4096
                       },
                       "kinds": {
                         "maxItems": 16,
@@ -3524,25 +3494,11 @@
                           ],
                           "additionalProperties": false
                         }
-                      },
-                      "find": {
-                        "type": "string",
-                        "enum": [
-                          "folder",
-                          "cubism-model3"
-                        ]
-                      },
-                      "maxFiles": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 512
                       }
                     },
                     "required": [
-                      "format",
-                      "extensions",
-                      "kinds",
-                      "find"
+                      "folder",
+                      "kinds"
                     ],
                     "additionalProperties": false
                   }
@@ -6097,7 +6053,36 @@
             "minLength": 1,
             "maxLength": 128
           },
-          "value": {}
+          "value": {},
+          "call": {
+            "type": "object",
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]+$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "bot",
+                  "side-thread",
+                  "agent",
+                  "coding"
+                ]
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              }
+            },
+            "required": [
+              "session",
+              "kind"
+            ]
+          }
         },
         "required": [
           "type",
@@ -6163,11 +6148,12 @@
       }
     },
     "plugin_settings_changed": {
-      "doc": "One of a plugin's settings changed (its key, never its value): only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`.",
+      "doc": "One of a plugin's settings changed (its key, never its value): of the plugins, only that plugin's own layer connection gets it (`PLUGIN_OWN_EVENTS`), for its parts' `settings.watch`; the app's main process gets it too, to open or close a surface entry whose `when.setting` names it.",
       "owner": "B",
       "scope": "core",
       "roles": [
-        "layer"
+        "layer",
+        "app"
       ],
       "transient": true,
       "schema": {

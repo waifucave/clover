@@ -1,174 +1,227 @@
-// The speech the app plays, for an avatar renderer in a frame of its own (a third-party `avatar` entry): the feed's
-// frames cross from the stage's document to the renderer's frame as numbers only, in batches, through main, which
-// checks that the sender is the frame's parent document (as it does for a frame's props).
+// A speech feed made from mouth levels stamped in epoch milliseconds (`TimedSpeech`), for any part that moves a mouth:
+// whoever plays the sound sends its levels in batches ahead of the clock (a point message, say), and the part that draws
+// keeps them here by time, as the `SpeechFeed` the SDK's lip-sync reads (`LipSync`, `SpeechRing`).
 //
-// * Parent side (`SpeechForwarder`, run by the stage's `LayerFrame` for an `avatar` frame): it hears the feed, keeps
-//   its frames, and sends them every SPEECH_FLUSH_MS while there are any (the mouth follows within that, well inside
-//   the frames' own lead), and `speaking` when it changes. With nothing buffered no timer runs: a quiet bot costs no
-//   wakeups. While the frame can't be seen (the window hidden, the frame asleep or gone) it sends nothing and keeps
-//   nothing: stale speech is never replayed.
-// * Child side (`ReceivedSpeech`): the `SpeechFeed` a framed renderer reads through `useAvatarSpeech()`. Each batch
-//   carries the parent's audio clock against the wall clock, so `now()` runs on in the child between batches.
-// * What crosses: `{ speaking, clock: { audio, wall }, frames: [{ t, rms, centroid }] }`, each a finite number (or the
-//   boolean), at most SPEECH_BATCH_MAX frames. No audio, no text, no function.
-import type { Unsubscribe } from "../api/plugin-api";
+// * The feed's clock is its own: seconds since the feed was made, `now()` read from the wall clock, a level's `t` its
+//   stamp on that clock.
+// * A batch is kept here by time and handed to the listeners only as it comes due (RELEASE_AHEAD_MS before its stamp),
+//   in one call per tick, so a listener's ring never holds more than a moment of speech and a `cut` (the speech was
+//   stopped or replaced) drops everything not yet released. What was released stays heard (at most RELEASE_AHEAD_MS).
+// * `speaking` is true from the first level's stamp until SPEAKING_HOLD_MS after the last one's. One timer runs while
+//   there is something to release or a change of `speaking` to come, and none otherwise: quiet costs no wakeups.
+// * Bounds: a level more than KEEP_PAST_MS behind is dropped (stale), one more than AHEAD_MAX_MS ahead is ignored (another
+//   device's clock), at most QUEUE_MAX are kept (the oldest go).
 import type { SpeechFeed, SpeechFrame } from "../api/ui-api";
 
-/** How often buffered frames go to the frame: well under the ~50 ms a mouth may lag and still look live. */
-export const SPEECH_FLUSH_MS = 40;
-/** Frames in one message at most (a flush carries ~4 at the feed's rate; a burst ahead of playback, more). */
-export const SPEECH_BATCH_MAX = 64;
-/** Frames the parent keeps while it waits to send (beyond, the oldest go). */
-const BUFFER_MAX = 256;
+/** A level is handed to the listeners this long before its stamp. */
+export const RELEASE_AHEAD_MS = 200;
+/** How often a tick hands over what has come into that window, while levels wait. */
+export const TICK_MS = 80;
+/** `speaking` holds this long after the last level's stamp (a level is heard for at most 50 ms; a gap shorter than this inside one speech never flickers). */
+export const SPEAKING_HOLD_MS = 150;
+/** A level stamped more than this far in the past is dropped. */
+export const KEEP_PAST_MS = 1_000;
+/** A level stamped more than this far ahead is ignored. */
+export const AHEAD_MAX_MS = 180_000;
+/** Levels kept at most (about a minute of speech at 50 a second); beyond, the oldest go. */
+export const QUEUE_MAX = 4_000;
+/** The brightness of a level with none, in Hz. */
+const DEFAULT_CENTROID = 1_500;
+/** Released levels kept for a listener that subscribes mid-speech (this long behind now). */
+const REPLAY_MS = 120;
 
-/** One batch, as it crosses. */
-export interface SpeechMessage {
-  /** Whether the bot is speaking now (the spot's `speaking`). */
-  speaking: boolean;
-  /** The parent's audio clock (`feed.now()`, seconds) at `wall`, the wall clock in ms (`performance.timeOrigin + now`). */
-  clock: { audio: number; wall: number };
-  frames: SpeechFrame[];
+/** A mouth level, and the plugin that sent it (a `cut` drops only its sender's). */
+interface Level { t: number; rms: number; centroid: number; from: string }
+
+export interface TimedSpeechClock {
+  /** Epoch milliseconds. */
+  now(): number;
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+const realClock: TimedSpeechClock = { now: () => Date.now(), setTimeout: (fn, ms) => setTimeout(fn, ms), clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>) };
+
+/** What the feed has seen of the speech (counters for a test; cheap, always kept). Times are epoch ms. */
+export interface TimedSpeechStats {
+  /** Speech cues taken and the levels in them. */
+  batches: number;
+  levels: number;
+  /** Levels handed to the listeners, and how far ahead of their stamps the first and the furthest went (ms; negative: late). */
+  released: number;
+  minAheadMs: number;
+  maxAheadMs: number;
+  /** Listeners hearing the feed now. */
+  listeners: number;
+  /** When `speaking` last turned true and false, and the stamps of the speech's first and last level. */
+  onAt: number | undefined;
+  offAt: number | undefined;
+  firstT: number | undefined;
+  lastT: number | undefined;
 }
 
-const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-/** A batch as it may cross: numbers only, in range, at most SPEECH_BATCH_MAX frames; undefined if it isn't one. Main
- *  and the receiving frame both read a batch through this. */
-export function cleanSpeechMessage(raw: unknown): SpeechMessage | undefined {
-  if (raw === null || typeof raw !== "object") return undefined;
-  const m = raw as Record<string, unknown>;
-  const clock = m.clock as Record<string, unknown> | null | undefined;
-  if (typeof m.speaking !== "boolean" || clock === null || typeof clock !== "object" || !finite(clock.audio) || !finite(clock.wall)) return undefined;
-  if (!Array.isArray(m.frames) || m.frames.length > SPEECH_BATCH_MAX) return undefined;
-  const frames: SpeechFrame[] = [];
-  for (const f of m.frames as unknown[]) {
-    if (f === null || typeof f !== "object") return undefined;
-    const { t, rms, centroid } = f as Record<string, unknown>;
-    if (!finite(t) || !finite(rms) || !finite(centroid)) return undefined;
-    frames.push({ t, rms: Math.min(1, Math.max(0, rms)), centroid: Math.min(24_000, Math.max(0, centroid)) });
+export class TimedSpeech implements SpeechFeed {
+  readonly #clock: TimedSpeechClock;
+  readonly #origin: number;
+  readonly #listeners = new Set<(frames: readonly SpeechFrame[]) => void>();
+  readonly #speakingListeners = new Set<(speaking: boolean) => void>();
+  #queue: Level[] = [];
+  #recent: Level[] = [];
+  #timer: unknown = undefined;
+  #closed = false;
+  /** The stamps of the speech now going on: its first level, and the end of its last plus the hold. Undefined when none. */
+  #start: number | undefined;
+  #end: number | undefined;
+  #speaking = false;
+  readonly stats: TimedSpeechStats = { batches: 0, levels: 0, released: 0, minAheadMs: Infinity, maxAheadMs: -Infinity, listeners: 0, onAt: undefined, offAt: undefined, firstT: undefined, lastT: undefined };
+
+  constructor(clock: TimedSpeechClock = realClock) {
+    this.#clock = clock;
+    this.#origin = clock.now();
   }
-  return { speaking: m.speaking, clock: { audio: clock.audio, wall: clock.wall }, frames };
-}
 
-/** The wall clock in ms, the same across a window's documents. */
-export const wallNow = (): number => performance.timeOrigin + performance.now();
+  /** The feed's clock, in the levels' seconds. */
+  now(): number {
+    return (this.#clock.now() - this.#origin) / 1000;
+  }
 
-export interface ForwarderTimers {
-  setInterval(fn: () => void, ms: number): unknown;
-  clearInterval(handle: unknown): void;
-  wall(): number;
-}
-const realTimers: ForwarderTimers = {
-  setInterval: (fn, ms) => setInterval(fn, ms),
-  clearInterval: (h) => clearInterval(h as ReturnType<typeof setInterval>),
-  wall: wallNow,
-};
+  get speaking(): boolean {
+    return this.#speaking;
+  }
 
-/** The parent side: one `avatar` frame's feed, sent on in batches while the frame can be seen. */
-export class SpeechForwarder {
-  private buffer: SpeechFrame[] = [];
-  private timer: unknown = undefined;
-  private speaking = false;
-  private sentSpeaking = false;
-  private open = false;
-  private off: Unsubscribe | undefined;
+  /** A listener hears the levels as they come due; one that subscribes mid-speech also hears the last moment's. */
+  subscribe(listener: (frames: readonly SpeechFrame[]) => void): () => void {
+    this.#listeners.add(listener);
+    this.stats.listeners = this.#listeners.size;
+    const now = this.#clock.now();
+    const replay = this.#recent.filter((l) => l.t > now - REPLAY_MS);
+    if (replay.length > 0) listener(replay.map((l) => this.#frame(l)));
+    return () => {
+      this.#listeners.delete(listener);
+      this.stats.listeners = this.#listeners.size;
+    };
+  }
 
-  constructor(
-    private readonly feed: SpeechFeed,
-    private readonly send: (message: SpeechMessage) => void,
-    private readonly timers: ForwarderTimers = realTimers,
-  ) {}
+  onSpeaking(listener: (speaking: boolean) => void): () => void {
+    this.#speakingListeners.add(listener);
+    return () => this.#speakingListeners.delete(listener);
+  }
 
-  /** Whether the frame can be seen now (its window shown, the frame awake and not gone). Closed: nothing is heard,
-   *  kept or sent; opened again, it starts from what comes next, and says whether the bot speaks. */
-  setOpen(open: boolean): void {
-    if (open === this.open) return;
-    this.open = open;
-    if (!open) {
-      this.off?.();
-      this.off = undefined;
-      this.buffer = [];
-      this.stop();
+  /** A batch of levels (`{ frames, cut? }`; read again here: only finite numbers in range are kept), from the
+   *  plugin `from`: its `cut` drops only that plugin's own levels. */
+  accept(raw: unknown, from = ""): void {
+    if (this.#closed || raw === null || typeof raw !== "object") return;
+    const c = raw as { frames?: unknown; cut?: unknown };
+    const now = this.#clock.now();
+    if (c.cut === true) this.#cut(now, from);
+    const list = Array.isArray(c.frames) ? (c.frames as unknown[]) : [];
+    const fresh: Level[] = [];
+    for (const f of list.slice(0, 4_096)) {
+      const r = f as { t?: unknown; rms?: unknown; centroid?: unknown } | null;
+      if (r === null || typeof r !== "object" || !num(r.t) || !num(r.rms)) continue;
+      if (r.t < now - KEEP_PAST_MS || r.t > now + AHEAD_MAX_MS) continue;
+      fresh.push({ t: r.t, rms: Math.min(1, Math.max(0, r.rms)), centroid: num(r.centroid) ? Math.min(24_000, Math.max(0, r.centroid)) : DEFAULT_CENTROID, from });
+    }
+    this.stats.batches += 1;
+    this.stats.levels += fresh.length;
+    if (fresh.length > 0) {
+      fresh.sort((a, b) => a.t - b.t);
+      const last = this.#queue.at(-1);
+      this.#queue = last === undefined || fresh[0]!.t >= last.t ? this.#queue.concat(fresh) : this.#queue.concat(fresh).sort((a, b) => a.t - b.t);
+      if (this.#queue.length > QUEUE_MAX) this.#queue.splice(0, this.#queue.length - QUEUE_MAX);
+      const first = fresh[0]!.t;
+      const end = fresh.at(-1)!.t + SPEAKING_HOLD_MS;
+      // A new speech starts at its first level; one that arrives while another goes on carries it further.
+      if (this.#end === undefined || now >= this.#end) {
+        this.#start = first;
+        this.stats.firstT = first;
+      }
+      this.#end = Math.max(this.#end ?? 0, end);
+      this.stats.lastT = Math.max(this.stats.lastT ?? 0, fresh.at(-1)!.t);
+    }
+    this.#tick();
+  }
+
+  /** Takes cues again after a `close` (an effect that ran twice). */
+  reopen(): void {
+    this.#closed = false;
+  }
+
+  /** Stops (its part unmounts, or the effect that feeds it runs again): no timer and no level kept, and no cue taken
+   *  until `reopen`. Its listeners stay, each ended by its own unsubscribe: a part's other effects that subscribed (a
+   *  mouth, a lip-sync) outlive one run of the effect that feeds it, and must hear the levels after its `reopen`. */
+  close(): void {
+    this.#closed = true;
+    if (this.#timer !== undefined) this.#clock.clearTimeout(this.#timer);
+    this.#timer = undefined;
+    this.#queue = [];
+    this.#recent = [];
+    this.#start = undefined;
+    this.#end = undefined;
+    if (this.#speaking) this.#set(false, this.#clock.now());
+  }
+
+  /** Whether a timer is set (tests: a quiet bot has none). */
+  get ticking(): boolean {
+    return this.#timer !== undefined;
+  }
+
+  #frame(l: Level): SpeechFrame {
+    return { t: (l.t - this.#origin) / 1000, rms: l.rms, centroid: l.centroid };
+  }
+
+  #cut(now: number, from: string): void {
+    this.#queue = this.#queue.filter((l) => l.from !== from);
+    const last = this.#queue.at(-1);
+    if (last === undefined) {
+      this.#start = undefined;
+      this.#end = undefined;
+      this.#set(false, now);
       return;
     }
-    this.off = this.feed.subscribe((frames) => this.hear(frames));
-    // The frame may have missed a change while it couldn't be seen: it hears where things stand.
-    if (this.speaking !== this.sentSpeaking || this.speaking) this.flush(true);
+    // Another sender's speech goes on: its own last level now ends it.
+    this.#end = last.t + SPEAKING_HOLD_MS;
   }
 
-  /** The spot's `speaking`: sent at once when it changes (with whatever frames are waiting). */
-  setSpeaking(speaking: boolean): void {
-    this.speaking = speaking;
-    if (this.open && speaking !== this.sentSpeaking) this.flush();
+  #set(speaking: boolean, now: number): void {
+    if (speaking === this.#speaking) return;
+    this.#speaking = speaking;
+    if (speaking) this.stats.onAt = now;
+    else this.stats.offAt = now;
+    for (const l of [...this.#speakingListeners]) l(speaking);
   }
 
-  /** Stops for good (the frame unmounts). */
-  close(): void {
-    this.setOpen(false);
-  }
-
-  /** Whether a timer is running (tests: a quiet bot has none). */
-  get ticking(): boolean {
-    return this.timer !== undefined;
-  }
-
-  private hear(frames: readonly SpeechFrame[]): void {
-    if (!this.open || frames.length === 0) return;
-    this.buffer.push(...frames);
-    if (this.buffer.length > BUFFER_MAX) this.buffer.splice(0, this.buffer.length - BUFFER_MAX);
-    if (this.timer === undefined) this.timer = this.timers.setInterval(() => this.flush(), SPEECH_FLUSH_MS);
-  }
-
-  private flush(force = false): void {
-    if (!this.open) return this.stop();
-    if (!force && this.buffer.length === 0 && this.speaking === this.sentSpeaking) return this.stop();
-    const frames = this.buffer.splice(0, SPEECH_BATCH_MAX);
-    this.sentSpeaking = this.speaking;
-    this.send({ speaking: this.speaking, clock: { audio: this.feed.now(), wall: this.timers.wall() }, frames });
-    // Frames still waiting (a burst), or none: the timer runs only while there is something to send.
-    if (this.buffer.length === 0) this.stop();
-    else if (this.timer === undefined) this.timer = this.timers.setInterval(() => this.flush(), SPEECH_FLUSH_MS);
-  }
-
-  private stop(): void {
-    if (this.timer === undefined) return;
-    this.timers.clearInterval(this.timer);
-    this.timer = undefined;
-  }
-}
-
-/** The child side: the `SpeechFeed` of a framed renderer, fed by the batches its parent sends. */
-export class ReceivedSpeech implements SpeechFeed {
-  private readonly listeners = new Set<(frames: readonly SpeechFrame[]) => void>();
-  private readonly speakingListeners = new Set<(speaking: boolean) => void>();
-  private clock: { audio: number; wall: number } | undefined;
-  speaking = false;
-
-  constructor(private readonly wall: () => number = wallNow) {}
-
-  /** A batch from the parent (already checked by `cleanSpeechMessage`). */
-  accept(message: SpeechMessage): void {
-    this.clock = message.clock;
-    if (message.frames.length > 0) for (const l of this.listeners) l(message.frames);
-    if (message.speaking !== this.speaking) {
-      this.speaking = message.speaking;
-      for (const l of this.speakingListeners) l(message.speaking);
+  #tick(): void {
+    if (this.#timer !== undefined) this.#clock.clearTimeout(this.#timer);
+    this.#timer = undefined;
+    if (this.#closed) return;
+    const now = this.#clock.now();
+    // Hand over what is due within the window.
+    let n = 0;
+    while (n < this.#queue.length && this.#queue[n]!.t <= now + RELEASE_AHEAD_MS) n += 1;
+    if (n > 0) {
+      const due = this.#queue.splice(0, n);
+      for (const l of due) {
+        const ahead = l.t - now;
+        this.stats.minAheadMs = Math.min(this.stats.minAheadMs, ahead);
+        this.stats.maxAheadMs = Math.max(this.stats.maxAheadMs, ahead);
+      }
+      this.stats.released += due.length;
+      this.#recent = this.#recent.filter((l) => l.t > now - REPLAY_MS).concat(due);
+      const frames = due.map((l) => this.#frame(l));
+      for (const l of [...this.#listeners]) l(frames);
     }
-  }
-
-  subscribe(listener: (frames: readonly SpeechFrame[]) => void): Unsubscribe {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  /** The parent's audio clock, run on from its last batch by the wall clock (0 before any batch). */
-  now(): number {
-    if (this.clock === undefined) return 0;
-    return this.clock.audio + (this.wall() - this.clock.wall) / 1000;
-  }
-
-  onSpeaking(listener: (speaking: boolean) => void): Unsubscribe {
-    this.speakingListeners.add(listener);
-    return () => this.speakingListeners.delete(listener);
+    // `speaking`: from the first stamp to the hold after the last.
+    if (this.#start !== undefined && this.#end !== undefined) {
+      if (now >= this.#end) { this.#start = undefined; this.#end = undefined; this.#set(false, now); }
+      else if (now >= this.#start) this.#set(true, now);
+    }
+    // The next wake: when the next level comes into the window (never sooner than a tick, so dense levels cost ~12 wakeups a second), when `speaking` turns true, or when it turns false.
+    let next = Infinity;
+    if (this.#queue.length > 0) next = Math.max(TICK_MS, this.#queue[0]!.t - RELEASE_AHEAD_MS - now);
+    if (this.#start !== undefined && now < this.#start) next = Math.min(next, this.#start - now);
+    if (this.#end !== undefined && now < this.#end) next = Math.min(next, this.#end - now);
+    if (next !== Infinity) this.#timer = this.#clock.setTimeout(() => { this.#timer = undefined; this.#tick(); }, Math.max(1, Math.ceil(next)));
   }
 }

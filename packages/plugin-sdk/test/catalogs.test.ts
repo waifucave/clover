@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import {
   API_CALLS, CAPABILITIES, CARD_TOKENS, CLAUDE_HOOK_EVENTS, CORE_CONTRIBUTION_KEYS, CORE_POINTS, DATA_POINTS, HOOK_EVENTS,
   HOOK_RETURNS, MESSAGE_KINDS, PointDeclSchema, SPOTS, TOKENS, TOKEN_GROUPS, WELL_KNOWN_POINT_NAMES, apiCallAllowed, capabilityOkText, catalogJson,
-  AVATAR_FORMATS, avatarFileProblem, catalogPointDecl, cssProperty, cssVar, isAnyTokenValue, isValueForToken,
+  RETIRED_CAPABILITIES, RETIRED_POINTS, catalogPointDecl, cssProperty, cssVar, isAnyTokenValue, isValueForToken,
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName, withImplied,
   parseCapability,
@@ -18,7 +18,7 @@ describe("capabilities", () => {
     // here is their shape: each name once, the families last, every warning a plain OK line.
     const names = CAPABILITIES.map((c) => c.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names).toEqual(expect.arrayContaining(["conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read", "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "notify", "audio", "microphone", "app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"]));
+    expect(names).toEqual(expect.arrayContaining(["conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read", "computers.control", "devices.read", "approvals", "files", "project.write", "browser", "terminal", "shell.read", "shell.control", "plugins.install", "plugins.watch", "usage.read", "logs.read", "notify", "audio", "microphone", "app.settings", "bots.edit", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"]));
     expect(names.slice(-3)).toEqual(["call:<plugin-id>", "network:public", "network:<host>"]);
     for (const c of CAPABILITIES) expect([c.name, typeof c.ok === "string" && c.ok.length > 0 && !/[.]$/.test(c.ok)]).toEqual([c.name, true]);
     const warned = CAPABILITIES.filter((c) => c.warns).map((c) => c.name);
@@ -28,19 +28,19 @@ describe("capabilities", () => {
     expect(CAPABILITIES.find((c) => c.name === "bots.edit")?.ok).toBe("changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network");
   });
 
-  test("F2: the app's door for parts gates by eight capabilities any plugin may ask for, each with its line on the OK card; plugins.manage carries plugins.read", () => {
-    const eight = ["app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
+  test("F2: the app's door for parts gates by seven capabilities any plugin may ask for, each with its line on the OK card; plugins.manage carries plugins.read", () => {
+    const eight = ["app.settings", "bots.edit", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
     const asks = validateManifest({ manifest: 1, id: "my-settings", name: "My Settings", engines: { moss: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: eight }, { folderName: "my-settings" });
     expect(asks.issues.filter((i) => i.severity === "error")).toEqual([]);
     const ok = describeOk(asks);
     for (const name of eight) expect(ok).toContain(`It ${CAPABILITIES.find((c) => c.name === name)!.ok}.`);
-    expect(CAPABILITIES.filter((c) => eight.includes(c.name) && !c.warns).map((c) => c.name)).toEqual(["bots.avatar"]);
+    expect(CAPABILITIES.filter((c) => eight.includes(c.name) && !c.warns).map((c) => c.name)).toEqual([]);
     expect(withImplied(["plugins.manage"])).toEqual(["plugins.manage", "plugins.read"]);
     expect(withImplied(["plugins.read"])).toEqual(["plugins.read"]);
   });
 
-  test("no capability is MOSS's own: any plugin may ask for the six that were (the owner, 2026-11-15), each a warning on its card", () => {
-    const six = ["browser", "terminal", "plugins.install", "plugins.watch", "avatar.report", "network:public"];
+  test("no capability is MOSS's own: any plugin may ask for the five that were (the owner, 2026-11-15), each a warning on its card", () => {
+    const six = ["browser", "terminal", "plugins.install", "plugins.watch", "network:public"];
     for (const name of six) expect({ name, warns: CAPABILITIES.find((c) => c.name === name)?.warns }).toEqual({ name, warns: true });
     expect(CAPABILITIES.some((c) => "bundledOnly" in c)).toBe(false);
     const asks = validateManifest({ manifest: 1, id: "asks-all", name: "Asks", engines: { moss: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: six }, { folderName: "asks-all" });
@@ -137,14 +137,12 @@ describe("the plugin API's gating", () => {
     // (the controller's ruling: nothing callable).
     // logs.read widens what `logs.*` reads (MOSS's log and every plugin's, beyond the plugin's own), which the core
     // checks per source: the calls themselves need no capability.
-    // avatar.control.all widens whose figure `avatar.cue` may move (the core checks it per bot) and carries avatar.control
-    // with it (IMPLIED_CAPABILITIES): the call itself is gated by avatar.control.
     // `microphone` is a permission of the plugin's own frames (`getUserMedia`), checked in the window's session, not an API call;
     // `audio` is the frames' autoplay and the device's speech turn (the turns catalog), not an API call either.
     // approvals.all, user.send, overlay and tray gate a window's fields, a hook and a spot (the app checks them), not a call.
     // F2's eight gate the app's door for its parts (tree-calls.ts and the composer spot's), not a plugin-API call.
-    const doorCaps = ["app.settings", "bots.edit", "bots.avatar", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
-    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "avatar.control.all", "microphone", "audio", ...doorCaps];
+    const doorCaps = ["app.settings", "bots.edit", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
+    const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "microphone", "audio", ...doorCaps];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);
   });
@@ -206,7 +204,7 @@ describe("points and spots", () => {
   test("the spot catalog holds §5.5's spots, with conversation.message's keys and its kept approval cell", () => {
     const names = SPOTS.map((s) => s.name);
     for (const n of ["app.root", "app.surface", "bot.tab", "sidebar", "sidebar.bot", "sidebar.app", "main", "panel", "panel.view", "settings.section", "bot.editor.section",
-      "bot.header", "bot.stage", "bot.side", "conversation", "composer", "avatar", "composer.action", "conversation.message", "tool.result",
+      "bot.header", "bot.side", "conversation", "composer", "composer.action", "conversation.message", "tool.result",
       "conversation.message.extra", "bot.header.action", "status", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
     const msg = SPOTS.find((s) => s.name === "conversation.message")!;
     expect(msg.keys).toEqual(MESSAGE_KINDS);
@@ -217,7 +215,7 @@ describe("points and spots", () => {
   });
 
   test("what Bots offers a bot's plugin is a closed list: inside its tab, its top bar, the Browser and agent panels; never the sidebar, Settings or the Edit page", () => {
-    expect([...BOTS_OFFER.keys()].sort()).toEqual(["avatar", "bar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.stage", "bot.stage.action", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
+    expect([...BOTS_OFFER.keys()].sort()).toEqual(["bar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
       "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "panel", "tool.result"]);
     expect(BOTS_OFFER.get("panel")).toEqual(["browser", "agent"]);
     expect([botsOffer("panel", "browser"), botsOffer("panel", "agent"), botsOffer("panel", "terminal"), botsOffer("panel"), botsOffer("bar"), botsOffer("status")]).toEqual([true, true, false, false, true, false]);
@@ -245,22 +243,21 @@ describe("points and spots", () => {
     expect(catalogPointDecl("conversation.message")).toMatchObject({ shape: "keyed", keep: ["approval"], needs: ["conversation.read"], context: ["bot"] });
     expect(catalogPointDecl("webhook.ingress")).toMatchObject({ shape: "list", fields: { type: "object" } });
     expect(catalogPointDecl("webhook.ingress")!.props).toBeUndefined();
-    expect(catalogPointDecl("avatar.formats")).toMatchObject({ shape: "list", platform: true });
     expect(catalogPointDecl("webhook.ingress")).not.toHaveProperty("platform");
     for (const name of ["app.root", "bot.tab", "models", "luna.cards"]) expect(catalogPointDecl(name)).toBeUndefined();
   });
 
-  test("avatars are VRM or Live2D Cubism models, the avatar spot keyed by format (the owner's decision)", () => {
-    expect(AVATAR_FORMATS.map((a) => a.format)).toEqual(["vrm", "live2d"]);
-    expect(SPOTS.find((s) => s.name === "avatar")!.keys).toEqual(["vrm", "live2d"]);
-    expect(avatarFileProblem("live2d", "assets/alpha/alpha.model3.json")).toBeUndefined();
-    expect(avatarFileProblem("live2d", "assets/alpha.zip")).toBeUndefined();
-    expect(avatarFileProblem("live2d", "assets/alpha.vrm")).toBeDefined();
-    expect(avatarFileProblem("vrm", "assets/alpha.model3.json")).toBeDefined();
-    expect(avatarFileProblem("sprite-sheet", "anything.png")).toBeUndefined();
-    const pack = DATA_POINTS.find((p) => p.name === "avatar.packs")!.entry;
-    expect(pack.safeParse({ id: "alpha", file: "alpha/alpha.model3.json", format: "live2d" }).success).toBe(true);
-    expect(pack.safeParse({ id: "alpha", file: "alpha.png", format: "live2d" }).success).toBe(false);
+  test("the avatar left the platform (G7): its capabilities, points and spots are retired, each naming what replaced it, and none is in a catalog", () => {
+    for (const r of RETIRED_CAPABILITIES) expect([r.name, CAPABILITIES.some((c) => c.name === r.name), r.replacedBy.length > 20]).toEqual([r.name, false, true]);
+    for (const r of RETIRED_POINTS) expect([r.name, SPOTS.some((x) => x.name === r.name), DATA_POINTS.some((x) => x.name === r.name)]).toEqual([r.name, false, false]);
+    const asks = validateManifest({ manifest: 1, id: "old-stage", name: "Old stage", engines: { moss: "^1.0.0" }, client: { entry: "ui/index.js" }, capabilities: ["avatar.report", "bots.avatar"], contributes: { "avatar.packs": [{ id: "x", file: "x.vrm", format: "vrm" }], ui: [{ spot: "avatar", key: "vrm", id: "v", component: "V" }] } }, { folderName: "old-stage" });
+    const errors = asks.issues.filter((i) => i.severity === "error").map((i) => `${i.code}: ${i.message}`);
+    expect(errors).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^capability_retired: `avatar.report` is retired: use the avatar plugin's own UI spot `moss.character.renderer`/),
+      expect.stringMatching(/^capability_retired: `bots.avatar` is retired/),
+      expect.stringMatching(/^point_retired: `avatar.packs` is retired: use the avatar plugin's own point `moss.character.packs`/),
+      expect.stringMatching(/^spot_retired: `avatar` is retired/),
+    ]));
   });
 
   test("lane F's asks: settings declares its sections, an unfilled panel key shows a placeholder, a panel may be for some sessions only", () => {

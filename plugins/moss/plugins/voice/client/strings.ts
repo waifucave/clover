@@ -1,4 +1,4 @@
-// MOSS Voice's words: Settings › Voice (`settings.section`), a bot's editor (`bot.editor.section`) and the stage's chip.
+// MOSS Voice's words: Settings › Voice (`settings.section`), and a bot's editor (`bot.editor.section`).
 export const S = {
   section: "Voice",
   offNote: "Turning MOSS Voice off in Plugins makes your bots text-only.",

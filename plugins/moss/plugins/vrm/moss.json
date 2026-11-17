@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "VRM avatar",
-  "description": "Draws a bot's VRM avatar on its stage, breathing and blinking, its mouth moving with the bot's voice as the app describes it (loudness and brightness on the audio clock). It hears nothing itself.",
+  "description": "Draws the avatar plugin's figure when it is a VRM model, breathing and blinking, its mouth moving with what MOSS Voice says (loudness and brightness on the audio clock). It hears nothing itself.",
   "engines": {
     "moss": "^1.0.0"
   },
@@ -17,48 +17,29 @@
     ],
     "ui": [
       {
-        "spot": "avatar",
+        "spot": "moss.character.renderer",
         "id": "vrm",
         "key": "vrm",
         "component": "VrmAvatarEntry"
       }
     ],
-    "avatar.formats": [
+    "moss.character.formats": [
       {
         "id": "vrm",
         "format": "vrm",
         "name": "VRM",
-        "entry": {
-          "extensions": [
-            ".vrm"
-          ]
-        },
-        "files": {
-          "kinds": [
-            {
-              "ext": [
-                ".vrm",
-                ".glb"
-              ],
-              "type": "binary",
-              "maxBytes": 134217728
-            }
-          ],
-          "find": "folder",
-          "maxFiles": 1
-        },
-        "import": {
-          "accepts": [
-            "file"
-          ]
-        },
         "capabilities": [
           "lipsync",
           "expressions",
           "lookat",
           "pace",
           "outfits"
-        ]
+        ], "entry": [".vrm", ".glb"]
+      }
+    ],
+    "moss.voice.speech": [
+      {
+        "id": "mouth"
       }
     ]
   }

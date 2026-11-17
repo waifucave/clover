@@ -254,6 +254,7 @@ import { coldResumeRunHomeFor, createMossSessionDrivers, sessionPermissionClassF
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
 import { splitSettingsToSdk } from "./migration/settings-split";
+import { moveFigureToAvatarPlugin } from "./migration/figure-to-avatar-plugin";
 import { moveSettingsToPlugins } from "./migration/settings-moved-to-plugins";
 import { seedBuiltinSkills } from "./migration/builtin-skills";
 import { MigrationCRefused, finishMigrationC, markCurrentLayout, migrationCManifestPath, migrationCState, oldLayoutMarkers, ranOnRunHomeBuild, repairAgentsLink, runMigrationC } from "./migration/migrate-c";
@@ -1090,6 +1091,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // Settings that moved from the core to a plugin go into that plugin's own settings, once, before anything reads them
   // (the table of rows in migration/settings-moved-to-plugins.ts).
   moveSettingsToPlugins(home, { log: (line) => console.error(line) });
+  // The figure left the core for the bundled avatar plugin: the person's pick and their own models go with it, once.
+  moveFigureToAvatarPlugin(home, { log: (line) => console.error(line) });
 
   // The skills MOSS ships that a child must be able to LOAD (`computer-use`): a managed copy in the user's
   // skill tier, `sdk/skills/` — the builtin tier is staged into no run folder. Every boot, every home, after the
@@ -4105,6 +4108,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     notifyService = notify;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: mossHome, computer: hostComputer, registry, secrets: contractSecrets,
+      // A point entry's `path` fields reach its declarer as the app's asset route (`/_t/<plugin>/<path>`), served to every layer.
+      assetUrl: (pluginId: string, path: string) => `/_t/${encodeURIComponent(pluginId)}/${path}`,
       // The daemon's own notion of the user's home: the real one only on its default home (as usage's, `wiring.ts`); any
       // other (a test's) runs programs and judges folders against an empty stand-in, never the developer's.
       ...(opts.parts?.userHome !== undefined ? { userHome: opts.parts.userHome } : isDefaultMossHome(home, profile) ? { userHome: homedir() } : {}),

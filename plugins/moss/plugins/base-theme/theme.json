@@ -143,16 +143,6 @@
     "pill.plume.body": "#298CFF",
     "pill.plume.hot": "#CCEDFF",
 
-    "stage.background": "linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%)",
-    "stage.floor": "#1C1B221F",
-    "stage.glow": "#2F6FDF1F",
-    "stage.foreground": "#00000000",
-    "stage.foreground.height": "0px",
-    "stage.text": "#676674",
-    "avatar.light.key": "#FFFFFF",
-    "avatar.light.fill": "#F2F6FF",
-    "avatar.light.rim": "#FFFFFF",
-    "avatar.exposure": 1,
 
     "plugin.moss.sidebar.tint": "#F5F5F5B3",
     "plugin.moss.sidebar.solid": "#F5F5F5",
@@ -213,14 +203,6 @@
       "shadow.raised": "0 1px 2px #00000066, 0 2px 8px #0000004D",
       "shadow.float": "0 12px 36px #00000099, 0 2px 8px #00000066",
 
-      "stage.background": "linear-gradient(180deg, #1D1D23 0%, #151519 100%)",
-      "stage.floor": "#0000008C",
-      "stage.glow": "#4180E31F",
-      "stage.text": "#9B9AA8",
-      "avatar.light.key": "#F2EEFF",
-      "avatar.light.fill": "#C9D8F2",
-      "avatar.light.rim": "#DCE6F7",
-      "avatar.exposure": 0.95,
 
       "plugin.moss.sidebar.tint": "#202020B3",
       "plugin.moss.sidebar.solid": "#202020",

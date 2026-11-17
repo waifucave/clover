@@ -62,11 +62,10 @@ How to read it:
 | `panel` | keyed | shell | — | The panel host, keyed by panel: each stock panel (session, terminal, diff, files, browser, agent) is a plugin of its own, and replaceable. An entry whose key is not a stock one ADDS a panel of the plugin's own, with a b… |
 | `panel.view` | keyed | shell | — | A spot inside each panel view, keyed by the view's id. |
 | `settings.section` | list | settings | — | A section of the settings screen, which the settings part (`main` key `settings`) declares. |
-| `bot.editor.section` | list | bot-editor | — | A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given. The avatar's… |
+| `bot.editor.section` | list | bot-editor | — | A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given. |
 | `status` | list | shell | — | The shell's status bar; the inherited `tile` becomes an entry here (§12). |
 | `bot.header` | single | bot-tab | — | The tab's header. |
 | `bot.header.action` | list | bot-tab | — | Buttons in the tab's header. |
-| `bot.stage` | single | bot-tab | — | The stage, where the avatar stands. |
 | `bot.side` | single | bot-tab | — | The tab's side area. |
 | `bot.controls` | single | bot-tab | — | The bot's own drawn controls (its name, buttons, a handle to drag the window), placed by its layout and drawn by its plugin in its own frame; what they do is `shell.*`, the user's own press. |
 | `chrome.title` | single | bot-tab | — | The tab's title (the bot's name), drawn by the shell; it opens the tab's menu where it has one. |
@@ -77,8 +76,6 @@ How to read it:
 | `chrome.panels` | single | bot-tab | — | Where the panels the user opens show (the session column excepted), in the shape the layout's container gives them. Left out, they show where the bot's `panel.mode` says (the standard right column by default). |
 | `conversation` | single | bot-tab | `conversation.read` | The conversation view. |
 | `composer` | single | bot-tab | `conversation.post` | The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; e… |
-| `avatar` | keyed | bot-stage | — | Draws the bot's avatar, keyed by the avatar file's format (`vrm`, `live2d`, or a plugin's own; `AVATAR_FORMATS`), and lip-syncs it from `speech` (a `SpeechFeed`). |
-| `bot.stage.action` | list | bot-stage | — | Small controls on a bot's stage, over its figure (a corner each places itself in): a voice plugin's mute and stop, say. Each entry draws its own control for the bot it is given. |
 | `composer.action` | keyed | composer | — | The composer's buttons, keyed by action id: an entry keyed `attach`, `model`, `level`, `send` or `stop` draws that button another way (or hides it); one with any other key adds a button of its own, drawn among the butto… |
 | `conversation.message` | keyed | conversation | `conversation.read` | One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls. |
 | `conversation.message.extra` | list | conversation | `conversation.read` | Add-ons under each message, with a UI of their own. A plugin outside MOSS's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`. |
@@ -93,8 +90,6 @@ How to read it:
 - `webhook.ingress` (list, code, declared by moss/trigger-webhook): Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7).
 - `usage.sources` (list, code, declared by moss/usage): A tool of the user's installed on this computer whose usage MOSS reads: its plan windows (`plan`) and the token counts its own session files hold (`ingest`), through its own program and its own folders (`host.outside`),…
 - `island.line` (list, code, declared by island): A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island c…
-- `avatar.formats` (list, data, declared by core): A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is ha…
-- `avatar.packs` (list, data, declared by core): Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5).
 
 ## Capabilities (`capabilities` in the manifest; each is a line on the OK card)
 
@@ -123,16 +118,11 @@ How to read it:
 | `plugins.watch` | Hear which plugins appear, change state or go (their ids and states only), and why a yes on a plugin's change card couldn't be done; it can call nothing | sees every plugin you have, whether it's on, and when you add or remove one | a warning |
 | `usage.read` | Read usage rows and plan readings | sees your usage and plan readings |  |
 | `logs.read` | Read MOSS's logs and every plugin's | reads MOSS's logs and every plugin's logs |  |
-| `avatar.read` | Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change | sees your bot's figure |  |
-| `avatar.control` | Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, look at a point, or move its mouth with speech levels; the renderer says pl… | moves your bot's figure |  |
-| `avatar.control.all` | Do what avatar.control does for any bot's figure, not only its own: play cues and send the mouth's levels (speech) to any bot's stage; the renderer says plainly what it doesn't do | moves any of your bots' figures |  |
-| `avatar.report` | Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own) | tells MOSS how your bots' figures look and where they stand, which other plugins and your bots then see, and receives your bots' expression, motion and speech cues to draw | a warning |
 | `notify` | Send the user a notification through the notifiers | sends you notifications |  |
 | `audio` | Play sound with no press from the user, even from a part kept in the background, and take the device's speech turn (`device/speech`) so it never talks over another plugin | can play sound at any time, even while no window of it shows | a warning |
 | `microphone` | Open the user's microphone from its own frames (`getUserMedia({ audio: true })`), whenever its parts run, including a part kept in the background; the system's own permission stil… | hears your microphone, also while no window of it shows | a warning |
 | `app.settings` | Read MOSS's own settings (its look, theme, language, layout lists, and which plugin is active for each one-at-a-time job) and, on the user's own press in its frame, change the loo… | reads MOSS Code's settings, and changes its window's look, language and which plugin does each job when you press its controls | a warning |
-| `bots.edit` | On the user's own press in its frame: change a bot's settings (every field of its user layer but the avatar: its name, instructions, model, voice, and whether its browser may reac… | changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network | a warning |
-| `bots.avatar` | On the user's own press in its frame: set a bot's avatar from a model file the user picks in MOSS's own file dialog (the path never reaches the plugin), and its avatar and credit… | changes your bots' avatars to files you pick, and lists the avatar packs installed |  |
+| `bots.edit` | On the user's own press in its frame: change a bot's settings (its name, instructions, model, voice, and whether its browser may reach the home network), its tab's layout switches… | changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network | a warning |
 | `plugins.read` | Read every plugin's record and manifest, its settings (a secret only as set or not), sign-ins, development folders, granted files, commands and notification mutes, and the plugin… | sees every plugin you have, its settings and what it may do | a warning |
 | `plugins.manage` | On the user's own press in its frame: install (each landing behind its own OK card), remove, update, pin, restart and switch plugins on and off; add and remove indexes and develop… | installs, removes, switches on and off and changes the settings and sign-ins of your plugins when you press its controls | a warning |
 | `tools.permissions` | Read and, on the user's own press in its frame, change what each plugin tool may do (always allow, ask, always block): every installed plugin's tools, MOSS's own bundled plugins'… | shows and changes, for each plugin tool, whether it may be used and whether it asks first, and can set any plugin's tools, MOSS's own plugins' included, to act without asking you, with no card (not MOSS's built-in shell and file tools) | a warning |
@@ -151,7 +141,7 @@ How to read it:
 
 `where`: `host` a host half, `ui` a component, `both` either, `own` a host half in a process of its own (`host.process: "own"`), `moss` MOSS's own process only.
 
-- **(none: every plugin)**: `commands.list` (both), `confirm` (both), `confirmCard` (both), `desktop.close` (moss), `desktop.show` (moss), `host.call` (ui), `host.on` (ui), `keys.delete` (moss), `keys.open` (moss), `keys.publicKey` (moss), `logs.follow` (both), `logs.read` (both), `memory.list` (both), `memory.read` (both), `outside.run` (host), `pictures.publish` (host), `points.active` (both), `points.call` (both), `points.entries` (both), `points.onActive` (both), `points.stream` (both), `points.watch` (both), `routines.fire` (host), `routines.list` (both), `routines.runs` (both), `secrets.get` (own), `settings.get` (both), `settings.set` (both), `settings.watch` (both), `storage.synced.delete` (host), `storage.synced.get` (both), `storage.synced.keys` (both), `storage.synced.set` (host), `storage.synced.watch` (host), `streams.accept` (both), `streams.ack` (both), `streams.cancel` (both), `streams.end` (both), `streams.open` (both), `streams.write` (both), `t` (ui), `turns.done` (both), `turns.extend` (both), `turns.state` (both), `turns.take` (both), `turns.watch` (both), `ui.send` (host)
+- **(none: every plugin)**: `commands.list` (both), `confirm` (both), `confirmCard` (both), `desktop.close` (moss), `desktop.show` (moss), `host.call` (ui), `host.on` (ui), `keys.delete` (moss), `keys.open` (moss), `keys.publicKey` (moss), `logs.follow` (both), `logs.read` (both), `memory.list` (both), `memory.read` (both), `outside.run` (host), `pictures.publish` (host), `points.active` (both), `points.call` (both), `points.entries` (both), `points.onActive` (both), `points.onMessage` (both), `points.send` (both), `points.stream` (both), `points.watch` (both), `routines.fire` (host), `routines.list` (both), `routines.runs` (both), `secrets.get` (own), `settings.get` (both), `settings.set` (both), `settings.watch` (both), `storage.synced.delete` (host), `storage.synced.get` (both), `storage.synced.keys` (both), `storage.synced.set` (host), `storage.synced.watch` (host), `streams.accept` (both), `streams.ack` (both), `streams.cancel` (both), `streams.end` (both), `streams.open` (both), `streams.write` (both), `t` (ui), `turns.done` (both), `turns.extend` (both), `turns.state` (both), `turns.take` (both), `turns.watch` (both), `ui.send` (host)
 - **call:***: `commands.run` (both)
 - **network:***: `net.fetch` (both)
 - **conversation.read**: `conversation.follow` (both), `conversation.get` (both), `conversation.history` (both), `conversation.list` (both), `conversation.watch` (both)
@@ -169,9 +159,6 @@ How to read it:
 - **plugins.install**: `plugins.install` (ui)
 - **usage.read**: `usage.plans` (both), `usage.rows` (both), `usage.summary` (both), `usage.watch` (both)
 - **notify**: `notify.send` (both)
-- **avatar.control**: `avatar.cue` (both)
-- **avatar.read**: `avatar.box` (both), `avatar.catalogue` (both), `avatar.watch` (both)
-- **avatar.report**: `avatar.report` (ui)
 - **sessions.read**: `sessions.follow` (both), `sessions.get` (both), `sessions.history` (both), `sessions.list` (both), `sessions.watch` (both)
 - **activity.read.***: `activity.list` (both), `activity.watch` (both)
 - **picture.read.***: `pictures.list` (both), `pictures.open` (both), `pictures.watch` (both)
@@ -205,7 +192,5 @@ Each token is the CSS variable `--moss-color-accent` for `color.accent`: its dot
 - **motion**: `motion.fast` (duration), `motion.medium` (duration), `motion.slow` (duration), `motion.easing` (easing), `motion.spring.response` (number), `motion.spring.damping` (number)
 - **island**: `island.surface` (color), `island.rim` (color), `island.text` (color), `island.muted` (color), `island.faint` (color), `island.attention` (color), `island.accept` (color), `island.accept.text` (color), `island.refuse` (color), `island.refuse.text` (color), `island.working` (color), `island.success` (color), `island.danger` (color), `island.option` (color), `island.option.hover` (color), `island.card` (color), `island.card.rim` (color), `island.shadow` (shadow)
 - **pill**: `pill.surface` (color), `pill.rim` (color), `pill.text` (color), `pill.muted` (color), `pill.placeholder` (color), `pill.placeholder.typing` (color), `pill.send` (color), `pill.send.glyph` (color), `pill.accessory` (color), `pill.attention` (color), `pill.accept` (color), `pill.accept.text` (color), `pill.success` (color), `pill.danger` (color), `pill.option` (color), `pill.option.hover` (color), `pill.shadow` (shadow), `pill.plume.tail` (color), `pill.plume.body` (color), `pill.plume.hot` (color)
-- **stage**: `stage.background` (paint), `stage.floor` (color), `stage.glow` (color), `stage.foreground` (paint), `stage.foreground.height` (dimension), `stage.text` (color)
-- **avatar**: `avatar.light.key` (color), `avatar.light.fill` (color), `avatar.light.rim` (color), `avatar.exposure` (number)
 
 <!-- end generated -->

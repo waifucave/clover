@@ -157,14 +157,15 @@ describe("the gallery", () => {
       if (PAGES.includes(story.id)) {
         expect([story.id, kind]).toEqual([story.id, undefined]);
       } else if (kind === "bot") {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Details"]]);
+        // The avatar plugin's own panel (a plugin's panel, offered beside any tab) is there too.
+        expect([story.id, toggles(frame).filter((t) => t !== "Avatar")]).toEqual([story.id, ["Details"]]);
         expect([story.id, frame.querySelector(".cl-term, .cl-diff, .cl-files")]).toEqual([story.id, null]);
         // The slim column, if open, has nothing about a folder.
         expect([story.id, frame.querySelector('.cl-session[data-kind="coding"]')]).toEqual([story.id, null]);
       } else if (kind === "agent") {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Avatar"]]);
       } else {
-        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Files"]]);
+        expect([story.id, toggles(frame)]).toEqual([story.id, ["Session", "Terminal", "Changes", "Files", "Avatar"]]);
       }
     }
     const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;
@@ -236,7 +237,8 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     expect([...frame("plugins-installed").querySelectorAll(".cl-plugin-index__subhead")].map((h) => h.textContent)).toContain("On");
     expect(frame("plugins-detail").querySelector(".cl-plugin-index__detail .cl-plugin-index__title")?.textContent).toBe("Alpha");
     expect(frame("bot-editor").querySelector(".cl-window__content .cl-bot-editor__title")?.textContent).toBe("Edit Alpha");
-    expect(frame("bot-editor").querySelectorAll(".cl-avatar-section__avatar")).toHaveLength(4);
+    // The figure is no section of the bot editor's now: the avatar plugin keeps it in its own Settings section.
+    expect(frame("bot-editor").querySelectorAll(".cl-avatar-section__avatar")).toHaveLength(0);
     expect(frame("archive").querySelectorAll(".cl-archive__session")).toHaveLength(5);
     // The old session reads through the conversation part, its approval as a note.
     const old = frame("archive-session").querySelector(".cl-archive__transcript .cl-conv")!;

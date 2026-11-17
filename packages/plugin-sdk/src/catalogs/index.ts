@@ -13,8 +13,8 @@ import { DEVICE_TURNS } from "./turns";
 
 export * from "./api-calls";
 export * from "./api-signatures";
-export * from "./avatars";
-export * from "./avatar-cues";
+export * from "./data-files";
+export * from "./retired";
 export * from "./capabilities";
 export * from "./hooks";
 export * from "./layer-calls";
