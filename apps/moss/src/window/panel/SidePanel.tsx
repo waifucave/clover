@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { bridge, shortTime } from "../bridge";
 import type { BotRow, PictureRow, RoutineRow } from "../../shared/view";
 
-export function SidePanel(props: { bot: BotRow; onClose: () => void }) {
+export function SidePanel(props: { bot: BotRow; onClose: () => void; onSettings?: () => void }) {
   const [pictures, setPictures] = useState<PictureRow[] | "waiting" | undefined>(undefined);
   const [routines, setRoutines] = useState<RoutineRow[] | "waiting" | undefined>(undefined);
   const [frame, setFrame] = useState<string | undefined>(undefined);

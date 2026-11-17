@@ -8,9 +8,9 @@ import type { BotRow, BotSetting, SettingsView } from "../../shared/view";
 
 const LEVEL_WORDS: Record<string, string> = { "read-only": "Read only", ask: "Ask before every action", "ask-risky": "Ask before risky actions", "accept-edits": "Ask before risky actions, edits allowed", automatic: "Fully automatic" };
 
-export function SettingsPage(props: { bots: BotRow[]; strip?: React.ReactNode }) {
+export function SettingsPage(props: { bots: BotRow[]; strip?: React.ReactNode; bot?: string }) {
   const [s, setS] = useState<SettingsView | undefined>(undefined);
-  const [bot, setBot] = useState<string | undefined>(props.bots[0]?.id);
+  const [bot, setBot] = useState<string | undefined>(props.bot ?? props.bots[0]?.id);
   useEffect(() => { void bridge().settings().then(setS); }, []);
   return (
     <main className="page" data-col="conversation" data-page="settings" aria-label="Settings">

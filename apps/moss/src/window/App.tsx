@@ -32,6 +32,8 @@ export function App() {
   const [view, setView] = useState<MossView>(EMPTY);
   const [page, setPage] = useState<Page | undefined>(undefined);
   const [panel, setPanel] = useState(false);
+  /** The bot whose own choices Settings opens on (the side panel's settings button), if any. */
+  const [settingsBot, setSettingsBot] = useState<string | undefined>(undefined);
   const [, setTick] = useState(0);
   useEffect(() => {
     void bridge().view().then(setView);
@@ -54,7 +56,7 @@ export function App() {
     (window as unknown as { __mossTest: unknown }).__mossTest = {
       go: (g: { bot?: string; panel?: boolean; page?: "plugins" | "settings"; calm?: boolean }) => {
         if (g.calm !== undefined) faceMotion.calm = g.calm;
-        if (g.page !== undefined) setPage({ page: g.page });
+        if (g.page !== undefined) { setSettingsBot(g.page === "settings" ? g.bot : undefined); setPage({ page: g.page }); }
         else if (g.bot !== undefined && g.bot !== "") setPage({ bot: g.bot });
         if (g.panel !== undefined) setPanel(g.panel);
       },
@@ -69,15 +71,15 @@ export function App() {
   const banner = CONNECTION_WORDS[view.connection.kind];
   return (
     <div className={`window${bot !== undefined && panel ? " has-panel" : ""}`}>
-      <BotList view={view} page={shown ?? { page: "plugins" }} onPage={setPage} />
+      <BotList view={view} page={shown ?? { page: "plugins" }} onPage={(p) => { setSettingsBot(undefined); setPage(p); }} />
       <div className="middle">
         {banner !== "" ? <p className="banner" role="status">{view.connection.reason ?? banner}</p> : null}
         {shown !== undefined && "page" in shown && shown.page === "plugins" ? <PluginsPage strip={strip} />
-          : shown !== undefined && "page" in shown && shown.page === "settings" ? <SettingsPage bots={view.bots} strip={strip} />
+          : shown !== undefined && "page" in shown && shown.page === "settings" ? <SettingsPage bots={view.bots} strip={strip} {...(settingsBot !== undefined ? { bot: settingsBot } : {})} />
           : bot !== undefined ? <Conversation bot={bot} cards={inConversation} strip={strip} panelOpen={panel} onPanel={() => setPanel((p) => !p)} />
           : <main className="conversation conversation--empty" data-col="conversation">{strip}<p className="muted">{view.pieces.bots === "waiting" ? "Waiting for the engine's bots." : "Make a bot with + to start."}</p></main>}
       </div>
-      {bot !== undefined && panel ? <SidePanel bot={bot} onClose={() => setPanel(false)} /> : null}
+      {bot !== undefined && panel ? <SidePanel bot={bot} onClose={() => setPanel(false)} onSettings={() => { setSettingsBot(bot.id); setPage({ page: "settings" }); }} /> : null}
     </div>
   );
 }

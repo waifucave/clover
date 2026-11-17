@@ -80,7 +80,17 @@ export const SCENES: readonly Scene[] = [
   { name: "strip", go: { bot: "kite", panel: false } },
   { name: "plugins", go: { page: "plugins" } },
   { name: "settings", go: { page: "settings" } },
+  // Lane MA2's pages (the side panel, Plugins, Settings), written as `ma2-<scene>-<theme>-<size>.png`.
+  { name: "ma2-panel", go: { bot: "juniper", panel: true } },
+  { name: "ma2-plugins", go: { page: "plugins" } },
+  { name: "ma2-settings-account", go: { page: "settings" } },
+  { name: "ma2-settings-bot", go: { page: "settings", bot: "juniper" } },
 ];
+
+/** The file a scene's picture goes to. */
+export function sceneFile(scene: string, theme: string, size: string): string {
+  return `${scene.startsWith("ma2-") ? "" : "moss-"}${scene}-${theme}-${size}.png`;
+}
 
 export const SIZES = [{ name: "usual", width: 1280, height: 820 }, { name: "narrow", width: 760, height: 820 }] as const;
 
@@ -99,12 +109,14 @@ export async function runRender(o: { win: BrowserWindow; engine: MossEngine; dir
       nativeTheme.themeSource = theme;
       for (const size of SIZES) {
         win.setContentSize(size.width, size.height);
-        for (const scene of SCENES) {
+        // MOSS_RENDER_SCENES: a prefix to draw only some scenes (`ma2-`).
+        const only = process.env.MOSS_RENDER_SCENES;
+        for (const scene of SCENES.filter((x) => only === undefined || only === "" || x.name.startsWith(only))) {
           await win.webContents.executeJavaScript(`window.__mossTest && window.__mossTest.go(${JSON.stringify({ ...scene.go, calm: true })})`).catch(() => undefined);
           // Let the conversation load, the sealed card frames draw and the faces settle.
           await sleep(1_600);
           const image = await win.webContents.capturePage();
-          const file = join(o.dir, `moss-${scene.name}-${theme}-${size.name}.png`);
+          const file = join(o.dir, sceneFile(scene.name, theme, size.name));
           writeFileSync(file, image.toPNG());
           written.push(file);
           o.log(`render: ${file} (${image.getSize().width}x${image.getSize().height})`);
