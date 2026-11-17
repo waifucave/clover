@@ -104,6 +104,18 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "moss.core.tray.safe-mode": "Restart in Safe Mode",
   "moss.core.tray.restart-normally": "Restart Normally",
   "moss.core.tray.manage-plugins": "Manage Plugins…",
+  // The background host's menu-bar menu (item 112): "stop everything" must not read as quitting the bots' app.
+  "moss.core.host-tray.open-moss": "Open MOSS",
+  "moss.core.host-tray.open-code": "Open MOSS Code",
+  "moss.core.host-tray.safe-mode": "Restart On-Screen Parts in Safe Mode",
+  "moss.core.host-tray.stop-everything": "Stop Everything (All Bots, Agents and Both Apps)…",
+  "moss.core.host-tray.working.title": "Your bots and agents are still working",
+  "moss.core.host-tray.working.detail": "Running now: {work}. Stopping everything ends that work, closes MOSS and MOSS Code, and turns off the island until you open MOSS again.",
+  "moss.core.host-tray.working.turns": "{n} replies",
+  "moss.core.host-tray.working.agents": "{n} agents",
+  "moss.core.host-tray.working.routines": "{n} routines",
+  "moss.core.host-tray.working.keep": "Keep Working",
+  "moss.core.host-tray.working.stop": "Stop Everything",
 
   // The app's own update (updater.ts), once downloaded
   "moss.core.update.ready.title": "MOSS Code {version} is ready",
