@@ -35,15 +35,38 @@ describe("the audio's shape", () => {
 });
 
 describe("the generated clip the test and acceptance builds use in place of a microphone", () => {
+  // Waits for what a test means, bounded so a failure can't hang: the clip is a chain of timers (a timer at least `everyMs`
+  // long between pieces), and how long the whole chain takes is the machine's, not the clip's (a loaded runner made 4 of
+  // its 12 pieces in a guessed 60 ms).
+  async function until(what: string, ok: () => boolean, ms = 10_000): Promise<void> {
+    const end = Date.now() + ms;
+    while (!ok()) {
+      if (Date.now() > end) throw new Error(`${what}: not within ${ms} ms`);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  }
+
   test("it makes the same 1.2 s of tone every time, whatever the hold's length, and stops when closed", async () => {
     const chunks: number[] = [];
+    const sum = (): number => chunks.reduce((a, b) => a + b, 0);
     const handle = await clipSource({ everyMs: 1 })({ chunk: (p) => chunks.push(p.length), end: () => undefined });
-    await new Promise((r) => setTimeout(r, 60));
-    handle.stop();
-    expect(chunks.reduce((a, b) => a + b, 0)).toBe(38_400);
+    await until("the whole clip", () => sum() >= 38_400);
+    expect(sum()).toBe(38_400);
     expect(chunks.length).toBe(12);
+    // Complete, it makes nothing more, closed or not.
+    handle.stop();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(chunks.length).toBe(12);
+  });
+
+  test("closed part-way, it makes nothing more", async () => {
+    const chunks: number[] = [];
+    const handle = await clipSource({ everyMs: 1 })({ chunk: (p) => chunks.push(p.length), end: () => undefined });
+    await until("the first piece", () => chunks.length >= 1);
+    handle.stop();
     const after = chunks.length;
-    await new Promise((r) => setTimeout(r, 10));
+    expect(after).toBeLessThan(12);
+    await new Promise((r) => setTimeout(r, 50));
     expect(chunks.length).toBe(after);
   });
 

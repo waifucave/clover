@@ -977,7 +977,9 @@ jobs:
         # embed-runtimes stages dist/winter (copied above): required here, skipped only in a plain local run.
         env:
           MOSS_RUNTIME_REQUIRE_BINARY: "1"
-        run: bun scripts/platform-tests.ts --root scripts --darwin
+        # 20 s a test, as the core's jobs: a cold runner's first `clang` took one of these past bun's 5 s default (the
+        # embed-cowork-native test, which then read the killed child's null status as a failed build).
+        run: bun scripts/platform-tests.ts --root scripts --darwin --timeout 20000
 
       - name: Link · the link tests over the sidecar
         if: ${{ !cancelled() && env.LINK == 'true' }}
@@ -1094,7 +1096,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Scripts · test
-        run: bun scripts/platform-tests.ts --root scripts --not-darwin
+        run: bun scripts/platform-tests.ts --root scripts --not-darwin --timeout 20000
 
       # The repo-wide source scans, which read every package's src/ and scripts/ (the native channel's anti-wiring
       # test): they run here for any such change, not only when the core's own shards do.

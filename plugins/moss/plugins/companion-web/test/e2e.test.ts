@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { cleanup } from "node-datachannel";
 import { RTCPeerConnection } from "node-datachannel/polyfill";
 
-import { type Connect, connectWebSocket, HandshakeClient } from "@waifucave/moss-service-handshake/client";
+import { type Connect, connectWebSocket, HandshakeClient, signerFromKeyPair } from "@waifucave/moss-service-handshake/client";
 import { harnessReady, type HandshakeHarness, startHandshake } from "@waifucave/moss-service-handshake/harness";
 import { Companion, MemoryStore, PairingError, type PairRecord } from "@waifucave/moss-service-web/app";
 import { readInvite, type RtcEnvironment, type RtcLink } from "@waifucave/moss-service-web/protocol";
@@ -19,8 +19,13 @@ import { WebLinkHost } from "../src/web-host";
 import { traceRtc, tracedTest } from "./rtc-trace";
 
 const ready = harnessReady();
+// Both ends are on this machine, so each binds to loopback and offers that one host candidate. Left to gather on every
+// interface, a CI runner offered only its VM's own address (192.168.64.8) and ICE sat at "checking" for the whole 20 s,
+// on both ends, with nothing to find in the code under test: what the test checks is the signalling and the link over
+// whatever path ICE finds, not the runner's network.
+const LOOPBACK = { bindAddress: "127.0.0.1" };
 const rtc: RtcEnvironment = traceRtc({
-  createPeerConnection: (config) => new RTCPeerConnection(config) as unknown as ReturnType<RtcEnvironment["createPeerConnection"]>,
+  createPeerConnection: (config) => new RTCPeerConnection({ ...config, ...LOOPBACK } as never) as unknown as ReturnType<RtcEnvironment["createPeerConnection"]>,
   iceServers: [],
 });
 
@@ -125,6 +130,21 @@ async function computer(options: { confirm?: boolean; store?: MemoryPairStore; r
 
 function browser(store = new MemoryStore(), options: { connect?: Connect; fetch?: (request: Request) => Promise<Response> } = {}): Companion {
   return new Companion({ store, rtc, handshake: "https://handshake.invalid", allowedHandshakes: [harness.url], name: "Test browser", ...options });
+}
+
+/**
+ * Waits until the SERVICE counts the paired computer offline. `host.stop()` closes this end's socket at once, but the
+ * service goes on counting it online until it has handled the close, which on a loaded runner takes a moment: a page that
+ * connects in that gap is told its computer is online, dials a socket that is gone, and the restart tests then fail by
+ * the gap's length and not by anything they check. What they mean is a computer that is really away, so they wait for it.
+ */
+async function serviceSeesOffline(record: PairRecord, timeoutMs = 10_000): Promise<void> {
+  const pair = new HandshakeClient({ origin: harness.url }).pair(record.pair, await signerFromKeyPair(record.signer));
+  const end = Date.now() + timeoutMs;
+  while ((await pair.get()).peer.online) {
+    if (Date.now() > end) throw new Error(`the service still counts the computer online after ${timeoutMs} ms`);
+    await Bun.sleep(20);
+  }
 }
 
 /** A browser whose socket reaches the service only after `ms`: slower than the computer's whole answer. */
@@ -246,6 +266,7 @@ describe.skipIf(!ready)("the web companion", () => {
     await first.host.start();
     const { record, b } = await pairUp(first);
     first.host.stop();
+    await serviceSeesOffline(record);
     const second = await computer({ store });
     await second.host.start();
     const connection = await b.connect(record);
@@ -269,6 +290,7 @@ describe.skipIf(!ready)("the web companion", () => {
     });
     const record = await b.pair(await invite(first), { onWords: () => undefined });
     first.host.stop();
+    await serviceSeesOffline(record);
     sent.length = 0;
     // The earliest the service can see the computer online: when its socket starts connecting. The service marks it
     // present on accepting the upgrade, which can be before this side's connect resolves, so the time is taken before

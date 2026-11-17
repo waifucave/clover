@@ -279,6 +279,16 @@ describe("what a transcription sends: one plain line, cut at TALK_TEXT_MAX, neve
 });
 
 describe("the microphone never outlives the recording", () => {
+  /** Waits for what the test means (bounded, so a failure can't hang), not for a guessed time: a loaded runner takes far
+   *  longer than a laptop over a few event-loop turns, and a backstop timer set tight (15 ms) fired before the test looked. */
+  async function until(what: string, ok: () => boolean, ms = 5_000): Promise<void> {
+    const end = Date.now() + ms;
+    while (!ok()) {
+      if (Date.now() > end) throw new Error(`${what}: not within ${ms} ms`);
+      await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    }
+  }
+
   function stoppable(): { stopped: () => boolean } {
     let stopped = false;
     setTalkSource(async (sink) => {
@@ -294,7 +304,9 @@ describe("the microphone never outlives the recording", () => {
     const w = world({ writeFails: true });
     await act(() => settle(6));
     const button = screen.getByRole("button", { name: "Hold to talk" });
-    await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); await new Promise((r) => setTimeout(r, 10)); await settle(6); });
+    await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); });
+    await until("the source closed after the refused piece", src.stopped);
+    await act(() => settle(6));
     expect(src.stopped()).toBe(true);
     expect(w.done).toEqual(["device/microphone"]);
     expect(button.getAttribute("aria-pressed")).toBe("false");
@@ -307,14 +319,17 @@ describe("the microphone never outlives the recording", () => {
   });
 
   test("at the host half's limit (and a little past it) the source closes even with no refused piece", async () => {
-    setTalkLimit(15);
+    // Long enough that the hold is still held when the test looks (a runner can stall well past 15 ms between turns), and
+    // the close is waited for, not guessed at.
+    setTalkLimit(1_000);
     const src = stoppable();
     const w = world();
     await act(() => settle(6));
     const button = screen.getByRole("button", { name: "Hold to talk" });
     await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); });
     expect(button.getAttribute("aria-pressed")).toBe("true");
-    await act(async () => { await new Promise((r) => setTimeout(r, 40)); await settle(6); });
+    await until("the backstop closed the source", src.stopped);
+    await act(() => settle(6));
     expect(src.stopped()).toBe(true);
     expect(w.done).toEqual(["device/microphone"]);
     expect(button.getAttribute("aria-pressed")).toBe("false");
@@ -324,14 +339,16 @@ describe("the microphone never outlives the recording", () => {
   });
 
   test("a release before the limit clears it: nothing is dropped afterwards", async () => {
-    setTalkLimit(30);
+    // The release must come before the limit and the wait after it, whatever the runner's speed: the limit is long against
+    // the two turns before the release, and the wait is longer than the limit.
+    setTalkLimit(500);
     twoChunks();
     const w = world();
     await act(() => settle(6));
     const button = screen.getByRole("button", { name: "Hold to talk" });
     await act(async () => { fireEvent.pointerDown(button, { pointerId: 1, button: 0 }); await settle(6); });
     await act(async () => { fireEvent.pointerUp(button, { pointerId: 1, button: 0 }); await settle(10); });
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)); await settle(4); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 650)); await settle(4); });
     expect(w.sent).toHaveLength(1);
     expect(screen.queryByRole("note")).toBeNull();
   });
