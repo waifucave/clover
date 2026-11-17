@@ -47,7 +47,7 @@
               "bot"
             ],
             "needs": [
-              "conversation.read"
+              "sessions.read"
             ],
             "doc": "The conversation view."
           }

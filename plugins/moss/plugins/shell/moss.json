@@ -110,7 +110,64 @@
         "spot": "main",
         "id": "agent-tab",
         "key": "agent",
-        "component": "AgentTab"
+        "component": "AgentTab",
+        "declares": {
+          "conversation": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "needs": [
+              "sessions.read"
+            ],
+            "doc": "The conversation view."
+          },
+          "composer": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The composer."
+          }
+        }
       },
       {
         "spot": "panel",
@@ -120,6 +177,63 @@
         "component": "AgentTab",
         "when": {
           "session": "agent"
+        },
+        "declares": {
+          "conversation": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "needs": [
+              "sessions.read"
+            ],
+            "doc": "The conversation view."
+          },
+          "composer": {
+            "shape": "single",
+            "props": {
+              "type": "object",
+              "properties": {
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "session": {
+                  "type": "string"
+                }
+              }
+            },
+            "context": [
+              "bot"
+            ],
+            "doc": "The composer."
+          }
         }
       }
     ]

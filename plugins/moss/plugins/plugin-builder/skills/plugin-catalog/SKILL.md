@@ -74,13 +74,13 @@ How to read it:
 | `chrome.sidebar` | single | bot-tab | — | The sidebar's show/hide button, drawn by the shell. A layout with no bar that does not place it gets a small one from the shell: the user never loses the sidebar. |
 | `chrome.drag` | single | bot-tab | — | A region that drags the window (empty, as wide and tall as the node the layout gives it). A layout with no bar that places none gets a thin one from the shell. |
 | `chrome.panels` | single | bot-tab | — | Where the panels the user opens show (the session column excepted), in the shape the layout's container gives them. Left out, they show where the bot's `panel.mode` says (the standard right column by default). |
-| `conversation` | single | bot-tab | `conversation.read` | The conversation view. |
+| `conversation` | single | bot-tab | `sessions.read` | The conversation view. |
 | `composer` | single | bot-tab | `conversation.post` | The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; e… |
 | `composer.action` | keyed | composer | — | The composer's buttons, keyed by action id: an entry keyed `attach`, `model`, `level`, `send` or `stop` draws that button another way (or hides it); one with any other key adds a button of its own, drawn among the butto… |
-| `conversation.message` | keyed | conversation | `conversation.read` | One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls. |
-| `conversation.message.extra` | list | conversation | `conversation.read` | Add-ons under each message, with a UI of their own. A plugin outside MOSS's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`. |
+| `conversation.message` | keyed | conversation | `sessions.read` | One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls. |
+| `conversation.message.extra` | list | conversation | `sessions.read` | Add-ons under each message, with a UI of their own. A plugin outside MOSS's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`. |
 | `conversation.message.action` | list | conversation | — | A small button the conversation draws itself in a message's row of actions (beside copy and speak), no frame and no component: `title` is its tooltip, `icon` a picture in the plugin's folder, `on` which messages carry i… |
-| `tool.result` | keyed | conversation | `conversation.read` | A tool's result, keyed by tool name (`mcp__blender__*`); `item` is the one call. |
+| `tool.result` | keyed | conversation | `sessions.read` | A tool's result, keyed by tool name (`mcp__blender__*`); `item` is the one call. |
 | `file.preview` | keyed | file-view | — | A file's preview wherever one shows, keyed by media type (`image/*`); in a bot's plugin, only inside its tab. |
 | `island.tab` | list | island | — | A tab of the island, such as Needs you, Devices or Usage. The island labels a third-party tab with its plugin's name, and only the `moss` tree's tabs raise the strip's attention. |
 | `pill.target` | list | pill | — | Something the Dispatch pill can message besides the bots: `handler` (a `PillTargetHandler`) gets the user's words. The pill names it with its plugin's name, and leaves out one titled as a bot. |
