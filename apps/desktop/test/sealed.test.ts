@@ -262,3 +262,18 @@ describe("the fresh report a press asks for", () => {
     expect(f.takeFresh("tok")).toBe("none"); // stale
   });
 });
+
+describe("lane RT, S1: what today's app signs", () => {
+  test("its proof names no program and is signed over the single key's input (moss/card-answer/2): the core takes it against the desktop's single key only", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const token = store.mint(CARD.id, "button:allow_once", parent)!.token;
+    const seen: string[] = [];
+    const out = store.buildAnswer(token, "allow_once", undefined, "p:100:200", { sign: (m) => { seen.push(new TextDecoder().decode(m)); return new Uint8Array([1]); } }, "dev_a", 1234);
+    expect("error" in out).toBe(false);
+    if ("error" in out) return;
+    expect(out.proof).toEqual({ via: "device", device: "dev_a", at: 1234, signature: "AQ==" });
+    expect("program" in out.proof).toBe(false);
+    expect(seen).toEqual([cardAnswerSigningInput({ id: CARD.id, hash: CARD.hash, option: "allow_once", at: 1234, children: [] })]);
+  });
+});
