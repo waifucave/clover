@@ -7,7 +7,7 @@
 // `moss-dir.ts`.
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, posix, resolve, sep, win32 } from "node:path";
 import { LEGACY_DEV_HOME_DIR, LEGACY_HOME_DIR, LEGACY_KEYCHAIN_SERVICE, LEGACY_KEYCHAIN_SERVICE_DEV } from "./legacy-names";
 
 /** The installed Clover app's home folder, and its dev profile's: the app this one replaces, kept running beside it. */
@@ -43,6 +43,20 @@ export const OTHER_INSTALL_HOMES: readonly { dir: string; what: string }[] = [
   { dir: CLOVER_HOME_DIR, what: "the installed Clover app's home" },
   { dir: CLOVER_DEV_HOME_DIR, what: "Clover Dev's home" },
 ];
+
+/** The installed Clover app's data folders (Electron's userData, named after its product name), its own and Clover
+ *  Dev's, under the OS's app-data folder. */
+export const OTHER_INSTALL_APP_DATA_DIRS: readonly string[] = ["Clover", "Clover Dev"];
+
+/** Every other install's home and the old app's data folders, under the user's home `home` in `os`'s own form: what
+ *  the fence holds write-denied for every tool runner (bots, agents, plugins and sandboxed commands), as places a
+ *  file written now is run later by another install, outside MOSS's sandbox (`fence/run-later.ts`). Reading them stays
+ *  open. */
+export function otherInstallPlaces(os: "macos" | "linux" | "windows", home: string): string[] {
+  const p = os === "windows" ? win32 : posix;
+  const appData = os === "macos" ? p.join(home, "Library", "Application Support") : os === "windows" ? p.join(home, "AppData", "Roaming") : p.join(home, ".config");
+  return [...OTHER_INSTALL_HOMES.map((o) => p.join(home, o.dir)), ...OTHER_INSTALL_APP_DATA_DIRS.map((d) => p.join(appData, d))];
+}
 
 /** Their Keychain services, and what each is: a MOSS daemon, script or test never reads or writes one. */
 export const OTHER_INSTALL_KEYCHAIN_SERVICES: readonly { service: string; what: string }[] = [

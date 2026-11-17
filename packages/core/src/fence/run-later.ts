@@ -9,6 +9,7 @@ import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, re
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/moss-protocol";
 import type { RunLaterExtras } from "../contracts/fence";
+import { otherInstallPlaces } from "../other-installs";
 
 export interface RunLaterSources {
   env: Readonly<Record<string, string | undefined>>;
@@ -116,7 +117,10 @@ export function runLaterExtrasFrom(os: Os, home: string, sources: RunLaterSource
     const expanded = raw === undefined ? undefined : expandWindowsEnv(raw, sources.env);
     if (expanded !== undefined && win32.isAbsolute(expanded)) documents = win32.normalize(expanded).replace(/\\+$/, "");
   }
-  return { gitDirs, ...(includes.length > 0 ? { gitFiles: includes } : {}), envPaths, envFiles, ...(documents === undefined ? {} : { documents }) };
+  // The other installs' homes and the old app's data folders (ruling 9 of the one-time copy): read-only to every tool
+  // runner, so no bot or plugin writes the old install's data or plants what it runs.
+  const otherInstalls = otherInstallPlaces(os, home);
+  return { gitDirs, ...(includes.length > 0 ? { gitFiles: includes } : {}), envPaths, envFiles, ...(documents === undefined ? {} : { documents }), otherInstalls };
 }
 
 /** Parses `reg query … /v Personal`'s output: the value after its type. */
