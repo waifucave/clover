@@ -173,3 +173,16 @@ export function defaultPlace(home: string, policy: CopyPolicy): (copy: { release
 
 /** The hello result's `release` field, for the connections that were told about it. */
 export type HelloReleaseField = NonNullable<MossHelloResult["release"]>;
+
+/** The three `release.*` methods as MOSS handlers (`ipc/moss.ts`'s `MossHandler`): each runs for the connection's surface.
+ *  A refusal is an `INVALID_REQUEST` that says why in words, never a path's content. */
+export function releaseHandlers(service: ReleaseService, rpc: { error(code: number, message: string): Error }): Record<string, (conn: { surface?: Surface }, params: unknown) => unknown> {
+  const wrap = <T>(fn: () => T): T => {
+    try { return fn(); } catch (err) { if (err instanceof ReleaseRefused) throw rpc.error(-32600, err.message); throw err; }
+  };
+  return {
+    "release.status": () => service.status(),
+    "release.bring": (conn, p) => wrap(() => service.bring(conn.surface, p as { release: string; bundlePath: string; now?: boolean })),
+    "release.record": (conn, p) => wrap(() => { service.record(conn.surface, p as Parameters<ReleaseService["record"]>[1]); return { ok: true }; }),
+  };
+}
