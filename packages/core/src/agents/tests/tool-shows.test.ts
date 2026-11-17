@@ -120,3 +120,13 @@ describe("the driver and the wire", () => {
     expect(result!.display).toBeUndefined();
   });
 });
+
+describe("the bridge's Glossary answer", () => {
+  test("a loaded skill's words follow the JSON in their tag, unescaped; with none, the JSON alone", async () => {
+    const { glossaryResultText } = await import("../bridge/tools");
+    expect(glossaryResultText({ results: [], loaded: [] })).toBe(JSON.stringify({ results: [], loaded: [] }, null, 2));
+    const text = glossaryResultText({ results: [], loaded: [{ name: "kit:haiku", kind: "skill", text: '<skill name="kit:haiku">\nfive "seven" five\n</skill>' }, { name: "x", found: false }] });
+    expect(text).toContain('\n\n<skill name="kit:haiku">\nfive "seven" five\n</skill>');
+    expect(JSON.parse(text.slice(0, text.indexOf("\n\n<skill")))).toEqual({ results: [], loaded: [{ name: "kit:haiku", kind: "skill", text: "(below)" }, { name: "x", found: false }] });
+  });
+});

@@ -107,6 +107,24 @@ export const GLOSSARY: BridgeToolDef = {
   },
 };
 
+/** What `Glossary` answers on the bridge: its findings as JSON, and each loaded skill's words after it as they are, in
+ *  the skill's `<skill name="…">` tag (as a bot's Glossary gives them), never escaped inside a JSON string. With no
+ *  skill loaded, the JSON alone, as before. */
+export function glossaryResultText(r: { results: unknown[]; loaded: unknown[] }): string {
+  const skills: string[] = [];
+  const loaded = r.loaded.map((item) => {
+    const it = item as { kind?: unknown; text?: unknown };
+    if (it !== null && typeof it === "object" && it.kind === "skill" && typeof it.text === "string") {
+      skills.push(it.text);
+      const { text: _text, ...rest } = it as Record<string, unknown>;
+      return { ...rest, text: "(below)" };
+    }
+    return item;
+  });
+  const json = JSON.stringify({ ...r, loaded }, null, 2);
+  return skills.length === 0 ? json : [json, ...skills].join("\n\n");
+}
+
 /** The bridge's own tools for a bot's agent. */
 export const BRIDGE_OWN_TOOLS: readonly BridgeToolDef[] = [SEND_MESSAGE, GLOSSARY];
 

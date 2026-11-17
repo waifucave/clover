@@ -4584,12 +4584,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           }),
           bundledTool,
           toolPlugin,
-          // The site a bot's own browser tab is on, for the one card its acting calls ask per bot and site.
+          // The site the session's own browser tab is on (a bot's tab, or a user's coding session's own, which has no bot),
+          // for the one card its acting calls ask per bot (or for the user's coding sessions) and site.
           browserElement: (ctx, ref) => readElements.get(ctx.sessionId, ref),
           browserHost: async (ctx) => {
             const svc = daemonParts?.browser?.service;
             if (svc === undefined) return undefined;
-            const tabs = await svc.list(browserCallerOf(ctx.caller), { owner: { kind: "bot", bot: ctx.botId } });
+            const owner = ctx.botId === undefined ? { kind: "session" as const, session: ctx.sessionId } : { kind: "bot" as const, bot: ctx.botId };
+            const tabs = await svc.list(browserCallerOf(ctx.caller), { owner });
             const url = tabs[0]?.url;
             let host: string | undefined;
             try { host = url === undefined ? undefined : new URL(url).hostname || undefined; } catch { host = undefined; }
