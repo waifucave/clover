@@ -293,6 +293,29 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     }, 120_000);
   }
 
+  // The pulse keeps the page drawing a frame every vsync (a box-shadow animation): the press's own reading must still see an embedder's
+  // cover drawn a few ms before the press, never a reading of a frame from before the cover (lane SV: a page that drew every frame read
+  // such covers as uncovered while it carried a probe's animation loop).
+  for (const lead of [2, 5, 10, 50]) {
+    onCi(`a cover drawn by the embedder ${lead} ms before a press during the "press again" pulse does not land (verdict pinned: the fresh report refuses it)`, async () => {
+      const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", pulse: 100, parentCoverLead: lead }, pinVisible: true });
+      expect(r.output).toContain("press 100 ms into the pulse");
+      expect(r.output).toContain(`press ${lead} ms after the parent cover`);
+      expect(r.output).toContain("presses=[[");
+      const line = /sealed: press on [^\n]*(fresh report [^\n]*)/.exec(r.output)?.[1] ?? "(no fresh line)";
+      console.log(`pulse + parent cover ${lead} ms (verdict pinned): ${line}`);
+      expect(r.output).toMatch(/fresh report covered after \d+ ms/);
+      expect(answerCallsOf(r.home), r.output).toHaveLength(0);
+    }, 120_000);
+    onCi(`the same cover ${lead} ms before a press during the pulse, nothing pinned: no answer`, async () => {
+      const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", pulse: 100, parentCoverLead: lead } });
+      expect(r.output).toContain("presses=[[");
+      const line = /sealed: press on [^\n]*: (not-visible|fresh report [^\n]*)/.exec(r.output)?.[1] ?? "(none)";
+      console.log(`pulse + parent cover ${lead} ms (unpinned): ${line}, ${answerCallsOf(r.home).length} answer(s) taken`);
+      expect(answerCallsOf(r.home), r.output).toHaveLength(0);
+    }, 120_000);
+  }
+
   onCi("a semi-transparent (opacity) cover does not land", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", opacity: 0 } });
     expect(r.output).toContain("sealed-click: frame found");
