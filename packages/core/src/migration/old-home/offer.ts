@@ -5,7 +5,7 @@
 // again; nothing is copied. On "bring it over" the copy is staged (`copy.ts`) and the engine restarts to swap it in
 // (`swap.ts`); after the swap, one notice says what didn't come over (`left-behind.ts`) and, when the old engine is set
 // to start at login, offers the one button that runs its own `autostart disable` (`login-item.ts`).
-import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { CardOption, SealedValue } from "@waifucave/moss-protocol";
 import type { ApprovalBroker, ApprovalRequest } from "../../contracts/approval-broker";
@@ -57,8 +57,9 @@ export const OFFER_TEXT = {
   notice: {
     title: `Your data is here from ${OLD}`,
     what: `Your bots, conversations, memory, routines, plugins and settings were copied. ${OLD}'s own folder was left exactly as it was.`,
-    plugins: "Plugins you installed yourself ask for your OK again: their files were updated for MOSS.",
+    plugins: "Plugins you installed yourself wait for your OK again, as their files were updated for MOSS: switch each one on in Plugins to see its card.",
     login: `${OLD} still starts when you log in, so both would run your routines. "Turn off ${OLD}'s login start" runs ${OLD}'s own autostart disable command for its folder: ${OLD} stays installed and can still be opened, and it moves its login item into its own folder. Nothing else of ${OLD} changes.`,
+    setAside: (folder: string) => `What this computer's MOSS held before the copy (conversations or settings made before you pressed) is kept, set aside, in ${folder}.`,
     loginOff: `Turn off ${OLD}'s login start`,
     leave: "Leave it on",
     ok: "OK",
@@ -71,6 +72,39 @@ const list = (items: readonly string[]): SealedValue => ({ type: "list", items: 
 
 function card(fields: ApprovalRequest["fields"], options: CardOption[]): ApprovalRequest {
   return { kind: "change", change: "home-copy", origin: "user", computers: [], effect: "other", fields, options };
+}
+
+/** The folder the swap set the fresh home's entries aside in, when the person had used the fresh home before the press
+ *  (a conversation in its session index, or more than its first start's files), else undefined. */
+function setAside(home: string): string | undefined {
+  const root = oldHomePaths(home).replaced;
+  let latest: string | undefined;
+  try {
+    latest = readdirSync(root).sort().pop();
+  } catch {
+    return undefined;
+  }
+  if (latest === undefined) return undefined;
+  const dir = join(root, latest);
+  // A first start leaves its settings, an empty index and a bot's empty conversation; a conversation the person had
+  // (a log or transcript past a few kilobytes) is their own. Read with stat and readdir only, at most a few levels.
+  const used = (rel: string, depth: number): boolean => {
+    let names: string[];
+    try {
+      names = readdirSync(join(dir, rel));
+    } catch {
+      return false;
+    }
+    return names.some((n) => {
+      try {
+        const st = statSync(join(dir, rel, n));
+        return st.isDirectory() ? depth < 3 && used(join(rel, n), depth + 1) : n !== "index.db" && st.size > 4096;
+      } catch {
+        return false;
+      }
+    });
+  };
+  return used("sessions", 0) || used("transcripts", 0) ? dir : undefined;
 }
 
 /** Whether the old home holds anything to bring over: read with `lstat` only. */
@@ -144,7 +178,8 @@ async function notice(d: OfferDeps): Promise<boolean> {
     left = undefined;
   }
   const item = (d.loginItem ?? (() => oldLoginItem(d.oldHome)))();
-  const lines = [...(left === undefined ? [] : leftBehindLines(left)), OFFER_TEXT.notice.plugins, ...(item === undefined ? [] : [OFFER_TEXT.notice.login])];
+  const aside = setAside(d.home);
+  const lines = [...(left === undefined ? [] : leftBehindLines(left)), OFFER_TEXT.notice.plugins, ...(aside === undefined ? [] : [OFFER_TEXT.notice.setAside(aside)]), ...(item === undefined ? [] : [OFFER_TEXT.notice.login])];
   const options: CardOption[] = item === undefined
     ? [{ id: "ok", kind: "approve", label: OFFER_TEXT.notice.ok }]
     : [{ id: "login-off", kind: "approve", label: OFFER_TEXT.notice.loginOff }, { id: "leave", kind: "deny", label: OFFER_TEXT.notice.leave }];

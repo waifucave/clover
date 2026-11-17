@@ -1002,7 +1002,9 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
       if (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled)) fail(`daemon ${b.run}: moss/web/web ${settled}, not WebSearch and WebFetch`);
       // A boot after the plugin's install (daemon 1 listed it once installed): its server lists within the time too.
       // An upgrade's boot has the old run's plugin from the start.
-      const installed = upgrade ? kept?.pluginId !== undefined : ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
+      // The copy's upgrade: its first boot is a fresh home (no plugin yet), and the old plugin's server starts on the
+      // next only after its new OK (step 6 calls its tool): its timing isn't a boot's.
+      const installed = upgrade ? !copyUpgrade && kept?.pluginId !== undefined : ECHO_LISTED.test(readLog(bundledBoots[0]!.log));
       if ((b.run > 1 || upgrade) && installed && (b.echoMs === undefined || b.echoMs > limit)) fail(`daemon ${b.run}: acceptance-echo/echo, installed before this boot, didn't list its tools within ${limit / 1000} s of ${b.graceMs > 0 ? "the registry opening" : "the socket answering"}${first === undefined ? " (no turn on this boot)" : ""}`);
       if (first === undefined) continue; // no turn on this boot
       // Offered under their exact names.

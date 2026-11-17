@@ -60,9 +60,9 @@ function lastTry(): string {
 
 const pinnedBun = join(REPO, "scripts", "pinned-bun");
 /** One acceptance run; its table (stdout) comes back, its progress goes to stderr. */
-function run(label: string, script: string, args: string[], cwd: string): { code: number; table: string } {
+function run(label: string, script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env): { code: number; table: string } {
   console.error(`upgrade: ${label}: ${[script, ...args].join(" ")}`);
-  const r = spawnSync(pinnedBun, [script, ...args, ...(verbose ? ["--verbose"] : [])], { cwd, stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync(pinnedBun, [script, ...args, ...(verbose ? ["--verbose"] : [])], { cwd, env, stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   return { code: r.status ?? 2, table: (r.stdout ?? "").trim() };
 }
 
@@ -76,6 +76,8 @@ try {
   let oldScript = join(HARNESS, "run.ts");
   let oldCwd = REPO;
   const oldArgs: string[] = ["--keep-state", state];
+  // A tree from before the rename knows the machine's hold by its own name: this run holds it, so it doesn't wait for it.
+  let oldEnv: NodeJS.ProcessEnv = process.env;
   if (packaged) {
     fromLabel = fromApp!;
     oldArgs.unshift("--app", fromApp!);
@@ -95,6 +97,7 @@ try {
       // A tree from before the rename (the one-time copy's pair): its own harness, on its own names, makes the old
       // install's home in the run's user home; this build's run then offers the copy (steps.ts COPY_UPGRADE_STEPS).
       console.error("upgrade: the old tree is from before the rename: its own harness makes the old install's home");
+      oldEnv = { ...process.env, CLOVER_HEAVY_EXCLUSIVE: process.env.MOSS_HEAVY_EXCLUSIVE ?? "" };
     } else {
       // This checkout's harness over the old tree's, but the old core's own daemon seam.
       for (const f of readdirSync(HARNESS)) if (f !== "daemon.ts") cpSync(join(HARNESS, f), join(into, f), { recursive: true });
@@ -112,7 +115,7 @@ try {
     oldCwd = tree;
   }
   if (keepLogs !== undefined) oldArgs.push("--keep-logs", join(keepLogs, "old"));
-  const old = run(`the old build (${fromLabel}) keeps its state`, oldScript, oldArgs, oldCwd);
+  const old = run(`the old build (${fromLabel}) keeps its state`, oldScript, oldArgs, oldCwd, oldEnv);
   tables.push(`== the old build: ${fromLabel}, --keep-state (exit ${old.code})\n${old.table}`);
   if (!existsSync(join(state, "state.json"))) throw new Error("the old run left no state.json (its table above says why)");
 

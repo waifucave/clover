@@ -15,7 +15,7 @@ import { runLaterExtras } from "../../src/fence/run-later";
 import { OTHER_INSTALL_APP_DATA_DIRS, OTHER_INSTALL_HOMES, OLD_INSTALL_DEV_HOME_DIR, OLD_INSTALL_HOME_DIR, otherInstallPlaces } from "../../src/other-installs";
 import { persistencePlaces } from "../../src/registry/plugin-fence";
 import { darwinDescribe } from "../helpers/darwin-only";
-import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
+import { persistencePaths } from "../../src/runtime-sdk/mode-options";
 
 const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
 
@@ -92,11 +92,11 @@ describe("the fence refuses a write there for every kind of caller, and lets eve
 });
 
 describe("a sandboxed command can't write it (the session sandbox's denyWrite)", () => {
-  test("the runtime's denyWrite names each place", () => {
-    const deny = sandboxConfigFor("/Users/x/.moss").filesystem!.denyWrite!;
-    // The list is for the daemon's user (strings only: nothing there is read or written).
-    const { homedir } = require("node:os") as typeof import("node:os");
-    for (const p of otherInstallPlaces(os, homedir())) expect([p, deny.includes(p)]).toEqual([p, true]);
+  test("the runtime's denyWrite takes the persistence list, which names each place (a temp user home: the real one is never named)", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "moss-other-installs-deny-")));
+    const listed = persistencePaths(home);
+    for (const p of otherInstallPlaces(os, home)) expect([p, listed.includes(p)]).toEqual([p, true]);
+    // The session sandbox's denyWrite is built from that same list (`protectedHomeDenyWrite`, test/fence/persistence.test.ts).
   });
 });
 

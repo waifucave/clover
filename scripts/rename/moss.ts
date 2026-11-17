@@ -189,9 +189,9 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
   },
   {
     id: "old-tree-build",
-    regex: /\bCLOVER_MAC_IDENTITY\b/g,
-    files: ["scripts/try/run.sh"],
-    why: "the variable a tree from before the rename reads its signing identity from: the try's upgrade pair builds that tree's test twin, whose run leaves the old install's home for the one-time copy",
+    regex: /\bCLOVER_MAC_IDENTITY\b|\bCLOVER_HEAVY_EXCLUSIVE\b/g,
+    files: ["scripts/try/run.sh", "scripts/acceptance/upgrade.ts"],
+    why: "the variables a tree from before the rename reads its signing identity and the machine's hold from: the upgrade pair builds and runs that tree's test twin with its own harness, whose run leaves the old install's home for the one-time copy",
   },
   // ── The installed Clover app, which MOSS never touches ───────────────────────────────────────────
   {

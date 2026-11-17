@@ -180,7 +180,8 @@ upgrade_pair() {
     # COPY_UPGRADE_STEPS).
     ACCROOT="$WORK/old"
   fi
-  RUNAPP="$WORK/old-twin/old-twin.app"; accept "upgrade-old" --keep-state "$UPSTATE" ${press[@]+"${press[@]}"}; UPCOLS+=("upgrade-old")
+  # (A tree from before the rename knows the machine's hold by its own name: this try holds it.)
+  RUNAPP="$WORK/old-twin/old-twin.app"; CLOVER_HEAVY_EXCLUSIVE="${MOSS_HEAVY_EXCLUSIVE:-}" accept "upgrade-old" --keep-state "$UPSTATE" ${press[@]+"${press[@]}"}; UPCOLS+=("upgrade-old")
   ACCROOT="$ROOT"
   git worktree remove --force "$WORK/old" 2>/dev/null; git worktree prune 2>/dev/null
   [ "$PROMPT" = false ] || return 1
