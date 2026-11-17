@@ -365,6 +365,18 @@ describe("lane RT: the last placement wins (the CI lane's plugin-app step 65)", 
     expect(book.get("card_aaaaaa")).toEqual(island);
   });
 
+  test("a snapshot asked before a card was resolved and answered after it doesn't bring the card back", () => {
+    const book = new PlacementBook();
+    book.follow("conn-1");
+    book.placed("card_cccccc", island);
+    book.delete("card_cccccc");
+    expect(book.snapshot([{ card: "card_cccccc", place: island }])).toEqual([]);
+    expect(book.get("card_cccccc")).toBeUndefined();
+    // Nor one that arrives first in the snapshot after its resolution was heard.
+    book.delete("card_dddddd");
+    expect(book.snapshot([{ card: "card_dddddd", place: strip }])).toEqual([]);
+  });
+
   test("a snapshot fills in a card no event placed; a new connection starts afresh; the same event again is no change", () => {
     const book = new PlacementBook();
     book.follow("conn-1");

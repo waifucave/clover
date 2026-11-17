@@ -1005,6 +1005,53 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     expect(s.rt.describe(frame(url, shell.shellFrame), WIN, again).context.window).toEqual({ narrow: true });
   });
 
+  test("a frame that loads its spent address again (made again, moved, or late) gets a fresh one from its parent; nothing else can use it (window-3 step 33's \"forbidden\")", () => {
+    let t = 1_000_000;
+    const s = setup(composerFixture(), { now: () => t });
+    const shell = mountShell(s);
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { mount: string; url: string };
+    const token = new URL(item.url).searchParams.get("mount")!;
+    const reloads = () => s.sent.filter((x) => x.m.type === "child-reload").map((x) => x.m as { child: string; url: string });
+    // 1. The first load is served and binds.
+    expect(s.rt.serveDocument("fixture-composer", token)).toBeDefined();
+    s.rt.describe(frame(item.url, shell.shellFrame), WIN, token);
+    // 2. The same address loads again (the parent made the frame again with the same src): refused, and the parent is sent a
+    //    fresh address for that mount, which serves once.
+    s.sent.length = 0;
+    expect(s.rt.serveDocument("fixture-composer", token)).toBeUndefined();
+    expect(reloads()).toHaveLength(1);
+    expect(reloads()[0]!.child).toBe(item.mount);
+    const fresh = new URL(reloads()[0]!.url).searchParams.get("mount")!;
+    expect(fresh).not.toBe(token);
+    // Sent to the parent document only (the shell's frame), never to whatever loaded the old address.
+    expect(s.sent.find((x) => x.m.type === "child-reload")!.to).toBe(`${shell.shellFrame.processId}:${shell.shellFrame.routingId}`);
+    // 3. The old address once more within the second: no second fresh one (no loop); another layer's load of it: nothing.
+    s.sent.length = 0;
+    expect(s.rt.serveDocument("fixture-composer", token)).toBeUndefined();
+    expect(s.rt.serveDocument("acceptance-other", token)).toBeUndefined();
+    expect(reloads()).toEqual([]);
+    // 4. The parent never took the fresh address and its frame loads the old one a second later: the unspent fresh one is sent again.
+    t += 1_500;
+    expect(s.rt.serveDocument("fixture-composer", token)).toBeUndefined();
+    expect(reloads().map((r) => new URL(r.url).searchParams.get("mount"))).toEqual([fresh]);
+    // 5. The fresh address serves once and binds; the old one is now an address the mount moved on from: refused, nothing sent.
+    expect(s.rt.serveDocument("fixture-composer", fresh)).toBeDefined();
+    s.rt.describe(frame(`moss-plugin://fixture-composer/?mount=${fresh}`, shell.shellFrame), WIN, fresh);
+    s.sent.length = 0;
+    t += 1_500;
+    expect(s.rt.serveDocument("fixture-composer", token)).toBeUndefined();
+    expect(reloads()).toEqual([]);
+    // 6. A part drawn more than a minute after its address was issued: refused as expired, and a fresh address goes to its parent.
+    const late = s.rt.reload(shell.shellFrame, item.mount)!;
+    const lateToken = new URL(late).searchParams.get("mount")!;
+    s.sent.length = 0;
+    t += 61_000;
+    expect(s.rt.serveDocument("fixture-composer", lateToken)).toBeUndefined();
+    expect(reloads()).toHaveLength(1);
+    expect(s.rt.serveDocument("fixture-composer", new URL(reloads()[0]!.url).searchParams.get("mount"))).toBeDefined();
+  });
+
   test("a frame's document loads again when its plugin's module changes (a client the core built at load landing later)", () => {
     const { s, item } = withFixtureFrame();
     s.sent.length = 0;

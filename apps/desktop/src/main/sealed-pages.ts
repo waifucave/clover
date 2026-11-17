@@ -40,7 +40,9 @@ const FRESH_SCRIPT = `
       try { b.fresh?.(seen, Math.round(performance.now() - t0)); } catch (e) { /* going */ }
       resolve(seen);
     };
-    timer = setTimeout(() => finish(false), ${FRESH_LIMIT_MS});
+    // No reading within the limit: the page was too busy to read the button (a renderer starved, layers loading again around the
+    // press), which is "not ready", never "covered": it resolves null, and the press is said as "late".
+    timer = setTimeout(() => { if (done) return; done = true; try { if (o !== null) o.disconnect(); } catch (e) { /* going */ } try { b.fresh?.(false, Math.round(performance.now() - t0)); } catch (e) { /* going */ } resolve(null); }, ${FRESH_LIMIT_MS});
     if (typeof freshWaiter !== "undefined") {
       // The page's own observer reads the button again (observed afresh: its first report is a new reading), so no second observer
       // watches the same button: the report that follows is this page's next one.
@@ -59,7 +61,7 @@ const FRESH_SCRIPT = `
     o.observe(btn);
   });`;
 
-export const SEALED_PRESS_WORDS: readonly string[] = ["received", "untrusted", "answering", "not-visible", "opening", "settling", "no-pointer", "covered"];
+export const SEALED_PRESS_WORDS: readonly string[] = ["received", "untrusted", "answering", "not-visible", "opening", "settling", "no-pointer", "covered", "late"];
 
 /** The card's own tokens as the page's custom properties: `card.*` alone (§5.5 "sealed frames take only these"), and
  *  only values of the kinds the catalog lets a card take. Anything else — tags, `/*` comments, `url(`/`var(`, values
@@ -347,7 +349,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     // The press counts only if the report that follows it says the button shows uncovered: asked for now, not read from the last one.
     askFresh(closest).then((ok) => {
       if (!ok) {
-        say("covered");
+        say(ok === null ? "late" : "covered");
         answering = false;
         closest.dataset.again = "yes"; closest.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
         if (state !== null) state.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
@@ -492,7 +494,7 @@ export function ownCardPage(input: {
     // The same rule as a part's button: the press counts only if the report that follows it says the button shows uncovered.
     void askFresh(b2).then((ok) => {
       if (!ok) {
-        say("covered");
+        say(ok === null ? "late" : "covered");
         b2.dataset.again = "yes"; b2.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
         if (state !== null) state.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
         setTimeout(() => { delete b2.dataset.again; b2.removeAttribute("title"); if (state !== null && state.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) state.textContent = ""; }, 1800);

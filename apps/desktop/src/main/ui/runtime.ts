@@ -159,6 +159,11 @@ export class UiRuntime {
   private tree = new SpotTree([]);
   private readonly mounts = new Map<string, Mount>();
   private readonly byToken = new Map<string, string>();
+  /** Tokens a frame mount has spent (loaded once, or replaced), by the mount: a load of one again is the mount's own frame loading
+   *  its address a second time (re-created, moved in its document, or a stale address its parent still holds), never a way in. */
+  private readonly spentTokens = new Map<string, string>();
+  /** When each mount's frame was last sent a fresh address for a load it couldn't get (one per second at most). */
+  private readonly reloadedAt = new Map<string, number>();
   private readonly byFrame = new Map<string, string>();
   private readonly windows = new Map<number, WindowInfo>();
   private appearance: Appearance = "light";
@@ -591,12 +596,65 @@ export class UiRuntime {
     if (token === null) return undefined;
     const id = this.byToken.get(token);
     const m = id === undefined ? undefined : this.mounts.get(id);
-    if (m === undefined || m.kind !== "frame" || m.layer !== layer || m.tokenState !== "issued") return undefined;
-    if (this.now() - (m.issuedAt ?? 0) > MOUNT_TOKEN_TTL_MS) return undefined;
+    if (m === undefined) {
+      // Not a live address: one a mount spent. Its frame loads it again (the frame was made again, moved, or its parent never got
+      // the newer address): the parent is sent a usable one, the load itself is refused.
+      this.loadedAgain(layer, token);
+      return undefined;
+    }
+    if (m.kind !== "frame" || m.layer !== layer) return undefined;
+    if (m.tokenState !== "issued") {
+      this.loadedAgain(layer, token);
+      return undefined;
+    }
+    if (this.now() - (m.issuedAt ?? 0) > MOUNT_TOKEN_TTL_MS) {
+      // Issued more than a minute before its frame loaded it (a part drawn late): a fresh address for its parent.
+      this.sendFreshAddress(m, "its address expired before it loaded");
+      return undefined;
+    }
     m.tokenState = "served";
     m.allowedLayers = this.layerLabels();
     m.servedModule = this.assets(m).module;
     return m;
+  }
+
+  /** A frame mount's own address loaded a second time (`serveDocument`): its parent document gets a usable one in a
+   *  `child-reload`, the same way a document loads again for a newly installed layer. The address that came is refused either
+   *  way, and nothing is given to whatever loaded it: the new token goes to the mount's parent document alone. A mount whose
+   *  newer address is still unspent is sent that one again (its parent never took it); one whose current address was spent
+   *  gets a new one; an old address of a mount that has moved on to a newer, spent one is nothing (an old frame). */
+  private loadedAgain(layer: string, token: string): void {
+    const id = this.byToken.get(token) ?? this.spentTokens.get(token);
+    const m = id === undefined ? undefined : this.mounts.get(id);
+    if (m === undefined || m.kind !== "frame" || m.layer !== layer) {
+      this.log(`layers: refused a document load (an address no mount holds)`);
+      return;
+    }
+    if (m.token === token) this.sendFreshAddress(m, "its frame loaded its address again");
+    else if (m.tokenState === "issued") this.sendFreshAddress(m, "its frame loaded an address it had replaced", false);
+    else this.log(`layers: ${m.id}: refused a load of an address it replaced (its frame has the newer one)`);
+  }
+
+  /** Sends a mount's parent the address to load now: a new one (`fresh`), or the current unspent one again. At most once a second
+   *  per mount, so a parent that can't load it is never sent one in a loop. */
+  private sendFreshAddress(m: Mount, why: string, fresh = true): void {
+    const at = this.reloadedAt.get(m.id);
+    if (at !== undefined && this.now() - at < 1_000) {
+      this.log(`layers: ${m.id}: refused a document load (${why}; a fresh address went less than a second ago)`);
+      return;
+    }
+    this.reloadedAt.set(m.id, this.now());
+    if (this.reloadedAt.size > 1024) this.reloadedAt.delete(this.reloadedAt.keys().next().value!);
+    if (fresh) {
+      this.refreshDocument(m, why);
+      return;
+    }
+    if (m.kind !== "frame" || m.parent === undefined) return;
+    const parent = this.mounts.get(m.parent);
+    const parentDoc = parent === undefined ? undefined : this.docOf(parent);
+    if (parentDoc === undefined) return;
+    this.log(`layers: ${m.id} loads again (${why})`);
+    this.post(parentDoc.id, { type: "child-reload", child: m.id, url: this.frameUrl(m), ...this.frameFlags(m) });
   }
 
   /** Every layer the registry has, by its origin label: what a document served now may frame. */
@@ -644,6 +702,7 @@ export class UiRuntime {
     m.frame = { key: frameKey(frame), processId: frame.processId, routingId: frame.routingId, ...(frame.osPid !== undefined ? { osPid: frame.osPid } : {}) };
     this.byFrame.set(m.frame.key, m.id);
     this.byToken.delete(token);
+    this.spend(token, m.id);
     const sheets = this.sheetsFor(m);
     m.sheetsKey = JSON.stringify(sheets);
     const strings = this.stringsFor(m);
@@ -1017,13 +1076,18 @@ export class UiRuntime {
     m.children.clear();
     if (m.frame !== undefined) this.byFrame.delete(m.frame.key);
     delete m.frame;
-    if (m.token !== undefined) this.byToken.delete(m.token);
+    if (m.token !== undefined) { this.byToken.delete(m.token); this.spend(m.token, m.id); }
     delete m.allowedLayers;
     m.token = this.token();
     m.tokenState = "issued";
     m.issuedAt = this.now();
     this.byToken.set(m.token, m.id);
     return this.frameUrl(m);
+  }
+
+  private spend(token: string, mountId: string): void {
+    this.spentTokens.set(token, mountId);
+    if (this.spentTokens.size > 2048) this.spentTokens.delete(this.spentTokens.keys().next().value!);
   }
 
   private drop(id: string): void {

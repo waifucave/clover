@@ -55,6 +55,9 @@ function cases(app: "MOSS Code" | "MOSS", { buttonPage, ownCardPage }: typeof co
   const options = [{ id: "allow_once", kind: "approve" as const, label: "Allow once" }, { id: "always", kind: "approve" as const, label: "Always allow", remember: "always" as const }, { id: "deny", kind: "deny" as const, label: "Deny" }];
   out.push({ name: "own card, short", kind: "own", html: ownCardPage({ cardId: "card_x", token: TOKEN, origin: "user", issuedAt: 0, expiresAt: null, fields: { title: { type: "text", text: "Run a command?" } }, options }) });
   out.push({ name: "own card, long labels", kind: "own", html: ownCardPage({ cardId: "card_x", token: TOKEN, origin: "user", issuedAt: 0, expiresAt: null, fields: { title: { type: "text", text: "Run a command?" } }, options: options.map((o) => ({ ...o, label: LABELS.long! })) }) });
+  // A very long unbroken word (a path, a hash, a URL with no break) in the title, a field and a label: it wraps, never widens the card.
+  const word = "x".repeat(600);
+  out.push({ name: "own card, a very long unbroken word", kind: "own", html: ownCardPage({ cardId: "card_x", token: TOKEN, origin: "user", issuedAt: 0, expiresAt: null, fields: { title: { type: "text", text: `Open ${word}?` }, command: { type: "code", code: `cat /${word}/${word}`, language: "sh" }, detail: { type: "text", text: `https://example.com/${word}` } }, options: options.map((o, i) => (i === 0 ? { ...o, label: word.slice(0, 200) } : o)) }) });
   out.push({ name: "own card, taller than its window", kind: "own", html: ownCardPage({ cardId: "card_x", token: TOKEN, origin: "user", issuedAt: 0, expiresAt: null, fields: { title: { type: "text", text: "Run a command?" }, command: { type: "code", code: Array.from({ length: 120 }, (_, i) => `echo line ${i}`).join("\n"), language: "sh" }, detail: { type: "text", text: "word ".repeat(600) } }, options }) });
   return out.map((c) => ({ ...c, name: `${app}: ${c.name}` }));
 }

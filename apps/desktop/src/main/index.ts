@@ -523,7 +523,7 @@ async function ready(): Promise<void> {
       // verdict (up to ~200 ms old and longer when the renderer is starved) is not. Taken first, so a refused answer spends it.
       const fresh = sealed.takeFresh(token);
       if (fresh !== "ok") {
-        log(`sealed: answer refused (${fresh === "covered" ? "the button was covered or not shown at the press" : "no visibility report came with the press"})`);
+        log(`sealed: answer refused (${fresh === "covered" ? "the button was covered or not shown at the press" : fresh === "late" ? "the page's visibility report didn't come in time" : "no visibility report came with the press"})`);
         // Most often the button wasn't laid out yet (it had only just been drawn): nothing is wrong with it, and the page says to
         // press again (`again`), never that the answer failed.
         return { accepted: false, again: true, reason: fresh === "covered" ? NOT_SHOWN_REASON : NOT_CHECKED_REASON };
@@ -615,7 +615,8 @@ async function ready(): Promise<void> {
     sealedFresh: (token: string, seen: boolean, ms: number) => {
       // A test build can drop the report, to prove an answer with no report refuses (never in a packaged app).
       if (SMOKE_DROP_FRESH && !app.isPackaged) return;
-      sealed.noteFresh(token, seen);
+      // No reading within the page's limit is "late" (the page was too busy to read the button), never "covered".
+      sealed.noteFresh(token, seen, !seen && ms >= FRESH_LIMIT_MS);
       const cardId = sealed.cardOf(token);
       if (cardId === undefined) return;
       log(`sealed: press on ${cardId} ${sealed.elementOf(token) ?? "?"} in ${surfaceName(sealed.windowOf(token))}: fresh report ${seen ? "uncovered" : ms >= FRESH_LIMIT_MS ? "none in time" : "covered"} after ${ms} ms`);
