@@ -92,6 +92,13 @@ function useRendererLink(mount: string, format: FormatDecl | undefined): { repor
       else if (v.box !== undefined) { const b = cleanFigureBox(v.box); if (b !== undefined) setBox((was) => (JSON.stringify(was) === JSON.stringify(b) ? was : b)); }
     });
   }, [api, mount, renderer]);
+  // This plugin may start listening after its renderer first spoke (a frame of its own loads apart, an inline one mounts
+  // first): until the model's names arrive it asks the renderer to say them again, a few times.
+  useEffect(() => {
+    if (renderer === undefined || names !== undefined) return;
+    const timers = [300, 1500, 4000].map((ms) => setTimeout(() => void api.points.send(RENDERER_SPOT, { mount, ask: "report" }, { to: renderer }).catch(() => undefined), ms));
+    return () => { for (const t of timers) clearTimeout(t); };
+  }, [api, mount, renderer, names]);
   const report = useMemo<FigureReport | undefined>(() => (format === undefined ? undefined : { format: format.format, renderer: format.renderer, capabilities: format.capabilities, ...(names !== undefined ? { names } : {}), ...(box !== undefined ? { box } : {}) }), [format, names, box]);
   return {
     report,

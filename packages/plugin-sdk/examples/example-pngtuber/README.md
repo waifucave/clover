@@ -46,7 +46,7 @@ empty above (`framePicture`); with no `framing` it fits the whole picture.
 ## The cues
 
 The avatar plugin sends `{ mount, cue }` for this drawing's `mount` prop (point messages on its renderer spot) and hears
-`{ mount, names }` and `{ mount, box }` back. This renderer says `names: { expressions: ["happy"], … }`, and on
+`{ mount, names }` and `{ mount, box }` back; when it sends `{ mount, ask: "report" }` (it may have started listening after the renderer spoke), the renderer says them again. This renderer says `names: { expressions: ["happy"], … }`, and on
 `{ type: "expression", name: "happy" }` swaps to a second picture set drawn by code (an inline SVG, so no files) for a few
 seconds; it says the picture's box as it shows and resizes. A plugin that moves the figure fills the avatar plugin's
 `moss.character.figure` point and sends its cues there; the avatar plugin answers a cue this renderer doesn't list plainly,

@@ -53,10 +53,13 @@ function useVoiceFeed(): SpeechFeed {
 function useFigure(mount: string | undefined) {
   const api = usePluginApi();
   return useMemo(() => ({
-    onCue(listener: (cue: { type?: unknown; name?: unknown }) => void): () => void {
+    onCue(listener: (cue: { type?: unknown; name?: unknown }) => void, ask?: () => void): () => void {
       return api.points.onMessage(RENDERER_SPOT, (m) => {
-        const v = m.value as { mount?: unknown; cue?: unknown } | null;
-        if (mount !== undefined && v?.mount === mount && typeof v.cue === "object" && v.cue !== null) listener(v.cue as { type?: unknown; name?: unknown });
+        const v = m.value as { mount?: unknown; cue?: unknown; ask?: unknown } | null;
+        if (mount === undefined || v?.mount !== mount) return;
+        // The avatar plugin asks again for what it may have missed: say it once more.
+        if (v.ask === "report") return ask?.();
+        if (typeof v.cue === "object" && v.cue !== null) listener(v.cue as { type?: unknown; name?: unknown });
       });
     },
     say(what: Record<string, unknown>): void {
@@ -154,13 +157,14 @@ function useHappy(figure: ReturnType<typeof useFigure>): boolean {
   const [happy, setHappy] = useState(false);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    figure.say({ names: { expressions: [HAPPY], motions: [], outfits: [] } });
+    const names = { expressions: [HAPPY], motions: [], outfits: [] };
+    figure.say({ names });
     const off = figure.onCue((cue) => {
       if (cue.type !== "expression" || cue.name !== HAPPY) return;
       setHappy(true);
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(() => setHappy(false), HAPPY_MS);
-    });
+    }, () => figure.say({ names }));
     return () => {
       off();
       if (timer !== undefined) clearTimeout(timer);

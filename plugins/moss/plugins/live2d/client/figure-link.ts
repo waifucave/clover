@@ -70,8 +70,15 @@ export function useFigureControl(mount: string | undefined): LinkControl {
   useEffect(() => {
     if (mount === undefined) return;
     const off = api.points.onMessage(RENDERER_SPOT, (m) => {
-      const v = m.value as { mount?: unknown; cue?: unknown } | null;
-      if (v === null || typeof v !== "object" || v.mount !== mount || v.cue === null || typeof v.cue !== "object") return;
+      const v = m.value as { mount?: unknown; cue?: unknown; ask?: unknown } | null;
+      if (v === null || typeof v !== "object" || v.mount !== mount) return;
+      // The avatar plugin asks again what it may have missed (it starts listening after this drawing may have spoken).
+      if (v.ask === "report") {
+        if (sentNames.current !== undefined) void api.points.send(RENDERER_SPOT, { mount, names: JSON.parse(sentNames.current) as unknown }).catch(() => undefined);
+        if (box.current.sent !== undefined) void api.points.send(RENDERER_SPOT, { mount, box: box.current.sent }).catch(() => undefined);
+        return;
+      }
+      if (v.cue === null || typeof v.cue !== "object") return;
       for (const l of [...listeners.current]) {
         try { l(v.cue as never); } catch (err) { console.error("a figure cue failed", err); }
       }
