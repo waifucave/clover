@@ -93,9 +93,10 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
     try {
       x.record(name, "PASS", await run());
     } catch (err) {
-      // What MOSS's window showed at the failure, in words, for the table.
-      const seen = shown === undefined ? "" : await shown.eval<string>("(document.querySelector('.middle')?.innerText ?? document.body.innerText).replace(/\\s+/g, ' ').slice(0, 240)").catch(() => "");
-      x.record(name, x.statusOf(err), `${x.why(err)}${seen !== "" ? ` [MOSS showed: ${seen}]` : ""}`);
+      // What MOSS's window showed at the failure, in words, for the table, and its picture and page errors in the kept logs.
+      const seen = shown === undefined ? "" : await shown.eval<string>("(document.querySelector('.middle')?.innerText ?? document.body.innerText).replace(/\\s+/g, ' ').slice(0, 240)").catch((e: unknown) => `(the page didn't answer: ${String((e as Error)?.message ?? e).slice(0, 80)})`);
+      const shot = shown === undefined ? "" : await shown.failureShot(x.logs, MOSS_STEPS.indexOf(name) + 1).catch(() => "");
+      x.record(name, x.statusOf(err), `${x.why(err)}${seen !== "" ? ` [MOSS showed: ${seen}]` : ""}${shot}`);
     }
   };
   try {
@@ -170,6 +171,15 @@ class MossWindow {
     return doc.session;
   }
 
+  /** The window's picture and its pages' errors at a failure, into the run's logs; a note naming them. */
+  async failureShot(dir: string, n: number): Promise<string> {
+    const r = await this.cdp.send<{ data: string }>("Page.captureScreenshot", { format: "png" }, await this.main());
+    const file = join(dir, `moss-row-${n}.png`);
+    writeFileSync(file, Buffer.from(r.data, "base64"));
+    const errors = this.cdp.console.filter((e) => e.level === "exception" || e.level === "error").slice(-4).map((e) => `${e.url.slice(0, 40)}: ${e.text.slice(0, 160)}`);
+    return ` (picture: logs/moss-row-${n}.png${errors.length > 0 ? `; page errors: ${errors.join(" | ")}` : ""})`;
+  }
+
   async eval<T = unknown>(js: string): Promise<T> {
     return (await this.cdp.evaluate(await this.main(), js)) as T;
   }
@@ -210,6 +220,20 @@ class MossWindow {
     const from = this.x.readLog(this.log).length;
     const doc = await this.cardFrame(cardId);
     const sel = ".seal-button[data-kind=approve]:not([data-remember])";
+    const inFrame = await this.x.until("the card's Approve button", 15_000, () => this.cdp.centerOf(doc.session, sel), 250);
+    // The card's frame may sit in a list that scrolls (the strip holds at most 45% of the window): the person scrolls
+    // until the button shows, and so does the run (its scrolling list, never the frame's own page).
+    await this.eval(`((id, y) => {
+      const f = document.querySelector('iframe[data-card-frame="' + id + '"]');
+      if (!f) return false;
+      let p = f.parentElement;
+      while (p && !(p.scrollHeight > p.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(p).overflowY))) p = p.parentElement;
+      if (!p) return true;
+      const pr = p.getBoundingClientRect(), fr = f.getBoundingClientRect();
+      p.scrollTop += (fr.top + y) - (pr.top + pr.height / 2);
+      return true;
+    })(${JSON.stringify(cardId)}, ${inFrame.y})`);
+    await sleep(400);
     const btn = await this.x.until("the card's Approve button", 15_000, () => this.cdp.centerOf(doc.session, sel), 250);
     await this.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, doc.session).catch(() => undefined);
     await this.x.until("the sealed page's ready-to-answer mark", 15_000, async () => ((await this.cdp.evaluate(doc.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100);
