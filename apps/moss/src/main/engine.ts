@@ -377,7 +377,10 @@ export class MossEngine {
   async pictures(bot: string): Promise<PictureRow[] | { waiting: true }> {
     const r = await this.read<{ pictures: PictureView[] }>("pictures", "picture.list", { kind: "bots", bot });
     if (r === undefined) return { waiting: true };
-    return r.pictures.map((p) => ({ id: p.id, publisher: p.publisher, ...(p.tool !== undefined ? { tool: p.tool } : {}), width: p.width, height: p.height, screen: p.screen }));
+    // The publisher's name from the plugin list, best effort (the id is always there).
+    const listed = await this.client?.request<{ plugins: { id: string; name: string | { en: string } }[] }>("plugin.list", {}, 5_000).catch(() => undefined);
+    const names = new Map((listed?.plugins ?? []).map((p) => [p.id, textOf(p.name)]));
+    return r.pictures.map((p) => ({ id: p.id, publisher: p.publisher, ...(names.has(p.publisher) ? { publisherName: names.get(p.publisher)! } : {}), ...(p.tool !== undefined ? { tool: p.tool } : {}), width: p.width, height: p.height, screen: p.screen }));
   }
 
   async openPicture(id: string): Promise<boolean> {
