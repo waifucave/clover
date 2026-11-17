@@ -343,7 +343,7 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
       "reel.tools": { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, name: { type: "string" } } } },
     } },
     client: { entry: "client/index.tsx", css: ["client/style.css"] },
-    contributes: { ui: [{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "bot.tab", id: "open", component: "ReelBadge" }] },
+    contributes: { ui: [{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "status", id: "open", component: "ReelBadge" }] },
     ...over,
   });
   const reelFiles = () => ({
@@ -445,12 +445,12 @@ describe("a bot's edit to its own plugin that declares its own points (the owner
       return (await readPluginFolder(dir, { source: "local" })).snapshot!;
     };
     const one = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }]);
-    const two = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "bot.tab", id: "open", component: "ReelBadge" }]);
+    const two = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "status", id: "open", component: "ReelBadge" }]);
     expect(JSON.parse(one.plugins[""]!.reaches).web).toEqual([null]);
     expect(JSON.parse(two.plugins[""]!.reaches).web).toEqual([null, null]);
     expect(workshopAdds(one, two)).toBeUndefined();
     expect(updateAddsTrigger({ ...two, okLines: one.okLines }, { ...two, plugins: { ...two.plugins, "": { ...two.plugins[""]!, reaches: one.plugins[""]!.reaches } } })).toBeUndefined();
-    const web = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "bot.tab", id: "site", web: { url: "https://example.com/", partition: "site" } }]);
+    const web = await snapWith([{ spot: "app.surface", id: "reel", component: "ReelPage" }, { spot: "status", id: "site", web: { url: "https://example.com/", partition: "site" } }]);
     expect(JSON.parse(web.plugins[""]!.reaches).web).toEqual([null, "https://example.com/"]);
     // A web page URL is a host it reaches: asked about first as such.
     expect(workshopAdds(two, web)).toBe("it reaches more hosts");

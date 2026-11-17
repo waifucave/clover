@@ -7,18 +7,19 @@ import { join } from "node:path";
 import { botPartLines, describeOk, partScopeOf, pluginParts, skillItem, validateManifest } from "../src/index";
 
 // Alpha's manifest as the bundled plugin bot she was before bots became engine data (lane MC): a plugin in that shape is
-// still read the same.
+// still read the same, except what it placed in her tab (retired, G8: refused with where to go) and her tab's layout
+// (ignored, with a warning).
 const ALPHA = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "alpha-plugin-era.json"), "utf8")) as Record<string, unknown>;
 const engines = { moss: "^1.0.0" };
 
 describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
   test("Alpha: her UI, her stage server (scope `own-bot`), skills, agent, hooks and commands are inside her; her island line is beside; her OK lines are as they were", () => {
     const r = validateManifest(ALPHA, { bundled: true });
-    expect(r.issues).toEqual([]);
+    expect(r.issues.map((i) => `${i.severity}:${i.code}:${i.path}`)).toEqual(["error:spot_retired:/contributes/ui/2/spot", "error:spot_retired:/contributes/ui/3/spot", "error:spot_retired:/contributes/ui/4/spot", "warning:bot_layout_retired:/contributes/bot/layout"]);
     const parts = pluginParts(r.manifest);
     // The island's point is the island's plug, not her tab: beside her, under the switch. Her stage tools are hers alone.
     expect(parts.beside.map((p) => p.ref)).toEqual(["island.line/0"]);
-    expect(parts.inside.map((p) => p.ref)).toEqual(["ui/0", "ui/1", "ui/2", "ui/3", "ui/4", "ui/5", "locales/0", "locales/1", "mcpServers/stage", "skills/0", "agents/0", "hooks/0", "hooks/1", "hooks/2", "commands/0", "commands/1", "commands/2"]);
+    expect(parts.inside.map((p) => p.ref)).toEqual(["ui/0", "ui/1", "ui/2", "locales/0", "locales/1", "mcpServers/stage", "skills/0", "agents/0", "hooks/0", "hooks/1", "hooks/2", "commands/0", "commands/1", "commands/2"]);
     expect(describeOk(r)).toEqual([
       "alpha runs code on your computers.",
       "It adds: bot, themes, mcpServers, hooks, island.line, skills, agents, commands, locales, ui.",
@@ -40,7 +41,7 @@ describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
       contributes: {
         bot: { name: "Reel", instructions: "bot/instructions.md" },
         mcpServers: { clips: { type: "host" } },
-        ui: [{ spot: "conversation", id: "pane", style: "tab/pane.json" }, { spot: "bot.side", component: "Room" }],
+        ui: [{ spot: "conversation", id: "pane", style: "tab/pane.json" }, { spot: "composer", id: "room", component: "Room" }],
       },
     });
     expect(r.issues).toEqual([]);
@@ -80,11 +81,10 @@ describe("the new fields", () => {
     expect(lines.indexOf("Everywhere, with a switch of its own: an island tab, tools, skills.")).toBe(lines.indexOf("It adds: bot, mcpServers, skills, ui.") + 1);
   });
 
-  test("a row for its bot in the sidebar (`sidebar.bot`, keyed by bot id) only as a part beside the bot, named on the Everywhere line", () => {
+  test("a row for its bot in the sidebar (`sidebar.bot`) is retired (G8), inside the bot or beside it", () => {
     const row = (app: boolean) => mika({ ui: [{ spot: "sidebar.bot", key: "mika", component: "Row", ...(app ? { app: true } : {}) }] });
-    expect(row(false).issues.map((i) => i.code)).toEqual(["bot_spot_not_offered"]);
-    expect(row(true).issues).toEqual([]);
-    expect(botPartLines(row(true).manifest)).toEqual(["Everywhere, with a switch of its own: the bots' sidebar rows."]);
+    expect(row(false).issues.map((i) => i.code)).toEqual(["spot_retired"]);
+    expect(row(true).issues.map((i) => i.code)).toEqual(["spot_retired"]);
   });
 
   test("an entry on a point another plugin declares is beside the bot; one on a point of its own tree is inside", () => {

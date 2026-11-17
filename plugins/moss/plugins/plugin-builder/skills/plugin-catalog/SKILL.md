@@ -53,29 +53,15 @@ How to read it:
 | `app.surface` | list | app | — | Top-level floating windows, such as the island and the Dispatch pill; `window` says how they float. |
 | `app.background` | list | app | — | A part with no place in the window: it runs in a hidden window of its own while MOSS is open and the plugin runs, outlives the main window, is never slept or slowed, and may play sound when the plugin holds `audio`. At… |
 | `app.tray` | list | app | `tray` | A line in the menu-bar (tray) menu, with the `tray` capability: `toggles` names one of the plugin's own `app.surface` entries (the line hides and shows it, and the choice is kept), or `command` names a command of the pl… |
-| `bot.tab` | keyed | app | — | Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key. |
 | `sidebar` | single | shell | — | The sidebar: the app's own, the same on every tab. A plugin may fill it for the whole app (its own component, in its own frame, reading and acting through `shell.*`); an entry tied to a bot's tab (`when.bot`, or inside… |
-| `bar` | single | shell | — | The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: "none"` there is no bar at all and the bot's own controls (`bot.… |
-| `sidebar.bot` | keyed | shell | — | A bot's row in the sidebar, keyed by bot: its state and what waits for the user. |
 | `sidebar.app` | list | shell | — | App buttons in the sidebar; `opens` names the `main` and `panel` key it shows. |
-| `main` | keyed | shell | — | The main area, keyed by route: bot, agent, settings, plugins, app. |
+| `main` | keyed | shell | — | The main area, keyed by route: agent, settings, plugins, app. |
 | `panel` | keyed | shell | — | The panel host, keyed by panel: each stock panel (session, terminal, diff, files, browser, agent) is a plugin of its own, and replaceable. An entry whose key is not a stock one ADDS a panel of the plugin's own, with a b… |
 | `panel.view` | keyed | shell | — | A spot inside each panel view, keyed by the view's id. |
 | `settings.section` | list | settings | — | A section of the settings screen, which the settings part (`main` key `settings`) declares. |
-| `bot.editor.section` | list | bot-editor | — | A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given. |
 | `status` | list | shell | — | The shell's status bar; the inherited `tile` becomes an entry here (§12). |
-| `bot.header` | single | bot-tab | — | The tab's header. |
-| `bot.header.action` | list | bot-tab | — | Buttons in the tab's header. |
-| `bot.side` | single | bot-tab | — | The tab's side area. |
-| `bot.controls` | single | bot-tab | — | The bot's own drawn controls (its name, buttons, a handle to drag the window), placed by its layout and drawn by its plugin in its own frame; what they do is `shell.*`, the user's own press. |
-| `chrome.title` | single | bot-tab | — | The tab's title (the bot's name), drawn by the shell; it opens the tab's menu where it has one. |
-| `chrome.action` | keyed | bot-tab | — | One of the shell's buttons, keyed: `edit` (the bot's editor), `session` (the column beside the conversation), `browser` (the browser panel). Drawn by the shell; a press is the app's own. |
-| `chrome.actions` | single | bot-tab | — | Every button the layout does not place one by one: the buttons plugins add to the bar (`bot.header.action`), the editor, the panel toggles. |
-| `chrome.sidebar` | single | bot-tab | — | The sidebar's show/hide button, drawn by the shell. A layout with no bar that does not place it gets a small one from the shell: the user never loses the sidebar. |
-| `chrome.drag` | single | bot-tab | — | A region that drags the window (empty, as wide and tall as the node the layout gives it). A layout with no bar that places none gets a thin one from the shell. |
-| `chrome.panels` | single | bot-tab | — | Where the panels the user opens show (the session column excepted), in the shape the layout's container gives them. Left out, they show where the bot's `panel.mode` says (the standard right column by default). |
-| `conversation` | single | bot-tab | `sessions.read` | The conversation view. |
-| `composer` | single | bot-tab | `conversation.post` | The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; e… |
+| `conversation` | single | session-tab | `sessions.read` | The conversation view. |
+| `composer` | single | session-tab | `conversation.post` | The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; e… |
 | `composer.action` | keyed | composer | — | The composer's buttons, keyed by action id: an entry keyed `attach`, `model`, `level`, `send` or `stop` draws that button another way (or hides it); one with any other key adds a button of its own, drawn among the butto… |
 | `conversation.message` | keyed | conversation | `sessions.read` | One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls. |
 | `conversation.message.extra` | list | conversation | `sessions.read` | Add-ons under each message, with a UI of their own. A plugin outside MOSS's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`. |

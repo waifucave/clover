@@ -9,7 +9,7 @@ import {
   networkAllows, pluginTokenName, withImplied,
   parseCapability,
   parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
-  reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer, describeOk,
+  MAIN_ROUTES, reachesPublicNetwork, BOTS_OFFER, BOT_TAB_INSIDE, SAME_ON_EVERY_TAB, botsOffer, describeOk,
 } from "../src/index";
 
 describe("capabilities", () => {
@@ -193,7 +193,7 @@ describe("points and spots", () => {
   test("the core's points are §5.3's, and every daemon point is a manifest key", () => {
     expect(CORE_POINTS.map((p) => p.name)).toEqual([
       "bot", "models", "mcpServers", "skills", "agents", "agentBackends", "hooks", "commands", "triggers",
-      "turns", "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "app.background", "bot.tab", "locales",
+      "turns", "computerProviders", "computer", "relays", "notifiers", "companions", "themes", "app.root", "app.surface", "app.background", "locales",
     ]);
     for (const p of CORE_POINTS) if (p.side === "daemon" || p.name === "themes" || p.name === "locales") expect(CORE_CONTRIBUTION_KEYS).toContain(p.name as never);
     expect(CORE_POINTS.filter((p) => p.uniqueBy).map((p) => `${p.name}.${p.uniqueBy}`)).toEqual([
@@ -203,9 +203,14 @@ describe("points and spots", () => {
 
   test("the spot catalog holds §5.5's spots, with conversation.message's keys and its kept approval cell", () => {
     const names = SPOTS.map((s) => s.name);
-    for (const n of ["app.root", "app.surface", "bot.tab", "sidebar", "sidebar.bot", "sidebar.app", "main", "panel", "panel.view", "settings.section", "bot.editor.section",
-      "bot.header", "bot.side", "conversation", "composer", "composer.action", "conversation.message", "tool.result",
-      "conversation.message.extra", "bot.header.action", "status", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
+    for (const n of ["app.root", "app.surface", "sidebar", "sidebar.app", "main", "panel", "panel.view", "settings.section",
+      "conversation", "composer", "composer.action", "conversation.message", "tool.result",
+      "conversation.message.extra", "status", "file.preview", "island.tab", "pill.target"]) expect(names).toContain(n);
+    // A bot's tab and its points are retired (spec revision 19, §5.5, G8): none is in the catalog.
+    for (const n of ["bot.tab", "bot.header", "bot.header.action", "bot.side", "bot.controls", "bar", "sidebar.bot", "bot.editor.section", "chrome.title", "chrome.action", "chrome.actions", "chrome.sidebar", "chrome.drag", "chrome.panels"]) expect(names).not.toContain(n);
+    // The session tab declares the conversation and the composer.
+    for (const n of ["conversation", "composer"]) expect(SPOTS.find((s) => s.name === n)!.declaredBy).toBe("session-tab");
+    expect(MAIN_ROUTES).toEqual(["agent", "settings", "plugins", "app"]);
     const msg = SPOTS.find((s) => s.name === "conversation.message")!;
     expect(msg.keys).toEqual(MESSAGE_KINDS);
     expect(msg.keep).toEqual(["approval"]);
@@ -215,13 +220,12 @@ describe("points and spots", () => {
   });
 
   test("what Bots offers a bot's plugin is a closed list: inside its tab, its top bar, the Browser and agent panels; never the sidebar, Settings or the Edit page", () => {
-    expect([...BOTS_OFFER.keys()].sort()).toEqual(["bar", "bot.controls", "bot.header", "bot.header.action", "bot.side", "bot.tab", "chrome.action", "chrome.actions", "chrome.drag", "chrome.panels", "chrome.sidebar", "chrome.title", "composer", "composer.action",
+    expect([...BOTS_OFFER.keys()].sort()).toEqual(["composer", "composer.action",
       "conversation", "conversation.message", "conversation.message.action", "conversation.message.extra", "file.preview", "panel", "tool.result"]);
     expect(BOTS_OFFER.get("panel")).toEqual(["browser", "agent"]);
-    expect([botsOffer("panel", "browser"), botsOffer("panel", "agent"), botsOffer("panel", "terminal"), botsOffer("panel"), botsOffer("bar"), botsOffer("status")]).toEqual([true, true, false, false, true, false]);
+    expect([botsOffer("panel", "browser"), botsOffer("panel", "agent"), botsOffer("panel", "terminal"), botsOffer("panel"), botsOffer("bar"), botsOffer("status")]).toEqual([true, true, false, false, false, false]);
     for (const s of SAME_ON_EVERY_TAB) expect(botsOffer(s)).toBe(false);
-    // A bot's layout places the spots inside its tab: not the window's bar or panels.
-    expect(BOT_TAB_INSIDE.has("bar") || BOT_TAB_INSIDE.has("panel")).toBe(false);
+    expect(BOT_TAB_INSIDE.has("panel")).toBe(false);
     expect(BOT_TAB_INSIDE.has("conversation")).toBe(true);
   });
 
@@ -260,10 +264,25 @@ describe("points and spots", () => {
     ]));
   });
 
+  test("a bot's tab left MOSS Code's window (G8): each of its points is retired with a message, a layout entry is refused, a bot's own layout is ignored with a warning", () => {
+    const tabPoints = ["bot.tab", "bot.header", "bot.header.action", "bot.side", "bot.controls", "bar", "sidebar.bot", "bot.editor.section", "chrome.title", "chrome.action", "chrome.actions", "chrome.sidebar", "chrome.drag", "chrome.panels"];
+    for (const name of tabPoints) {
+      expect(RETIRED_POINTS.some((r) => r.name === name)).toBe(true);
+      const r = validateManifest({ manifest: 1, id: "old-tab", name: "Old tab", engines: { moss: "^1.0.0" }, client: { entry: "ui/index.js" }, contributes: { ui: [{ spot: name, id: "x", component: "X", ...(name === "bot.header.action" ? { title: "X" } : {}) }] } });
+      const errors = r.issues.filter((i) => i.severity === "error").map((i) => `${i.code}: ${i.message}`);
+      expect(errors).toEqual(expect.arrayContaining([expect.stringMatching(new RegExp(`^spot_retired: \`${name.replace(/\./g, "\\.")}\` is retired: use .*bots have no tab in MOSS Code's window`))]));
+    }
+    const patch = validateManifest({ manifest: 1, id: "old-patch", name: "Old patch", engines: { moss: "^1.0.0" }, contributes: { ui: [{ spot: "bot.tab", id: "move", layout: "tab/move.json" }] } });
+    expect(patch.issues.filter((i) => i.severity === "error").map((i) => `${i.code}: ${i.message}`)).toEqual(expect.arrayContaining([expect.stringMatching(/^spot_retired: `layout` is retired: use .*bots have no tab in MOSS Code's window/)]));
+    const bot = validateManifest({ manifest: 1, id: "old-bot", name: "Old bot", engines: { moss: "^1.0.0" }, contributes: { bot: { name: "Old bot", instructions: "bot.md", layout: "tab/layout.json" } } });
+    expect(bot.issues.filter((i) => i.code === "bot_layout_retired").map((i) => i.severity)).toEqual(["warning"]);
+    expect((bot.manifest!.contributes as { bot: Record<string, unknown> }).bot).toMatchObject({ name: "Old bot" });
+    expect((bot.manifest!.contributes as { bot: Record<string, unknown> }).bot.layout).toBeUndefined();
+  });
+
   test("lane F's asks: settings declares its sections, an unfilled panel key shows a placeholder, a panel may be for some sessions only", () => {
     const spot = (name: string) => SPOTS.find((s) => s.name === name)!;
     expect(spot("settings.section").declaredBy).toBe("settings");
-    expect(spot("bot.editor.section")).toMatchObject({ shape: "list", declaredBy: "bot-editor", context: ["bot"] });
     expect(spot("panel").placeholder).toBe(true);
     expect(spot("panel").context).toContain("session");
     const panel = (when: unknown) => validateManifest({

@@ -119,7 +119,7 @@ export const LAYOUT_COMPONENT = "$layout";
 
 /** The spots a bot's tab declares (the catalog's `bot-tab` spots). */
 const BOT_TAB_SPOTS: Readonly<Record<string, PointDeclaration>> = Object.fromEntries(
-  SPOTS.filter((s) => s.declaredBy === "bot-tab").map((s) => [s.name, { shape: s.shape, ...(s.needs !== undefined ? { needs: [...s.needs] } : {}) }]),
+  SPOTS.filter((s) => s.declaredBy === "session-tab").map((s) => [s.name, { shape: s.shape, ...(s.needs !== undefined ? { needs: [...s.needs] } : {}) }]),
 );
 
 /** A bot's layout as the entry that fills its tab: it declares the tab's spots and the bot's own, so its `{ spot }`

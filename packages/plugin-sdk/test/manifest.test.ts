@@ -14,7 +14,7 @@ const ALPHA = `{ "manifest": 1, "id": "alpha", "version": "1.111.1", "name": "Al
   "contributes": {
     "bot": { "name": "Alpha", "instructions": "bot/instructions.md", "greeting": "bot/greeting.md", "memory": "bot/memory",
              "model": { "default": "<qualified catalog id>", "effort": "medium" },
-             "theme": "alpha", "layout": "tab/layout.json" },
+             "theme": "alpha" },
     "themes": [{ "id": "alpha", "file": "tab/theme.json" }] } }`;
 
 const min = (extra: Record<string, unknown> = {}) => ({ manifest: 1, id: "luna", name: "Luna", ...extra });
@@ -262,11 +262,9 @@ describe("contributes", () => {
     expect(validateManifest({ ...base, contributes: { ui: [{ spot: "status", hide: true }] } }).issues.map((i) => `${i.severity}:${i.code}`)).toEqual(["warning:ui_hide_list"]);
     expect(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", hide: true, target: "acme" }] } }).issues.map((i) => `${i.severity}:${i.code}`)).toEqual(["warning:ui_target"]);
     expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "A", target: "acme" }] } }), "ui_target")).toBe(true);
-    // A layout patch: only on bot.tab, its bots by when.bot.
-    expect(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", layout: "tab/move.json", when: { bot: ["luna", "alpha"] } }] } }).issues).toEqual([]);
-    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", layout: "tab/move.json" }] } }), "ui_layout_spot")).toBe(true);
-    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", key: "luna", layout: "tab/move.json" }] } }), "ui_layout_spot")).toBe(true);
-    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "bot.tab", layout: "tab/move.json", component: "A" }] } }), "ui_one_of")).toBe(true);
+    // A layout patch rearranged bots' tabs, which are retired (G8): refused wherever it is, saying so.
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", layout: "tab/move.json" }] } }), "spot_retired")).toBe(true);
+    expect(has(validateManifest({ ...base, contributes: { ui: [{ spot: "composer", layout: "tab/move.json", component: "A" }] } }), "ui_one_of")).toBe(true);
     const twice = validateManifest({ ...base, contributes: { ui: [{ spot: "status", component: "A" }, { spot: "status", component: "B" }] } });
     expect(has(twice, "ui_id_required", "entry")).toBe(true);
     const ids = validateManifest({ ...base, contributes: { ui: [{ spot: "status", id: "a", component: "A" }, { spot: "status", id: "b", component: "B" }] } });
@@ -307,7 +305,7 @@ describe("contributes", () => {
     const ui = (...entries: Record<string, unknown>[]) => validateManifest({ ...base, contributes: { bot, ui: entries } });
     const said = (r: ReturnType<typeof validateManifest>, code: string) => r.issues.find((i) => i.code === code)?.message;
     // Inside its tab, its top bar, its Browser and agent panels.
-    expect(ui({ spot: "composer", component: "C" }, { spot: "conversation.message", key: "bot", component: "Bubble" }, { spot: "bar", component: "Bar" },
+    expect(ui({ spot: "composer", component: "C" }, { spot: "conversation.message", key: "bot", component: "Bubble" },
       { spot: "panel", key: "browser", component: "Browser" }, { spot: "panel", key: "agent", id: "agent", style: "a.json" }).issues).toEqual([]);
     // Anything else: refused with what to do instead.
     expect(said(ui({ spot: "island.tab", component: "T", title: "Tarot" }), "bot_spot_not_offered")).toBe(
@@ -315,7 +313,6 @@ describe("contributes", () => {
     expect(has(ui({ spot: "status", component: "S" }), "bot_spot_not_offered")).toBe(true);
     expect(said(ui({ spot: "panel", key: "terminal", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab, and a panel of its own (any other key, with a title); \"terminal\" isn't one of them.");
     expect(said(ui({ spot: "panel", component: "T" }), "bot_panel_not_offered")).toBe("Bots offers the Browser and agent panels on Luna's tab, and a panel of its own (any other key, with a title); an entry with no key would fill every panel.");
-    expect(said(ui({ spot: "bot.editor.section", component: "E" }), "bot_editor_stock")).toBe("Luna's Edit page keeps its stock look; its settings show there as a section of their own, from the plugin's settings.");
     expect(said(ui({ spot: "composer", component: "C", when: { bot: "alpha" } }), "bot_when_other_bot")).toBe("\"composer\" inside Luna's tab is Luna's; dressing other bots' tabs is an app part: add \"app\": true.");
     // Beside the bot (`app`): the app's rules, as any plugin's: other bots' tabs and the island included.
     expect(ui({ spot: "island.tab", component: "T", title: "Tarot", app: true }, { spot: "composer", component: "C", when: { bot: "alpha" }, app: true }).issues).toEqual([]);
@@ -323,7 +320,7 @@ describe("contributes", () => {
     // whichever plugin's it is; a part beside the bot for every tab may.
     expect(said(ui({ spot: "sidebar", component: "S", when: { bot: "luna" }, app: true }), "bot_tied_not_offered")).toBe("\"sidebar\" looks the same on every tab: nothing tied to a bot's tab dresses it.");
     expect(ui({ spot: "sidebar.app", component: "A", title: "Tarot", icon: "i.svg", opens: "tarot", app: true }).issues).toEqual([]);
-    for (const spot of ["sidebar", "sidebar.bot", "sidebar.app", "settings.section", "bot.editor.section"]) {
+    for (const spot of ["sidebar", "sidebar.app", "settings.section"]) {
       const any = validateManifest({ ...min(), engines: { moss: "^1.0.0" }, client: { entry: "c.tsx" }, contributes: { ui: [{ spot, component: "X", title: "X", icon: "i.svg", opens: "x", key: "x", when: { bot: "luna" } }] } });
       expect([spot, has(any, "bot_tied_not_offered")]).toEqual([spot, true]);
     }

@@ -28,14 +28,8 @@ describe("her room's size", () => {
     expect(roomSize(tabWidth(700, win(true, 81)))).toBe("narrow");
   });
 
-  test("the steps are her layout's container queries: 800 and below narrow, to 999 mid, 1000 and wider wide", () => {
+  test("the steps: 800 and below narrow, to 999 mid, 1000 and wider wide", () => {
     expect([800, 801, 999, 1000].map(roomSize)).toEqual(["narrow", "mid", "mid", "wide"]);
-    const css = readFileSync(join(import.meta.dir, "../layout.css"), "utf8");
-    const steps = [...css.matchAll(/@container alpha-scene \(max-width: (\d+)px\)/g)].map((m) => Number(m[1]));
-    expect(steps).toContain(WIDE_MIN_PX - 1);
-    expect(steps).toContain(NARROW_MAX_PX);
-    // The wide room's closer step stays inside the wide room.
-    expect(steps.filter((n) => n >= WIDE_MIN_PX).every((n) => n > WIDE_MIN_PX)).toBe(true);
   });
 });
 

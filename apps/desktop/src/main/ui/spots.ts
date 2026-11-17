@@ -66,13 +66,13 @@ export function nodeId(spot: string, key?: string): string {
 const KEYED_BY_BOT = new Set(["bot.tab", "sidebar.bot"]);
 
 /** Where each catalog spot's declarer sits (spec §5.5): the shell fills `app.root`, the settings part `main` keyed
- *  `settings`, a bot's tab `bot.tab`, and so on. */
+ *  `settings`, a session's tab `main` keyed `agent`, and so on. */
 const CATALOG_PARENT: Readonly<Record<string, string | undefined>> = {
   app: undefined,
   shell: "app.root",
   settings: "main[settings]",
-  "bot-tab": "bot.tab",
-  "bot-stage": "bot.stage",
+  // A session's tab: the conversation over the composer, in `main` keyed `agent` (the panel's `agent` tab draws the same).
+  "session-tab": "main[agent]",
   composer: "composer",
   conversation: "conversation",
   "file-view": undefined,
@@ -86,7 +86,7 @@ export class SpotTree {
 
   constructor(plugins: readonly UiPlugin[]) {
     for (const s of SPOTS) {
-      const p = s.name === "bot.tab" ? "main[bot]" : CATALOG_PARENT[s.declaredBy];
+      const p = CATALOG_PARENT[s.declaredBy];
       if (p !== undefined) this.parent.set(s.name, p);
     }
     for (const plugin of plugins) {

@@ -1,9 +1,7 @@
 // The column beside the conversation, on the runtime:
 // - `SessionColumn` fills the shell's `panel` keyed `session`, for a coding session or an agent: its agents, where it
 //   runs (the computer, its level, the root folder), context, connectors, outputs, and a coding session's changes
-//   with the pull requests they became;
-// - `BotColumn` fills `bot.side`, a bot's slim column (the owner's item 90): its coding agents and tasks, context and
-//   outputs. Clicking an agent opens its live tab in the panel.
+//   with the pull requests they became. Clicking an agent opens its live tab in the panel.
 // The session, its agents and the computers come through the plugin API. Changes, outputs, context use and connectors
 // have no plugin-API call yet: the `moss` layer reads them from the core (provisional methods, `session.changes`
 // and the rest, for lanes A and D to settle).
@@ -126,24 +124,6 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
       {...(data.connectors ? { connectors: data.connectors } : {})}
       {...(data.outputs && data.outputs.items.length > 0 ? { outputs: { items: data.outputs.items, onOpen: () => undefined, ...(data.outputs.more ? { more: data.outputs.more, onShowMore: () => undefined } : {}) } } : {})}
       {...(data.changes ? { changes: { ...data.changes, ...(core ? { onCreatePr: () => void core.call("session.createPr", { id: s.id }) } : {}) } } : {})}
-    />
-  );
-}
-
-/** A bot's slim column: `bot.side`. */
-export function BotColumn({ props }: { props: ColumnProps & { bot?: { id: string; name: string } } }) {
-  const api = usePluginApi();
-  const core = useCore();
-  const data = useColumn(api, core, props.session, false);
-  if (!props.session) return null;
-  return (
-    <SessionView
-      kind="bot"
-      agents={data.agents.map((a) => ({ id: a.id, title: a.title ?? a.backend ?? a.id, backend: a.kind === "side-thread" ? "Task" : (a.backend ?? ""), status: agentState(a) }))}
-      {...(props.onOpenAgent ? { onOpenAgent: props.onOpenAgent } : {})}
-      {...(props.openAgent ? { openAgent: props.openAgent } : {})}
-      {...(data.context ? { context: contextOf(data.context)! } : {})}
-      {...(data.outputs && data.outputs.items.length > 0 ? { outputs: { items: data.outputs.items, onOpen: () => undefined } } : {})}
     />
   );
 }

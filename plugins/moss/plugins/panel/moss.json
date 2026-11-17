@@ -29,11 +29,6 @@
             "agent"
           ]
         }
-      },
-      {
-        "spot": "bot.side",
-        "id": "bot-column",
-        "component": "BotColumn"
       }
     ]
   }

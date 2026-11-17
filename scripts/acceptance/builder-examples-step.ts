@@ -6,7 +6,7 @@
 //   ex-settings, ex-point, ex-board, ex-buddy's part beside its bot: their Settings sections (the Settings dialog, by title);
 //   ex-status: its line in the status bar; ex-app, ex-timeline, ex-fit: their pages, from their sidebar entries;
 //   ex-board-widget: its widget inside ex-board's section; ex-fit-tile: its tile inside ex-fit's page;
-//   ex-buddy: its header and side panel on its bot's tab (the bot in `bot.list`); ex-bot: in `bot.list`;
+//   ex-buddy, ex-bot: in `bot.list` (a bot has no tab in MOSS Code's window);
 //   ex-theme: listed as a theme (`plugin.ui`); ex-model: its model listed (`models.list`);
 //   ex-tool, ex-timeline: the tool answers one call from Alpha; ex-trigger: installed and running.
 // All fifteen are installed first and then looked at: a plugin with UI installed after the window was served loads the
@@ -15,9 +15,9 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readExamples, type Example } from "../../plugins/moss/plugins/plugin-builder/test/examples";
 import { callTurn, fail, frames, leave, treeDocs, until, type ExampleCtx } from "./example-steps";
-import { clickShown, drawn, drawnInSettings, openSidebarEntry, reloadsSettled } from "./window-open";
+import { drawn, drawnInSettings, openSidebarEntry, reloadsSettled } from "./window-open";
 
-export const BUILDER_EXAMPLES_STEP = "the plugin builder's 15 examples, each installed from a folder over RPC behind its OK card (ex-tool's pressed in the window) and running: Settings sections (ex-settings, ex-point, ex-board with ex-board-widget's widget in it, ex-buddy's child), the status line (ex-status), the pages from their sidebar entries (ex-app, ex-timeline, ex-fit with ex-fit-tile's tile in it) and ex-buddy's header and side panel on its bot's tab are drawn in the window; ex-theme is listed as a theme, ex-bot and ex-buddy as bots, ex-model's model as a model; ex-tool and ex-timeline's tools answer a call from Alpha; each removed afterwards";
+export const BUILDER_EXAMPLES_STEP = "the plugin builder's 15 examples, each installed from a folder over RPC behind its OK card (ex-tool's pressed in the window) and running: Settings sections (ex-settings, ex-point, ex-board with ex-board-widget's widget in it, ex-buddy's child), the status line (ex-status), the pages from their sidebar entries (ex-app, ex-timeline, ex-fit with ex-fit-tile's tile in it) are drawn in the window; ex-theme is listed as a theme, ex-bot and ex-buddy as bots, ex-model's model as a model; ex-tool and ex-timeline's tools answer a call from Alpha; each removed afterwards";
 
 interface Card { id: string; kind: string; pluginId?: string }
 
@@ -183,7 +183,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     return `its page drawn from its sidebar entry ("${page.text.replace(/\s+/g, " ").trim().slice(0, 50)}") with ex-fit-tile's tile in it ("${tile.text.replace(/\s+/g, " ").trim().slice(0, 40)}"); its frame is ${fill.frame}px tall in a ${fill.col}px column (the page inside reads ${inside}px; its content ends at ${Math.round(content)}px)`;
   });
 
-  // The bots: listed, and ex-buddy's header and side panel on its tab.
+  // The bots: listed.
   await check("ex-bot", async () => {
     const bots = (await rpc.request<{ bots: { id: string; name?: unknown }[] }>("bot.list", {})).bots;
     const mine = bots.find((b) => b.id === "ex-bot" || b.id === "ex-bot/bot");
@@ -194,14 +194,8 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const bots = (await rpc.request<{ bots: { id: string }[] }>("bot.list", {})).bots;
     const mine = bots.find((b) => b.id === "ex-buddy" || b.id === "ex-buddy/bot");
     if (mine === undefined) fail(`bot.list lists ${bots.map((b) => b.id).join(", ")}`);
-    await openSidebarEntry(ctx, "Ex buddy");
-    // The bot's column (`bot.side`) opens from the tab's own "Details" button, as the user opens it.
-    const side = await drawn(ctx, "ex-buddy", "Today: one page of notes.", "its side panel on its bot's tab", 6_000).catch(async () => {
-      await clickShown(ctx, "the tab's Details button", "button.cl-panel-toggle[aria-pressed=false]", "Details", 10_000);
-      return drawn(ctx, "ex-buddy", "Today: one page of notes.", "its side panel on its bot's tab, after its Details button");
-    });
-    const header = await drawn(ctx, "ex-buddy", "Ex buddy", "its header on its bot's tab");
-    return `listed in bot.list as ${mine!.id}; on its tab its header ("${header.text.trim().slice(0, 30)}") and side panel ("${side.text.trim().slice(0, 40)}") drawn`;
+    // A bot has no tab in MOSS Code's window (G8): what it draws is beside it (its Settings section, checked above).
+    return `listed in bot.list as ${mine!.id}`;
   });
   await check("ex-theme", async () => {
     // `plugin.ui` is the app's own call: a packaged core's CLI-role connection may not make it, and the plugin's record
