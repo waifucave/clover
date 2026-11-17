@@ -130,5 +130,10 @@ describe("a packaged MOSS's key across restarts", () => {
     expect(state.kind).toBe("refused");
     expect(state.kind === "refused" && state.why).toContain("holds another answer key for MOSS");
     expect(calls).toBe(1);
+    // Any other invalid request (a connection closing, say) is tried again.
+    let other = 0;
+    const closing = { request: async () => { other++; if (other === 1) throw new RpcCallError(-32600, "already authenticated — open a new connection to change role"); return { applied: true }; } };
+    expect((await new ProgramAnswerKey(fileVault(join(dir, "held", "key2"))).register(closing, "studio0000000000000", () => true, [1])).kind).toBe("registered");
+    expect(other).toBe(2);
   });
 });

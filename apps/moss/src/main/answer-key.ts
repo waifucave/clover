@@ -108,6 +108,15 @@ export function vaultChoice(o: { packaged: boolean; headless: boolean; testBuild
   return { kind: "safe-storage" };
 }
 
+/** The engine's refusal of a key because it holds another one for MOSS here: "this program already has an answer key"
+ *  (no hand-over sent), or a hand-over that isn't from the held key. Only these; any other invalid request (a connection
+ *  that is closing, a hello said twice) is tried again. */
+export function heldElsewhere(err: unknown): boolean {
+  if (!(err instanceof RpcCallError) || err.code !== -32600) return false;
+  const code = (err.data as { code?: unknown } | undefined)?.code;
+  return /already has an answer key/.test(err.message) || code === "not-current" || code === "no-current-key";
+}
+
 export type KeyState = { kind: "unregistered" } | { kind: "registered" } | { kind: "waiting"; why: string } | { kind: "refused"; why: string };
 
 export interface KeyClient {
@@ -191,9 +200,9 @@ export class ProgramAnswerKey {
         // device), or an invalid request (the engine holds another key for MOSS here, and a key can't replace it without
         // the held key's hand-over, which a lost key can't give: no card is ever raised for it). Anything else ("not
         // served yet", a timeout, a closed connection) is tried again.
-        if (err instanceof RpcCallError && err.code === -32600) {
+        if (heldElsewhere(err)) {
           this.log("answer key: the engine holds another key for MOSS on this device, and this one can't replace it");
-          this.setState({ kind: "refused", why: "The engine holds another answer key for MOSS on this computer, so MOSS can't answer cards here. MOSS keeps its key in this computer's protected store; if that was reset, the engine's key for MOSS has to be removed first." });
+          this.setState({ kind: "refused", why: "The engine holds another answer key for MOSS on this computer, so MOSS can't answer cards here." });
           return this.stateValue;
         }
         if (err instanceof RpcCallError && err.code === -32602) {

@@ -717,6 +717,16 @@ export async function seedLongConversation(home: string): Promise<void> {
 /** The long conversation: opened from the list (its first paint timed in the page), then the wheel over its messages until
  *  the oldest is drawn, each page load timed and the message at the top before it checked to be where it was after. */
 async function longRow(s: UnitState): Promise<string> {
+  try {
+    return await longRowIn(s);
+  } finally {
+    // Put away after the row (archived, nothing deleted), so a whole run's later rows on this home (the cold start, the
+    // idle check) don't start or idle with its 20,000 events.
+    await s.c.request("bot.remove", { id: LONG_BOT.id }).catch(() => undefined);
+  }
+}
+
+async function longRowIn(s: UnitState): Promise<string> {
   const rec = await s.x.until(`${LONG_BOT.name} as a record`, 30_000, async () => (await records(s.c)).find((b) => b.id === LONG_BOT.id), 500)
     .catch(() => s.x.fail(`the seeded bot ${LONG_BOT.id} isn't a record (the home's copy wasn't loaded)`));
   const more = (await s.c.request<{ events: unknown[]; hasMore: boolean }>("bot.conversation", { id: rec.id, limit: 1 })).hasMore;
