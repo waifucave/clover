@@ -409,6 +409,18 @@ export function world(options: WorldOptions = {}): UiRuntime {
             },
           }
         : {}),
+      // Code sessions (`sessions.read`): the coding sessions and agents, never a bot's conversation.
+      ...(has("sessions.read")
+        ? {
+            sessions: {
+              list: () => later(sessions.filter((s) => s.kind === "coding" || s.kind === "agent")),
+              get: (id: string) => (sessions.find((s) => s.id === id && (s.kind === "coding" || s.kind === "agent")) ? later(sessions.find((s) => s.id === id)!) : fail("no session")),
+              watch: () => () => undefined,
+              history: (id: string) => later({ events: events(id), hasMore: false }),
+              follow: () => () => undefined,
+            },
+          }
+        : {}),
       ...(has("computers.read") ? { computers: { list: () => later(COMPUTERS), watch: () => () => undefined } } : {}),
       ...(has("devices.read") ? { devices: { list: () => later(DEVICES), watch: () => () => undefined } } : {}),
       // No `approvals` area: a plugin doesn't read the cards that wait (the catalog's `notYet`); parts hear cards through

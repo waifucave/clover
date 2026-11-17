@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { LAYER_METHODS } from "../src/main/layer-links";
 import { NEVER, SEND_ONLY, TREE_CALLS, needsOf, treeVerdict, type TreeCaller } from "../src/main/ui/tree-calls";
 
@@ -47,9 +48,10 @@ describe("the door for parts: by capability, never by id (F2)", () => {
       for (const part of ["moss/conversation", "moss/sidebar"]) expect(verdict(part, m, { patch: { appearance: "dark" } })).toMatchObject({ ok: false, owned: false });
     }
     for (const m of ["tool.setPermission", "tool.setAvailability", "point.active.set", "plugin.remove", "ui.secret", "ui.pick"]) {
+      const params = m === "ui.pick" ? { kind: "folder", use: "plugin.install" } : undefined;
       expect(LAYER_METHODS.has(m)).toBe(false);
-      expect(verdict("moss/conversation", m)).toMatchObject({ ok: false, owned: true });
-      expect(verdict("moss/conversation", m).ok === false && (verdict("moss/conversation", m) as { why: string }).why).toContain("capability");
+      expect(verdict("moss/conversation", m, params)).toMatchObject({ ok: false, owned: true });
+      expect(verdict("moss/conversation", m, params).ok === false && (verdict("moss/conversation", m, params) as { why: string }).why).toContain("capability");
     }
   });
 
@@ -79,6 +81,32 @@ describe("the door for parts: by capability, never by id (F2)", () => {
       expect(treeVerdict(["sessions.read"], m)).toMatchObject({ ok: true });
       expect(treeVerdict([], m)).toMatchObject({ ok: false, owned: false });
     }
+  });
+
+  test("a new session (spec §9.4): agent.start takes only the part's own pick token for a folder in this computer's home, never a path", async () => {
+    const tokens = new PickTokens();
+    const sent: unknown[] = [];
+    const go = (params: unknown) => {
+      const { r } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: ["user.send"], method: "agent.start", params, gesture: true, tokens, request: async (m, p) => { sent.push([m, p]); return appConnection(m, p); } });
+      return routeCall(r).then((v) => v, (e: Error) => e.message);
+    };
+    const inHome = tokens.issue(THIRD, join(homedir(), "projects", "moss"), "agent.start");
+    expect(await go({ backend: "codex", root: inHome })).toEqual({ session: "s_new" });
+    expect(sent.at(-1)).toEqual(["agent.start", { backend: "codex", computer: "Studio", root: "home/Studio/projects/moss" }]);
+    // Spent: a second use is refused.
+    expect(await go({ backend: "codex", root: inHome })).toBe("pick the session's folder first");
+    // A path from the page, another part's token, a token for another use: refused, nothing started.
+    sent.length = 0;
+    expect(await go({ backend: "codex", root: join(homedir(), "projects") })).toBe("pick the session's folder first");
+    expect(await go({ backend: "codex", root: tokens.issue("someone-else", join(homedir(), "x"), "agent.start") })).toBe("pick the session's folder first");
+    expect(await go({ backend: "codex", root: tokens.issue(THIRD, join(homedir(), "x"), "plugin.install") })).toBe("pick the session's folder first");
+    // A folder outside the home, or the home itself: refused.
+    expect(await go({ backend: "codex", root: tokens.issue(THIRD, "/opt/elsewhere", "agent.start") })).toBe("a session works in a folder of this computer's home: pick one inside it");
+    expect(await go({ backend: "codex", root: tokens.issue(THIRD, homedir(), "agent.start") })).toBe("a session works in a folder of this computer's home: pick one inside it");
+    expect(await go({ backend: "../x", root: tokens.issue(THIRD, join(homedir(), "x"), "agent.start") })).toBe("which agent?");
+    expect(sent.filter((x) => (x as string[])[0] === "agent.start")).toEqual([]);
+    // Without user.send: no pick for it and no start.
+    expect(treeVerdict(["sessions.read"], "agent.start")).toMatchObject({ ok: false, owned: true });
   });
 
   test("reads by kind (spec revision 19, §3.6): conversation.read alone reaches no code session, sessions.read alone no bot's conversation", async () => {
@@ -390,6 +418,8 @@ const EXPECTED: Record<string, { needs: string[]; /** Every one of these as well
   "point.active.list": { needs: ["app.settings"], gesture: false },
   "point.active.set": { needs: ["app.settings"], gesture: true },
   "computer.list": { needs: ["computers.read"], gesture: false },
+  "agent.backends": { needs: ["sessions.read"], gesture: false },
+  "agent.start": { needs: ["user.send"], gesture: true },
   ...Object.fromEntries(["plugin.list", "plugin.get", "plugin.ui", "plugin.index.list", "plugin.index.search", "plugin.auth.list", "plugin.dev.list", "plugin.grant.list", "command.list", "notify.mutes"].map((m) => [m, { needs: ["plugins.read"], gesture: false }])),
   ...Object.fromEntries(["plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted", "plugin.setEnabled"].map((m) => [m, { needs: ["plugins.manage"], gesture: true }])),
 };
@@ -401,6 +431,8 @@ const THIRD = "acme-panel";
 /** The app's connection as the door's own look-ups see it: a plugin with one plain setting (`k`, `region`) and one key
  *  (`token`), and one `api-key` sign-in (index 0) and one browser sign-in (index 1). */
 async function appConnection(method: string, params?: unknown): Promise<unknown> {
+  if (method === "computer.list") return { computers: [{ name: "Studio", link: "self" }, { name: "Laptop", link: "lan" }] };
+  if (method === "agent.start") return { session: "s_new" };
   // The core's own session, for a read by kind: a bot's conversation (`b_…`), else a code session.
   if (method === "session.get") return { session: { kind: String((params as { id?: unknown } | undefined)?.id ?? "").startsWith("b_") ? "bot" : "coding" } };
   if (method === "plugin.get") return { plugin: { id: "tarot", manifest: { settings: { k: { type: "string" }, region: { type: "string" }, token: { type: "secret" } } } } };
@@ -447,6 +479,8 @@ const WORST: Record<string, Worst> = {
   "plugin.grant.list": "read", // the files and folders picked for one plugin: paths only the user chose
   "command.list": "read", // each command's default key and whether it is bound, for the Plugins page's Keys lines
   "computer.list": "read", // the computers' names, to tick which a plugin's server runs on
+  "agent.backends": "read", // the coding agents plugins bring and which computers have them
+  "agent.start": "starts a model turn", // a coding session in a folder the person picked in main's dialog, no prompt
   "notify.mutes": "read", // which plugins' notifications are muted
   "notify.setMuted": "harmless change", // mutes or unmutes one plugin's notifications to the user; nothing it may do moves
   "ui.pick": "main-owned dialog", // main's own open dialog; the page gets a one-use token and a name
@@ -500,13 +534,15 @@ function paramsFor(method: string, part: string, tokens: PickTokens, cap = ""): 
     case "notify.setMuted":
       return { pluginId: "tarot", muted: true };
     case "ui.pick":
-      return { kind: "folder", use: "plugin.install" };
+      return { kind: "folder", use: cap === "user.send" ? "agent.start" : "plugin.install" };
     case "ui.secret":
       return { id: cap === "bots.edit" ? "alpha" : "tarot", key: "token" };
     case "session.resend":
       return { session: "b_alpha" };
     case "conversation.messageAction":
       return { entry: "alpha#pin", session: "b_alpha", seq: 7 };
+    case "agent.start":
+      return { backend: "moss-code", root: tokens.issue(part, join(homedir(), "projects", "new"), "agent.start") };
     case "session.diff":
     case "session.outputs":
     case "session.context":
@@ -569,13 +605,13 @@ describe("the door, table by table: what each entry needs, with what press", () 
       [PLUGINS_PART]: ["plugin.install", "plugin.remove", "plugin.get", "plugin.settings.get", "plugin.settings.set", "ui.pick", "ui.secret", "plugin.logs", "notify.setMuted", "computer.list", "command.list"],
       [BOT_EDITOR_PART]: ["bot.setUserLayer", "models.list", "plugin.list", "plugin.ui", "ui.secret", "ui.settings"],
       [CONVERSATION_PART]: ["archive.history", "session.resend", "conversation.messageAction"],
-      [SHELL_PART]: ["account.status", "computer.list"],
+      [SHELL_PART]: ["account.status", "computer.list", "agent.backends", "agent.start", "ui.pick"],
       "moss/sidebar": ["account.status", "computer.list"],
       "moss/panel": ["session.outputs", "session.context", "session.connectors", "computer.list"],
       "moss/panel-diff": ["session.diff"],
       "moss/archive": ["archive.list", "archive.history"],
     };
-    for (const [part, methods] of Object.entries(makes)) for (const m of methods) expect([part, m, verdict(part, m, paramsFor(m, part, new PickTokens(), part === BOT_EDITOR_PART ? "bots.edit" : "")).ok]).toEqual([part, m, true]);
+    for (const [part, methods] of Object.entries(makes)) for (const m of methods) expect([part, m, verdict(part, m, paramsFor(m, part, new PickTokens(), part === BOT_EDITOR_PART ? "bots.edit" : part === SHELL_PART ? "user.send" : "")).ok]).toEqual([part, m, true]);
     const src = readFileSync(join(import.meta.dir, "../src/main/ui/tree-calls.ts"), "utf8");
     expect(src).not.toMatch(/"moss\/[a-z-]+"/);
   });

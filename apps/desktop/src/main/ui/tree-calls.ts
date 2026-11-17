@@ -25,6 +25,8 @@ import { withImplied } from "@waifucave/moss-plugin-sdk";
 import { displayText } from "@waifucave/moss-plugin-sdk/plain";
 import { resend } from "./resend";
 import { messageAction } from "./message-action";
+import { homedir } from "node:os";
+import { isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 /** The bundled tree whose notices are the app's own: never muted. */
 const MOSS_TREE = "moss";
 
@@ -38,6 +40,8 @@ export const PLUGINS_MANAGE = "plugins.manage";
 export const TOOLS_PERMISSIONS = "tools.permissions";
 export const ACCOUNT_READ = "account.read";
 export const COMMANDS_RUN = "commands.run";
+export const USER_SEND = "user.send";
+export const SESSIONS_READ = "sessions.read";
 
 export interface TreeCall {
   disposition: Disposition;
@@ -75,9 +79,11 @@ export function uiSetShape(params: unknown): "lists" | "look" {
 }
 
 /** The pick uses each capability gives. */
-export type PickUse = "plugin.install" | "plugin.dev.add";
+export type PickUse = "plugin.install" | "plugin.dev.add" | "agent.start";
 const PICK_USES: Readonly<Record<string, readonly PickUse[]>> = {
   [PLUGINS_MANAGE]: ["plugin.install", "plugin.dev.add"],
+  // A new session's folder (spec §9.4): the person picks it in main's own dialog; the page holds only the token.
+  [USER_SEND]: ["agent.start"],
 };
 
 /** A `plugin.settings.*` call that names a bot, from a holder of `bots.edit`, is a bot's Edit page's (its own bot's
@@ -130,6 +136,10 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // The models a session or a bot can be set to, with whether each provider is signed in (the catalog, no session's data).
   "models.list": read(["sessions.read", "bots.read"]),
   "computer.list": read("computers.read"),
+  // A new session (spec §9.4): the coding agents plugins bring, with what this computer has; and starting one, the
+  // person's own press, in a folder they picked in main's dialog (a pick token, `agentStart`), with no prompt.
+  "agent.backends": read(SESSIONS_READ),
+  "agent.start": press(USER_SEND),
   "plugin.logs": read("logs.read"),
   // Settings' Tools tab: what each plugin tool may do and the card rules saved for one bot. A value decides whether a
   // card is raised at all, so setting one or taking one back is the user's own press.
@@ -579,6 +589,7 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   if ((r.method === "plugin.settings.get" || r.method === "plugin.settings.set") && namesBot(r.params) && verdict.by === BOTS_EDIT) return editorSetting(r, part);
   if (r.method === "ui.pick") return pick(r, part, c);
   if (r.method === "session.resend") return resend(r, part);
+  if (r.method === "agent.start") return agentStart(r, part);
   if (r.method === "conversation.messageAction") return messageAction(r, part);
   if (r.method === "ui.secret") return secret(r, part, has(PLUGINS_MANAGE));
   if (PAGE_METHODS.has(r.method)) {
@@ -706,7 +717,7 @@ async function pick(r: TreeRoute, part: string, c: TreeCaller): Promise<{ token:
   // The uses the part's plugin's capabilities give (`PICK_USES`), never its id.
   const allowed = Object.entries(PICK_USES).flatMap(([cap, uses]) => (holds(c.capabilities, cap) ? uses : []));
   const use = allowed.find((u) => u === p.use);
-  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
+  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage or user.send capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
   const filters = Array.isArray(p.filters)
     ? p.filters.slice(0, 8).flatMap((f: unknown) => {
       const x = (f ?? {}) as { name?: unknown; extensions?: unknown };
@@ -728,4 +739,32 @@ function pickedName(path: string): string {
   return neutralised(path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "", 80);
 }
 
+/** A picked folder as a place in the folder tree: `home/<this computer>/<the folder inside the user's home>`, or
+ *  undefined for one outside the home (a session works in a folder of this computer's home, §9.3). */
+export function homeTreePathOf(path: string, computer: string, home: string = homedir()): string | undefined {
+  if (!isAbsolute(path)) return undefined;
+  const rel = relative(resolvePath(home), resolvePath(path));
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  return `home/${computer}/${rel.split(sep).join("/")}`;
+}
+
+/** `agent.start` from a part (the shell's page that starts a session): `{ backend, root: <pick token> }` and nothing
+ *  else. The token is the one `ui.pick` issued this part for this use, spent here; the folder is the person's pick in
+ *  main's dialog, inside their home, never a path from the page; the computer is this one (main's own listing). The
+ *  session starts with no prompt (the agent starts with the person's first message). The page gets back the session's
+ *  id only. */
+async function agentStart(r: TreeRoute, part: string): Promise<{ session: string }> {
+  const raw = obj(r.params);
+  if (typeof raw.backend !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(raw.backend)) throw r.refuse("which agent?");
+  const path = (r.tokens ?? new PickTokens()).redeem(raw.root, part, "agent.start");
+  if (path === undefined) throw r.refuse("pick the session's folder first");
+  const listed = obj(await r.request("computer.list", {}));
+  const self = (Array.isArray(listed.computers) ? listed.computers : []).map(obj).find((c) => c.link === "self");
+  if (typeof self?.name !== "string") throw r.refuse("this computer isn't known yet");
+  const root = homeTreePathOf(path, self.name);
+  if (root === undefined) throw r.refuse("a session works in a folder of this computer's home: pick one inside it");
+  const got = obj(await r.request("agent.start", { backend: raw.backend, computer: self.name, root }));
+  if (typeof got.session !== "string") throw r.refuse("the session didn't start");
+  return { session: got.session };
+}
 

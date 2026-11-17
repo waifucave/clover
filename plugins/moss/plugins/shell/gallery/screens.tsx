@@ -12,7 +12,7 @@ import { TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
 import type { EntryComponent } from "../client/local";
 import { useState } from "react";
 import type { ConversationItem } from "../../conversation/client/types";
-import { APPROVAL_PENDING, APPROVAL_PENDING_CARD, at, BASIC, bot, GREETING, tool, user } from "../../conversation/gallery/fixtures";
+import { APPROVAL_PENDING, APPROVAL_PENDING_CARD, at, bot, tool, user } from "../../conversation/gallery/fixtures";
 import type { ShellStart } from "../client/Shell";
 import type { Story } from "./story";
 import { waitingCard, world, type WorldOptions } from "./world";
@@ -46,13 +46,6 @@ const LONG_ITEMS: ConversationItem[] = [
   tool(at(0, 13, 45), { name: "Bash", detail: "bun test plugins/moss/panel-files", computer: "Studio", output: "21 pass\n0 fail" }),
   bot(at(0, 13, 45), "Fixed, and the files tests pass. The panels next: I'll keep each one a plugin of its own, so the browser can arrive later from [its own plugin](https://github.com/waifucave/moss/pulls) without the host changing."),
   ...CODE_ITEMS,
-];
-
-/** A bot's tab: Alpha starts a coding agent (ACP) for the user, and it runs. */
-const BOT_AGENT_ITEMS: ConversationItem[] = [
-  ...GREETING,
-  user(at(0, 10, 0), "The garden planner's CSV export puts every date a day early. Can you get that fixed?"),
-  bot(at(0, 10, 1), "I've started **Codex** on it, in `~/projects/garden-planner` on Studio. It's working now: open it from the column to follow along or tell it something."),
 ];
 
 /** The coding agent's own transcript: Alpha's ask, its run, its answer. */
@@ -112,7 +105,6 @@ const TAROT: NonNullable<WorldOptions["extra"]>[number] = {
   capabilities: ["conversation.read"],
   components: { TarotButton, UsageStatus, Reactions, Badge },
   entries: [
-    { id: "draw", spot: "bot.header.action", component: "TarotButton", fields: { title: "Draw a card" } },
     { id: "usage", spot: "status", component: "UsageStatus" },
     { id: "reactions", spot: "conversation.message.extra", component: "Reactions" },
     { id: "app", spot: "sidebar.app", component: "Badge", fields: { title: "Tarot", opens: "tarot" } },
@@ -128,15 +120,8 @@ interface ScreenConfig {
   world?: WorldOptions;
 }
 
-const BOT_TAB = { route: "bot", params: { bot: "alpha" } };
 const CODE_TAB = { route: "agent", params: { session: "session-panels" } };
 const code = (panels: string[], items: readonly ConversationItem[] = CODE_ITEMS): ScreenConfig => ({ start: { route: CODE_TAB, panels }, world: { transcripts: { "session-panels": { items } } } });
-const alpha = (items: readonly ConversationItem[], extra: Partial<ScreenConfig> = {}): ScreenConfig => ({
-  start: { route: BOT_TAB },
-  ...extra,
-  world: { ...extra.world, transcripts: { s_alpha: { items }, "agent-export": { items: AGENT_ITEMS, running: true }, ...extra.world?.transcripts } },
-});
-
 function Screen({ config }: { config: ScreenConfig }) {
   // One world per screen for its life: a new one each render would start every part's loads again.
   const [runtime] = useState(() => world(config.world));
@@ -154,9 +139,6 @@ const SIZES = [
 
 /** The M1 screens, now through the runtime. */
 const SCREENS: { id: string; title: string; notes: string; config: ScreenConfig }[] = [
-  { id: "bots", title: "The bot side", notes: "Alpha's tab: the conversation over the composer, the level (on Studio) and model pills under it. The sidebar lets the desktop through; the title bar lets the transcript through.", config: alpha([...GREETING, ...BASIC]) },
-  { id: "bot-column", title: "A bot's tab with its slim column", notes: "Alpha has started a coding agent. The slim column shows its agents and tasks, context and outputs; the title bar offers only the column and the browser.", config: alpha(BOT_AGENT_ITEMS, { start: { route: BOT_TAB, panels: ["session"] } }) },
-  { id: "bot-agent", title: "A bot's coding agent open in the panel", notes: "Picked from the slim column: the agent's own transcript, with its own composer and model picker, and none of the code side's panels.", config: alpha(BOT_AGENT_ITEMS, { start: { route: BOT_TAB, panels: ["session", "agent"], agent: "agent-export" } }) },
   { id: "code", title: "The code side, a run folded into one line", notes: "A coding session with the session column open: where it runs (the computer and its level), context, connectors, outputs, changes.", config: code(["session"]) },
   { id: "terminal", title: "The terminal panel open", notes: "panel-terminal fills the panel spot keyed terminal; its tabs sit in the panel's header.", config: code(["terminal"]) },
   { id: "diff", title: "The changes panel open", notes: "panel-diff: main → working tree, the first file open, unified.", config: code(["diff"]) },
@@ -168,14 +150,14 @@ const SCREENS: { id: string; title: string; notes: string; config: ScreenConfig 
     id: "settings-pending-card",
     title: "Settings asked for while a card waits",
     notes: "No dialog opens over a waiting card (spec §5.5): settings stays shut, the title bar says why, and the card stays clickable.",
-    config: { start: { route: { route: "settings", params: {} }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: APPROVAL_PENDING, running: true } }, cards: [waitingCard(APPROVAL_PENDING_CARD, "s_alpha")] } },
+    config: { start: { route: { route: "settings", params: {} }, under: CODE_TAB }, world: { transcripts: { "session-panels": { items: APPROVAL_PENDING, running: true } }, cards: [waitingCard(APPROVAL_PENDING_CARD, "session-panels")] } },
   },
-  { id: "languages", title: "The language chooser", notes: "Each language in itself and in English; the current one checked.", config: { start: { route: { route: "settings", params: { section: "languages" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
+  { id: "languages", title: "The language chooser", notes: "Each language in itself and in English; the current one checked.", config: { start: { route: { route: "settings", params: { section: "languages" } }, under: CODE_TAB }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } } } } },
   {
     id: "approval",
     title: "A pending approval",
     notes: "The sealed card in the conversation, one sealed button per option; the composer's pills wait while it's pending.",
-    config: alpha(APPROVAL_PENDING, { world: { transcripts: { s_alpha: { items: APPROVAL_PENDING, running: true } }, cards: [waitingCard(APPROVAL_PENDING_CARD, "s_alpha")] } }),
+    config: { start: { route: CODE_TAB }, world: { transcripts: { "session-panels": { items: APPROVAL_PENDING, running: true } }, cards: [waitingCard(APPROVAL_PENDING_CARD, "session-panels")] } },
   },
 ];
 
@@ -193,23 +175,22 @@ const OWNER: { id: string; title: string; notes: string; config: ScreenConfig }[
 
 /** F-M2's new screens: the pages the runtime adds, and what add-ons look like. */
 const M2: { id: string; title: string; notes: string; config: ScreenConfig }[] = [
-  { id: "settings-plugins", title: "Settings: the plugins and their states", notes: "Each plugin with its state (B's eight), why it is in it, the OKs it runs with in plain words, its logs and its switch.", config: { start: { route: { route: "settings", params: { section: "plugins" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
-  { id: "settings-levels", title: "Settings: each computer's level", notes: "From the computers the core knows; a pick raises a sealed card, and Settings closes for it.", config: { start: { route: { route: "settings", params: { section: "levels" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
-  { id: "settings-devices", title: "Settings: devices", notes: "The devices page manages them (R3): pair one by a code, remove one, choose the main computer; each change asks on a card.", config: { start: { route: { route: "settings", params: { section: "devices" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
-  { id: "settings-device-item", title: "Settings opened at a device", notes: "How the island's Devices tab opens it (lane E's useOpen, a section and an item): the Laptop's row is brought into view and marked until you move on.", config: { start: { route: { route: "settings", params: { section: "devices", item: "dev_laptop" } }, under: BOT_TAB }, world: { transcripts: { s_alpha: { items: [...GREETING, ...BASIC] } } } } },
+  { id: "settings-plugins", title: "Settings: the plugins and their states", notes: "Each plugin with its state (B's eight), why it is in it, the OKs it runs with in plain words, its logs and its switch.", config: { start: { route: { route: "settings", params: { section: "plugins" } }, under: CODE_TAB }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } } } } },
+  { id: "settings-levels", title: "Settings: each computer's level", notes: "From the computers the core knows; a pick raises a sealed card, and Settings closes for it.", config: { start: { route: { route: "settings", params: { section: "levels" } }, under: CODE_TAB }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } } } } },
+  { id: "settings-devices", title: "Settings: devices", notes: "The devices page manages them (R3): pair one by a code, remove one, choose the main computer; each change asks on a card.", config: { start: { route: { route: "settings", params: { section: "devices" } }, under: CODE_TAB }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } } } } },
+  { id: "settings-device-item", title: "Settings opened at a device", notes: "How the island's Devices tab opens it (lane E's useOpen, a section and an item): the Laptop's row is brought into view and marked until you move on.", config: { start: { route: { route: "settings", params: { section: "devices", item: "dev_laptop" } }, under: CODE_TAB }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } } } } },
   { id: "plugins-installed", title: "The Plugins page: what is installed", notes: "Grouped by what needs you, what is on and what is off, searchable; one plugin.list, no call per plugin.", config: { start: { route: { route: "plugins", params: {} } } } },
   { id: "plugins-detail", title: "The Plugins page: one plugin opened", notes: "Its source, what its OK lets it do, its tools, settings, sign-ins and log; Remove asks on a sealed card.", config: { start: { route: { route: "plugins", params: { id: "alpha" } } } } },
   { id: "plugin-index", title: "The plugin index", notes: "Search the indexes you added: what's installed, what has a newer version, what isn't reviewed. Install asks for the plugin's OK on a sealed card.", config: { start: { route: { route: "plugins", params: { tab: "find" } } } } },
   { id: "plugin-index-for-panel", title: "The plugin index, from a panel no plugin fills", notes: "Find a plugin, from the terminal panel's placeholder: the page says what it's looking for and searches for it.", config: { start: { route: { route: "plugins", params: { spot: "panel", key: "terminal" } } } } },
-  { id: "bot-editor", title: "The bot editor", notes: "Alpha's fields, kept as your own layer over its plugin's: the theme is yours (Reset), the rest Alpha's. The avatars come from the installed packs.", config: { start: { route: { route: "bot-editor", params: { bot: "alpha" } } } } },
   { id: "archive", title: "The archive of old sessions", notes: "Readable, never a bot's history; it has its own button in the sidebar.", config: { start: { route: { route: "archive", params: {} } } } },
   { id: "archive-session", title: "An old session, read", notes: "The conversation part draws it, read only. Its approvals read as notes, since no sealed card exists for them.", config: { start: { route: { route: "archive", params: { session: "w-1" } } } } },
   { id: "agent-tab", title: "An agent's live tab", notes: "Opened from the sidebar: watch it, type to it, interrupt it, stop it. Its column and the browser are its panels.", config: { start: { route: { route: "agent", params: { session: "agent-export" } }, panels: ["session"] }, world: { transcripts: { "agent-export": { items: AGENT_ITEMS, running: true } } } } },
   {
     id: "addons",
     title: "Add-ons from another plugin",
-    notes: "A plugin adds without replacing: a button in the bot's header (bot.header.action), reactions under each answer (conversation.message.extra), a status bar line (status) and an app button (sidebar.app).",
-    config: alpha([...GREETING, ...BASIC], { world: { extra: [TAROT] } }),
+    notes: "A plugin adds without replacing: reactions under each answer (conversation.message.extra), a status bar line (status) and an app button (sidebar.app).",
+    config: { start: { route: CODE_TAB }, world: { transcripts: { "session-panels": { items: CODE_ITEMS } }, extra: [TAROT] } },
   },
 ];
 
