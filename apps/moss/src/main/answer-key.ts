@@ -8,8 +8,11 @@
 // MOSS's own user data, in a packaged app; in memory alone in an unpackaged (dev), headless or test run, or the acceptance's
 // kept file in its temp home. Never a plain file of a real build. No biometric or passcode gate, ever. The key never goes into a log line, an error or the engine; signing reads it from memory.
 //
-// Replacing a registered key is a sensitive change (a sealed card, `{ applied: false, card }`); MOSS's first build never
-// replaces its key, and says so if the engine already holds another one for MOSS on this device.
+// Replacing a registered key is a sensitive change: the engine takes it only with the held key's hand-over and then on a
+// sealed card; without one it refuses at once (no card). MOSS's first build never replaces its key, and says so if the
+// engine already holds another one for MOSS on this device. A packaged MOSS keeps its key across starts (the OS's
+// store), so an ordinary restart registers the same key and nothing is asked; a kept key that can't be read at one start
+// is never written over.
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
@@ -35,18 +38,27 @@ export interface SafeStorageLike {
 
 /** The OS's store, through safeStorage: the file holds only what the OS's key encrypted. On macOS that is a Keychain item
  *  only the signed app reads without asking ("app-keychain"); elsewhere the engine hears "none" (the risk accepted). */
-export function safeStorageVault(file: string, storage: SafeStorageLike, platform: NodeJS.Platform = process.platform): KeyVault {
+export function safeStorageVault(file: string, storage: SafeStorageLike, platform: NodeJS.Platform = process.platform, log: (line: string) => void = () => {}): KeyVault {
+  /** The kept key is there but couldn't be read this start (the store locked or refused, for now): it is never written
+   *  over, so a later start that can read it registers the same key again (no hand-over could replace a lost one). */
+  let unreadable = false;
   return {
     held: platform === "darwin" ? "app-keychain" : "none",
     load: () => {
-      if (!existsSync(file) || !storage.isEncryptionAvailable()) return undefined;
+      if (!existsSync(file)) return undefined;
+      if (!storage.isEncryptionAvailable()) { unreadable = true; return undefined; }
       try {
         return new Uint8Array(Buffer.from(storage.decryptString(readFileSync(file)), "base64"));
       } catch {
+        unreadable = true;
         return undefined;
       }
     },
     save: (secret) => {
+      if (unreadable) {
+        log("answer key: the kept key couldn't be read this start; it is kept as it is, and this start's key is in memory only");
+        return;
+      }
       if (!storage.isEncryptionAvailable()) throw new Error("this computer's protected store isn't available");
       mkdirSync(dirname(file), { recursive: true });
       const tmp = `${file}.tmp`;
@@ -175,8 +187,15 @@ export class ProgramAnswerKey {
         return this.stateValue;
       } catch (err) {
         const why = err instanceof RpcCallError ? `${err.code}: ${err.message}` : String(err);
-        // A refusal of the call itself (invalid params: the key's signature, a revoked device) won't change by asking
-        // again; anything else ("not served yet", a timeout, a closed connection) is tried again.
+        // A refusal of the call itself won't change by asking again: invalid params (the key's signature, a revoked
+        // device), or an invalid request (the engine holds another key for MOSS here, and a key can't replace it without
+        // the held key's hand-over, which a lost key can't give: no card is ever raised for it). Anything else ("not
+        // served yet", a timeout, a closed connection) is tried again.
+        if (err instanceof RpcCallError && err.code === -32600) {
+          this.log("answer key: the engine holds another key for MOSS on this device, and this one can't replace it");
+          this.setState({ kind: "refused", why: "The engine holds another answer key for MOSS on this computer, so MOSS can't answer cards here. MOSS keeps its key in this computer's protected store; if that was reset, the engine's key for MOSS has to be removed first." });
+          return this.stateValue;
+        }
         if (err instanceof RpcCallError && err.code === -32602) {
           this.setState({ kind: "refused", why: why.slice(0, 200) });
           return this.stateValue;

@@ -2,10 +2,11 @@
 // `fileVault`): the dev app's key stays across starts in its own user data, a packaged app's is in the OS's store, a test
 // or headless run's in memory (or the acceptance's kept file).
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileVault, ProgramAnswerKey, vaultChoice } from "../src/main/answer-key";
+import { fileVault, ProgramAnswerKey, safeStorageVault, vaultChoice, type SafeStorageLike } from "../src/main/answer-key";
+import { RpcCallError } from "../src/main/client";
 import { refusedLaunchSwitches } from "../src/main/debug-guard";
 
 const dir = mkdtempSync(join(tmpdir(), "moss-launch-"));
@@ -74,5 +75,60 @@ describe("where the answer key is kept", () => {
     if (process.platform !== "win32") expect((statSync(file).mode & 0o777).toString(8)).toBe("600");
     expect(new ProgramAnswerKey(fileVault(file)).publicKey()).toBe(key);
     expect(fileVault(file).held).toBe("none");
+  });
+});
+
+/** The OS's store as safeStorage gives it: a reversible stand-in (no real store is touched), which can be locked. */
+function fakeStore(): SafeStorageLike & { locked: boolean } {
+  const store = {
+    locked: false,
+    isEncryptionAvailable: () => true,
+    encryptString: (plain: string) => Buffer.from(`sealed:${Buffer.from(plain).toString("hex")}`),
+    decryptString: (b: Buffer) => {
+      if (store.locked) throw new Error("the store refused");
+      const t = b.toString();
+      if (!t.startsWith("sealed:")) throw new Error("not sealed");
+      return Buffer.from(t.slice(7), "hex").toString();
+    },
+  };
+  return store;
+}
+
+describe("a packaged MOSS's key across restarts", () => {
+  test("an ordinary restart reads the same key from the OS's store, so the engine is asked nothing", () => {
+    const file = join(dir, "packaged", "answer-key");
+    const store = fakeStore();
+    const key = new ProgramAnswerKey(safeStorageVault(file, store, "darwin")).publicKey();
+    expect(new ProgramAnswerKey(safeStorageVault(file, store, "darwin")).publicKey()).toBe(key);
+    expect(readFileSync(file, "utf8").startsWith("sealed:")).toBe(true);
+  });
+
+  test("a start that can't read the kept key never writes over it: the next start that can read it has the same key", () => {
+    const file = join(dir, "locked", "answer-key");
+    const store = fakeStore();
+    const key = new ProgramAnswerKey(safeStorageVault(file, store, "darwin")).publicKey();
+    const kept = readFileSync(file);
+    store.locked = true;
+    const lines: string[] = [];
+    const stand = new ProgramAnswerKey(safeStorageVault(file, store, "darwin", (l) => lines.push(l))).publicKey();
+    expect(stand).not.toBe(key);
+    expect(readFileSync(file).equals(kept)).toBe(true);
+    expect(lines.some((l) => l.includes("kept as it is"))).toBe(true);
+    store.locked = false;
+    expect(new ProgramAnswerKey(safeStorageVault(file, store, "darwin")).publicKey()).toBe(key);
+    // No store at all: nothing is written, the key is never a plain file.
+    const none = join(dir, "none", "answer-key");
+    expect(() => new ProgramAnswerKey(safeStorageVault(none, { ...fakeStore(), isEncryptionAvailable: () => false }, "linux")).publicKey()).toThrow();
+    expect(existsSync(none)).toBe(false);
+  });
+
+  test("an engine that holds another key for MOSS (no hand-over can replace it) is said once, not asked again forever", async () => {
+    let calls = 0;
+    const client = { request: async () => { calls++; throw new RpcCallError(-32600, "this program already has an answer key: replacing it takes the current key's hand-over"); } };
+    const key = new ProgramAnswerKey(fileVault(join(dir, "held", "key")));
+    const state = await key.register(client, "studio0000000000000", () => true, [1]);
+    expect(state.kind).toBe("refused");
+    expect(state.kind === "refused" && state.why).toContain("holds another answer key for MOSS");
+    expect(calls).toBe(1);
   });
 });

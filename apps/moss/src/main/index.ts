@@ -90,7 +90,7 @@ const answerKey = new ProgramAnswerKey((() => {
   const linuxPlainText = process.platform === "linux" && app.isPackaged && !headless && !testBuild ? (() => { try { return safeStorage.getSelectedStorageBackend() === "basic_text"; } catch { return true; } })() : false;
   const choice = vaultChoice({ packaged: app.isPackaged, headless, testBuild, profile, platform: process.platform, ...(testKeyFile !== undefined && isAbsolute(testKeyFile) ? { testKeyFile } : {}), linuxPlainText });
   if (choice.kind === "file") return fileVault(choice.file);
-  if (choice.kind === "safe-storage") return safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage);
+  if (choice.kind === "safe-storage") return safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage, process.platform, log);
   return memoryVault();
 })(), log);
 let device: string | undefined;
