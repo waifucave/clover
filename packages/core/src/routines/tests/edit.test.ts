@@ -10,7 +10,7 @@ import { gateMossRequest } from "../../auth/moss-caller";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { SideThreadRun } from "../../bots/service";
-import { RoutineEngine, routineFilePath } from "../engine";
+import { moveRoutineFile, RoutineEngine, routineFilePath } from "../engine";
 import { parseRoutine, patchRoutine, type RoutinePatch } from "../file";
 import { routineMethods } from "../rpc";
 
@@ -438,5 +438,31 @@ describe("routine.edit changes only what the patch names", () => {
         text = out.text;
       }
     }
+  });
+});
+
+describe("routine.edit: a rename", () => {
+  test("never leaves two files with one id: stopped between its two steps, one file holds the routine, and the next edit carries on", async () => {
+    const home = tempHome();
+    const path = write(home, "brief", "id: r_brief001\nname: Brief\ntriggers: []");
+    const to = routineFilePath(home, "alpha", "evening");
+    const text = readFileSync(path, "utf8").replace("name: Brief", 'name: "Evening"');
+    // A crash after the first step (the new text under the old name), before the rename.
+    expect(() => moveRoutineFile(path, to, text, () => { throw new Error("the process died here"); })).toThrow("the process died here");
+    const files = readdirSync(join(path, "..")).filter((f) => f.endsWith(".md"));
+    expect(files).toEqual(["brief.md"]);
+    expect(readFileSync(path, "utf8")).toContain('name: "Evening"');
+    // The engine loads it as one routine (no duplicate), and an edit finishes the rename.
+    const { engine } = engineOn(home, new FakeClock());
+    await engine.start();
+    expect(engine.list().map((v) => [v.id, v.state])).toEqual([["r_brief001", "active"]]);
+    const view = await engine.edit("r_brief001", "alpha", { name: "Evening" });
+    expect(view.file).toBe("home/Studio/.moss/routines/alpha/evening.md");
+    expect(readdirSync(join(path, "..")).filter((f) => f.endsWith(".md"))).toEqual(["evening.md"]);
+    // A file at the new name is never written over.
+    writeFileSync(join(path, "..", "taken.md"), "not a routine\n");
+    expect(() => moveRoutineFile(to, join(path, "..", "taken.md"), text)).toThrow("another file");
+    expect(readFileSync(join(path, "..", "taken.md"), "utf8")).toBe("not a routine\n");
+    engine.stop();
   });
 });
