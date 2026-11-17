@@ -43,6 +43,9 @@ export interface MethodSpec<P extends z.ZodType = z.ZodType, R extends z.ZodType
    *  its sessions (`peer.call` as a session). The user's own clients and a paired computer's own calls (no session)
    *  may call it. For what only the user may read, such as a card's sealed fields (`card.list`, `card.get`). */
   readonly noSessions?: true;
+  /** The person's window alone: an `app` connection whose program has windows (`WINDOW_PROGRAMS`: MOSS and MOSS Code),
+   *  never the host, which is also an `app` and also the user but draws only on the screen. Checked at dispatch. */
+  readonly windowOnly?: true;
   readonly change?: ChangeKind;
   /** One line: what it does. */
   readonly doc: string;
@@ -59,6 +62,7 @@ export interface MethodInput<P extends z.ZodType, R extends z.ZodType> {
   capability?: string;
   userOnly?: boolean;
   noSessions?: true;
+  windowOnly?: true;
   change?: ChangeKind;
   doc: string;
 }
@@ -81,6 +85,7 @@ export function defineMethod<P extends z.ZodType, R extends z.ZodType>(m: Method
     ...(m.capability !== undefined ? { capability: m.capability } : {}),
     userOnly: m.userOnly ?? false,
     ...(m.noSessions ? { noSessions: true as const } : {}),
+    ...(m.windowOnly ? { windowOnly: true as const } : {}),
     ...(m.change !== undefined ? { change: m.change } : {}),
     doc: m.doc,
   };

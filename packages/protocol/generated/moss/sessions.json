@@ -2606,6 +2606,7 @@
         "app"
       ],
       "userOnly": true,
+      "windowOnly": true,
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2741,6 +2742,7 @@
         "app"
       ],
       "userOnly": true,
+      "windowOnly": true,
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

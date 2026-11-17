@@ -162,6 +162,7 @@ describe("MOSS connections (C-M1)", () => {
       }),
       "session.list": handler(SESSIONS_METHODS.sessionList, () => { throw new MethodError(MOSS_ERR.NOT_THE_USER, "only the user can list", { why: "test" }); }),
       "session.interrupt": handler(SESSIONS_METHODS.sessionInterrupt, (p, ctx) => { calls.push({ method: "session.interrupt", sessionId: p.id, params: ctx.caller }); return { ok: true as const }; }),
+      "routine.get": handler(SESSIONS_METHODS.routineGet, (p, ctx) => { calls.push({ method: "routine.get", sessionId: p.id, params: ctx.caller }); throw new MethodError(ERR.NOT_FOUND, "no such routine (the handler was reached)"); }),
       // B: `command.run`, its args checked against the command's schema before the handler runs.
       ...commandMethods({
         registry: { get: ((id: string) => records[id]) as never, entries: ((point: string) => point !== "commands" ? [] : [{
@@ -299,6 +300,28 @@ describe("MOSS connections (C-M1)", () => {
     const s = await c.request("pair.status", {});
     expect(s.result).toEqual({ bots: [], routines: 0, agents: 0, canHandOver: false, safeMode: false });
     c.close();
+  });
+
+  test("a window-only method (routine.get, routine.edit) is refused to the host, which is also an app and the user, and reaches the handler from a window", async () => {
+    const b = await boot();
+    const host = await Client.connect(b.socketPath);
+    expect((await host.hello("app", b.appToken, { surface: "host" })).result?.surface).toBe("host");
+    const before = b.calls.filter((c) => c.method === "routine.get").length;
+    for (const method of ["routine.get", "routine.edit"]) {
+      const r = await host.request(method, method === "routine.get" ? { bot: "alpha", id: "r_abcdefgh" } : { bot: "alpha", id: "r_abcdefgh", patch: { paused: true } });
+      expect(r.error).toMatchObject({ code: MOSS_ERR.NOT_THE_USER });
+      expect(String(r.error?.message)).toContain("the host draws only on the screen");
+    }
+    expect(b.calls.filter((c) => c.method === "routine.get").length).toBe(before);
+    for (const surface of ["moss", "code"] as const) {
+      const w = await Client.connect(b.socketPath);
+      expect((await w.hello("app", b.appToken, { surface })).result?.surface).toBe(surface);
+      const r = await w.request("routine.get", { bot: "alpha", id: "r_abcdefgh" });
+      expect(r.error).toMatchObject({ code: ERR.NOT_FOUND });
+      w.close();
+    }
+    expect(b.calls.filter((c) => c.method === "routine.get").length).toBe(before + 2);
+    host.close();
   });
 
   test("an app hello's surface (spec revision 19, G1): absent is code, with today's mounts; one live host; app role only", async () => {

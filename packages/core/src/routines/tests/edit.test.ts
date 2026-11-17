@@ -68,6 +68,8 @@ describe("routine.edit: who may call it", () => {
       expect(spec.roles).toEqual(["app"]);
       expect(spec.userOnly).toBe(true);
       expect((spec as { change?: unknown }).change).toBeUndefined();
+      // The person's window alone: the host (also an app, also the user) is refused at dispatch (moss.ts isWindowConn).
+      expect(spec.windowOnly).toBe(true);
     }
     // Every other role is refused by its allow list: a plugin's layer or host, a bot's or tool's CLI, a phone, the web, a peer.
     for (const method of [M.routineEdit.name, M.routineGet.name]) for (const role of MOSS_ROLES.filter((r) => r !== "app")) {

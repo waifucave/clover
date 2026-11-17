@@ -16,7 +16,7 @@
 import {
   MOSS_ERR, MOSS_METHODS, MOSS_PROTOCOL_MIN_VERSION, MOSS_ROLES, MOSS_PROTOCOL_VERSION, MossHelloParams, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type MossHelloResult, type MossRole, type SessionKind,
-  CardPlacement, PresenceReport, type Program, type Surface, PLUGIN_ROLES, dataKindOfSession, kindCapability, type DataKind, type Card,
+  CardPlacement, PresenceReport, type Program, type Surface, PLUGIN_ROLES, WINDOW_PROGRAMS, dataKindOfSession, kindCapability, type DataKind, type Card,
 } from "@waifucave/moss-protocol";
 import type { ReleaseHome } from "../contracts/release-home";
 import { doorMessage, inertAdmission, judgeHello, refusalMessage, type HelloVerdict } from "../update/release-door";
@@ -37,6 +37,11 @@ import type { DaemonPlatform } from "../platform/transport";
 import { sendCoreEvent, type CoreEventInput, type CoreEventOptions } from "./core-events";
 
 /** A thrown JSON-RPC error; the server's pump reads `code`, `message` and `data` off it. */
+/** Whether a connection is one of our programs' windows: role `app`, program MOSS or MOSS Code (never the host). */
+export function isWindowConn(conn: Pick<MossConn, "role" | "program">): boolean {
+  return conn.role === "app" && conn.program !== undefined && (WINDOW_PROGRAMS as readonly string[]).includes(conn.program);
+}
+
 export class MossRpcError extends Error {
   constructor(public readonly code: number, message: string, public readonly data?: unknown) { super(message); }
 }
@@ -428,6 +433,11 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     if (!p.success) throw new MossRpcError(ERR.INVALID_PARAMS, `invalid params for ${method}`);
     // The device's single answer key is MOSS Code's (lane RT, ruling C): another program registers its own key with
     // `device.programKey.set`, never this one.
+    // The person's window alone (`windowOnly`): an app connection of a program with windows, never the host's (also an
+    // app, also the user) nor any other role.
+    if (spec.windowOnly === true && !isWindowConn(conn)) {
+      throw new MossRpcError(MOSS_ERR.NOT_THE_USER, `${method} is the person's window's: ${conn.program === "host" ? "the host draws only on the screen" : "this connection is no program's window"}`);
+    }
     if (method === "device.answerKey.set" && conn.program !== undefined && conn.program !== "code") {
       throw new MossRpcError(MOSS_ERR.NOT_THE_USER, "this desktop's single answer key is MOSS Code's: another program registers its own (device.programKey.set)");
     }
