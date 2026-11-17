@@ -222,18 +222,34 @@ describe("the daemon's fetch limits, against a misbehaving peer", () => {
   });
 
   test("a body nobody reads (no credit back) is held at most the credit wait: then it ends, its slot freed, the worker told why", async () => {
-    const h = harness(() => new Response(new Uint8Array(1024 * 1024), { status: 429 }), { creditWaitMs: 100 });
-    for (let i = 0; i < 32; i++) expect(((await h.head("moss/aa", `u${i}`)) as { status: number }).status).toBe(429);
-    for (let i = 0; i < 20; i++) await tick();
-    // 32 open, each waiting for credit after its first window: the 33rd is refused now...
-    expect((await rejection(h.head("moss/aa", "u32")))?.message).toContain("32 fetches open");
-    await new Promise((r) => setTimeout(r, 250));
-    // ...and goes out once the wait has ended them.
-    expect(h.ch.open).toBe(0);
-    expect(((await h.head("moss/aa", "u33")) as { status: number }).status).toBe(429);
-    const errors = h.sent.filter((s) => s.m === "pluginHost.fetchBody" && s.p.error !== undefined);
-    expect(errors).toHaveLength(32);
-    expect((errors[0]!.p.error as { code: string; message: string })).toMatchObject({ code: "timeout", message: expect.stringContaining("nobody read the response body") });
-    h.ch.closeAll();
+    // The credit wait is the test's own: a timer asked for with this marker length is held here and fired by hand, so what
+    // the test checks never depends on how long the 32 heads take (a real 100 ms wait ran out under load, freeing slots).
+    const WAIT = 987_654;
+    const held: (() => void)[] = [];
+    const real = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (ms === WAIT) { held.push(fn); return 0; }
+      return (real as (...a: unknown[]) => unknown)(fn, ms, ...rest);
+    }) as unknown as typeof setTimeout;
+    try {
+      const h = harness(() => new Response(new Uint8Array(1024 * 1024), { status: 429 }), { creditWaitMs: WAIT });
+      for (let i = 0; i < 32; i++) expect(((await h.head("moss/aa", `u${i}`)) as { status: number }).status).toBe(429);
+      // Each of the 32 has sent its first window and is waiting for credit: wait for that, not for a time.
+      for (let i = 0; i < 1000 && held.length < 32; i++) await tick();
+      expect(held).toHaveLength(32);
+      // 32 open, each waiting for credit: the 33rd is refused now...
+      expect((await rejection(h.head("moss/aa", "u32")))?.message).toContain("32 fetches open");
+      // ...and goes out once the wait has ended them.
+      for (const fire of held.splice(0)) fire();
+      for (let i = 0; i < 1000 && h.ch.open > 0; i++) await tick();
+      expect(h.ch.open).toBe(0);
+      expect(((await h.head("moss/aa", "u33")) as { status: number }).status).toBe(429);
+      const errors = h.sent.filter((s) => s.m === "pluginHost.fetchBody" && s.p.error !== undefined);
+      expect(errors).toHaveLength(32);
+      expect((errors[0]!.p.error as { code: string; message: string })).toMatchObject({ code: "timeout", message: expect.stringContaining("nobody read the response body") });
+      h.ch.closeAll();
+    } finally {
+      globalThis.setTimeout = real;
+    }
   });
 });

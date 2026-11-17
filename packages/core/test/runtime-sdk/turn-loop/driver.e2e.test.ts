@@ -732,9 +732,12 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     let may = true;
     let resume: () => void = () => {};
     let leaseLost = false;
+    // `resume` is only the real one once the driver is holding the call (it is made in `whenMayAct`): a fixed sleep before
+    // calling it called the placeholder when a slow runner had not got that far, and the held call then waited for ever.
+    let holding = false;
     const ctx = context(home, "winter-test/calls", {
       mayAct: () => may,
-      whenMayAct: () => (leaseLost ? Promise.reject(new Error("lease lost")) : new Promise<void>((r) => { resume = () => { may = true; r(); }; })),
+      whenMayAct: () => (leaseLost ? Promise.reject(new Error("lease lost")) : new Promise<void>((r) => { holding = true; resume = () => { may = true; r(); }; })),
     });
     const ran: number[] = [];
     const core: CoreToolDef[] = [{ name: "ListAgents", description: "List agents.", inputSchema: { type: "object", properties: {} }, run: async () => { ran.push(Date.now()); return { text: "none", isError: false }; } }];
@@ -743,7 +746,9 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     const driver = new BotSessionDriver(ctx, deps(home, spawn, { coreTools: () => core, canUseTool }));
     try {
       const p = driver.turn(user("CALL ListAgents {}"), control());
-      await Bun.sleep(1_500);
+      for (let i = 0; i < 400 && !holding; i++) await Bun.sleep(100);
+      expect(holding).toBe(true);
+      await Bun.sleep(500);
       expect(ran).toEqual([]);
       const resumedAt = Date.now();
       resume();
