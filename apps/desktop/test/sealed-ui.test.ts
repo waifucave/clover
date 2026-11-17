@@ -331,7 +331,7 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect(answerCallsOf(r.home), r.output).toHaveLength(1);
   }, 120_000);
 
-  test("a press Chromium hands to the embedding document over a visible sealed button says press again, and the next press lands", async () => {
+  onCi("a press Chromium hands to the embedding document over a visible sealed button says press again, and the next press lands", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", missFirst: true } });
     expect(r.output).toContain("sealed-click: missed press set up true");
     expect(r.output).toMatch(/sealed: a press over card_0a1b2c3d button:allow_once in the main window reached no sealed page; it says press again/);
@@ -341,7 +341,7 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect(answerCallsOf(r.home), r.output).toHaveLength(1);
   }, 120_000);
 
-  test("a press that reached the sealed page gets no missed-press notice", async () => {
+  onCi("a press that reached the sealed page gets no missed-press notice", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" } });
     expect(r.output).not.toContain("reached no sealed page");
   }, 120_000);
