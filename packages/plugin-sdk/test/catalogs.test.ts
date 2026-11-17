@@ -209,7 +209,7 @@ describe("points and spots", () => {
     const msg = SPOTS.find((s) => s.name === "conversation.message")!;
     expect(msg.keys).toEqual(MESSAGE_KINDS);
     expect(msg.keep).toEqual(["approval"]);
-    expect(msg.needs).toEqual(["conversation.read"]);
+    expect(msg.needs).toEqual(["sessions.read"]);
     expect(new Set(names).size).toBe(names.length);
     expect(SPOTS.find((s) => s.name === "panel.view")!.doc).toBe("A spot inside each panel view, keyed by the view's id.");
   });
@@ -240,7 +240,7 @@ describe("points and spots", () => {
       expect(PointDeclSchema.safeParse(declared).success).toBe(true);
       expect(decl!.props !== undefined).toBe(SPOTS.some((s) => s.name === name));
     }
-    expect(catalogPointDecl("conversation.message")).toMatchObject({ shape: "keyed", keep: ["approval"], needs: ["conversation.read"], context: ["bot"] });
+    expect(catalogPointDecl("conversation.message")).toMatchObject({ shape: "keyed", keep: ["approval"], needs: ["sessions.read"], context: ["bot"] });
     expect(catalogPointDecl("webhook.ingress")).toMatchObject({ shape: "list", fields: { type: "object" } });
     expect(catalogPointDecl("webhook.ingress")!.props).toBeUndefined();
     expect(catalogPointDecl("webhook.ingress")).not.toHaveProperty("platform");

@@ -1990,7 +1990,7 @@
       "declaredBy": "bot-tab",
       "botsOffer": true,
       "needs": [
-        "conversation.read"
+        "sessions.read"
       ],
       "context": [
         "bot"
@@ -2222,7 +2222,7 @@
         "approval"
       ],
       "needs": [
-        "conversation.read"
+        "sessions.read"
       ],
       "context": [
         "bot"
@@ -2315,7 +2315,7 @@
       "declaredBy": "conversation",
       "botsOffer": true,
       "needs": [
-        "conversation.read"
+        "sessions.read"
       ],
       "context": [
         "bot"
@@ -2477,7 +2477,7 @@
       "declaredBy": "conversation",
       "botsOffer": true,
       "needs": [
-        "conversation.read"
+        "sessions.read"
       ],
       "context": [
         "bot"

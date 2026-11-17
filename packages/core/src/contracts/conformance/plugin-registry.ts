@@ -265,7 +265,7 @@ export function runPluginRegistryConformance(makeRaw: PluginRegistryFactory): vo
       };
       const reg = make({ plugins: [view] });
       const point = reg.points().find((p) => p.name === "conversation.message")!;
-      expect(point).toMatchObject({ spot: true, shape: "keyed", decl: { keep: ["approval"], needs: ["conversation.read"] } });
+      expect(point).toMatchObject({ spot: true, shape: "keyed", decl: { keep: ["approval"], needs: ["sessions.read"] } });
       expect(point.decl?.props).toMatchObject({ type: "object" });
     });
 

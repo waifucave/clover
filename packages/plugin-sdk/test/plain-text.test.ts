@@ -23,7 +23,6 @@ describe("its call sites share it", () => {
     "packages/core/src/runtime-sdk/tool-display.ts",
     "apps/desktop/src/main/ui/tree-calls.ts",
     // A spot entry's title, as the sidebar, the title bar and Settings show it (`fieldText`: each part's own copy, F2b).
-    "plugins/moss/plugins/bot-editor/client/local.ts",
     "plugins/moss/plugins/character/client/local.ts",
     "plugins/moss/plugins/composer/client/local.ts",
     "plugins/moss/plugins/conversation/client/local.ts",

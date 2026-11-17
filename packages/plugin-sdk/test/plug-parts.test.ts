@@ -6,7 +6,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { botPartLines, describeOk, partScopeOf, pluginParts, skillItem, validateManifest } from "../src/index";
 
-const ALPHA = JSON.parse(readFileSync(join(import.meta.dir, "../../../plugins/alpha/moss.json"), "utf8")) as Record<string, unknown>;
+// Alpha's manifest as the bundled plugin bot she was before bots became engine data (lane MC): a plugin in that shape is
+// still read the same.
+const ALPHA = JSON.parse(readFileSync(join(import.meta.dir, "fixtures", "alpha-plugin-era.json"), "utf8")) as Record<string, unknown>;
 const engines = { moss: "^1.0.0" };
 
 describe("a plugin in today's shape keeps its meaning and its OK lines", () => {
