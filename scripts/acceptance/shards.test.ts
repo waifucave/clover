@@ -59,7 +59,7 @@ describe("the split", () => {
       expect(plan[0]).toEqual(["chain"]);
     }
     // With 2 shards the chain runs alone and the rest share the other.
-    expect(planShards(2)).toEqual([["chain"], ["window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "plugin-app", "browser", "models"]]);
+    expect(planShards(2)).toEqual([["chain"], ["window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models"]]);
     expect(() => planShards(0)).toThrow();
   });
 
