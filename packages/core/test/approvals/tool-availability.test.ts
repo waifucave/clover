@@ -76,17 +76,18 @@ async function world(declared: { web: Record<string, string>; blender: Record<st
   let blenderTools = ["Render", "Export"];
   const { host, calls } = fakeHost((server) => (server === "web" ? ["WebSearch", "WebFetch"] : blenderTools));
   let settings = {} as Settings;
+  let file = settings; // the settings file: a write reaches it at once, and the live copy only when the watcher swaps it
   const saves: Settings[] = [];
   const events: unknown[] = [];
   let mcp!: PluginMcp;
   const store = new EngineToolSettings({
-    read: () => settings, load: () => settings, save: (next) => { settings = next; saves.push(next); },
+    read: () => settings, load: () => file, save: (next) => { settings = next; file = next; saves.push(next); },
     listing: () => mcp.toolListing(), emit: (e) => events.push(e),
   });
   mcp = new PluginMcp({ registry: registry as never, host: host as never, self: () => "Studio", ...(withSetting ? { availability: (s: string, t: string) => store.availabilityOf(s, t) } : {}) });
   await mcp.refresh();
   return {
-    mcp, store, calls, events, saves, settings: () => settings, setSettings: (s: Settings) => { settings = s; },
+    mcp, store, calls, events, saves, settings: () => settings, setSettings: (s: Settings) => { settings = s; file = s; }, setLive: (s: Settings) => { settings = s; },
     /** What the plugin declares changes (an update of the plugin), and the registry says so. */
     redeclare: async (blender: Record<string, string>, listed?: string[]) => {
       (entries[1]!.value as { tools: unknown }).tools = blender;
@@ -349,5 +350,82 @@ describe("only the user's own client sets it", () => {
     } finally {
       w.close();
     }
+  });
+});
+
+describe("set, then send at once: the next turn's list has the new value", () => {
+  test("with no wait, and with the settings watcher's late reload of the older file between the press and the turn", async () => {
+    const w = await world();
+    try {
+      const older = w.settings();
+      w.store.setAvailability(ACME, "Export", "off");
+      expect(Object.keys(w.loads("bot"))).toEqual(["Render"]);
+      w.setLive({ ...older }); // the watcher swaps in a reload of the file as it was before the press
+      expect(Object.keys(w.loads("bot"))).toEqual(["Render"]);
+      expect(await w.mcp.call({ server: ACME, tool: "Export", input: {}, as: BOT, session: "s_bot" }).then(() => "ran", (e: Error) => e.message)).toContain("turned the tool");
+      w.setLive({ ...w.saves[0]! }); // the watcher catches up to the press
+      w.store.setAvailability(ACME, "Export", "on-demand");
+      w.setLive({ ...w.saves[0]! }); // a late reload again, of the state before the second press
+      expect(w.loads("bot")).toEqual({ Render: "preload", Export: "on-demand" });
+    } finally {
+      w.close();
+    }
+  });
+});
+
+describe("a press of the user's stands until the live settings have caught up to it", () => {
+  // The settings watcher's reload of the file as it was a moment before a write can land after the write. A turn that
+  // starts then must still be offered the tool as the user just set it (found on the acceptance row: on demand set, a message
+  // sent at once, the model's list still carried the old value).
+  function store() {
+    let file = {} as Settings;
+    let live = file;
+    const s = new EngineToolSettings({
+      read: () => live, load: () => file, save: (n) => { file = n; },
+      listing: () => [{ server: "acme", plugin: "acme", tools: [{ name: "Export", declared: "preload" }] }],
+    });
+    return { s, file: () => file, setFile: (x: Settings) => { file = x; }, setLive: (x: Settings) => { live = x; } };
+  }
+  const ask = (s: EngineToolSettings) => s.availabilityOf("acme", "Export");
+
+  test("a live copy that is OLDER than the write does not undo it", () => {
+    const w = store();
+    const older = {} as Settings;
+    w.s.setAvailability("acme", "Export", "off");
+    expect(ask(w.s)).toBe("off");
+    w.setLive(older); // the late reload of the file as it was before the write: a new object, none of the choice
+    expect(ask(w.s)).toBe("off");
+    w.s.setAvailability("acme", "Export", "on-demand");
+    w.setLive({ ...older }); // and again, now with the second press
+    expect(ask(w.s)).toBe("on-demand");
+    expect(w.s.row("acme", "Export")?.availability).toBe("on-demand");
+  });
+
+  test("once the live copy carries the write, the live copy is what is read (an edit by hand after it counts)", () => {
+    const w = store();
+    w.s.setAvailability("acme", "Export", "off");
+    w.setLive({ ...w.file() }); // the watcher caught up
+    expect(ask(w.s)).toBe("off");
+    const edited = { ...w.file(), mcp: { ...(w.file().mcp ?? {}), toolAvailability: { acme: { Export: "always" } } } } as Settings;
+    w.setLive(edited);
+    expect(ask(w.s)).toBe("always");
+  });
+
+  test("a file that someone else changed since the write is not ours to stand in for: the live copy is read", () => {
+    const w = store();
+    w.s.setAvailability("acme", "Export", "off");
+    w.setLive({} as Settings);
+    expect(ask(w.s)).toBe("off"); // the file still has the press
+    w.setFile({} as Settings); // an edit by hand, or another writer: the file no longer has it
+    expect(ask(w.s)).toBeUndefined();
+  });
+
+  test("a write made elsewhere (a plugin dropped) is told to the store and read the same way", () => {
+    const w = store();
+    w.s.setAvailability("acme", "Export", "off");
+    const cleared = {} as Settings;
+    w.s.noteWritten(cleared);
+    w.setLive({} as Settings);
+    expect(ask(w.s)).toBeUndefined();
   });
 });

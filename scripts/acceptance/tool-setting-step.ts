@@ -103,25 +103,27 @@ export async function toolSettingStep(ctx: ExampleCtx, session: string): Promise
     if (offOffer.listed) fail("the tool set to off was still offered to the bot");
     if (!said.includes("ACCEPTANCE-NO-CALL-TOOL Echo")) fail(`with Echo off the turn didn't end as a model finding no such tool (${said.slice(0, 200)})`);
     if (ctx.requests().slice(from).some((r) => r.toolUse?.endsWith("__Echo") === true)) fail("the bot called Echo while it was off");
+    const hidden = await callTurn(ctx, session, "Glossary", { query: "Echo" });
+    if (hidden.result.text.includes(`${server}__Echo`)) fail(`with Echo off a Glossary search still named it (${hidden.result.text.slice(0, 200)})`);
     const offRow = (await read()).echo;
     if (offRow.permission !== "ask") fail(`turning Echo off changed its permission to ${offRow.permission}`);
     done.push("off: not offered, no call possible, its permission still ask");
 
-    // On demand: listed deferred in the request (`defer_loading`), so not a tool the model may call yet, and found by a
-    // `Glossary` search. (The load and the call after it is the driver's own end-to-end test: this conversation held the tool
-    // added by definition and then removed, and the scripted model works out what it may call from that history, which a
-    // tool loaded by reference afterwards doesn't change.)
+    // On demand: not a tool the model may call yet, and found by a `Glossary` search. The request's shape depends on how the
+    // conversation began: a tool in its first request's tools stays listed there undeferred (the cached prefix does not change)
+    // and the conversation takes it away with a `tool_removal`; one added since is listed deferred. Either way it is not
+    // callable until loaded, which is what is asserted (the load and the call after it is the driver's own end-to-end test:
+    // this conversation held the tool added by definition and then removed, and the scripted model works out what it may
+    // call from that history, which a tool loaded by reference afterwards doesn't change).
     await setTo(server, "on-demand");
     from = ctx.requests().length;
     const direct = await ctx.turn(session, `ACCEPTANCE-CALL Echo ${JSON.stringify({ text: "on demand" })}`, 150_000);
-    const demandOffer = offeredEcho(ctx, from);
-    if (!demandOffer.deferred) fail(`on demand, the request did not list Echo deferred (${demandOffer.listed ? "it listed it loaded" : "it did not list it at all"})`);
     const directSaid = ctx.requests().slice(from).map((r) => r.toolResult?.text ?? "").join(" ") + JSON.stringify(direct.events);
     if (ctx.requests().slice(from).some((r) => r.toolUse?.endsWith("__Echo") === true)) fail("on demand, the bot called Echo without loading it first");
     if (!directSaid.includes("ACCEPTANCE-NO-CALL-TOOL Echo")) fail(`on demand, the turn didn't end as a model with no loaded tool to call (${directSaid.slice(0, 200)})`);
     const found = await callTurn(ctx, session, "Glossary", { query: "Echo" });
-    if (found.result.isError || !found.result.text.includes("Echo")) fail(`on demand, a Glossary search for Echo answered ${found.result.text.slice(0, 200) || "nothing"}`);
-    done.push("on demand: listed deferred, not callable until loaded, found by a Glossary search");
+    if (found.result.isError || !found.result.text.includes(`${server}__Echo`)) fail(`on demand, a Glossary search for Echo didn't name it (${found.result.text.slice(0, 200) || "nothing"})`);
+    done.push("on demand: not callable until loaded, and found by a Glossary search");
 
     // Always on: offered loaded at once, and called with no Glossary.
     await setTo(server, "always");
@@ -135,6 +137,9 @@ export async function toolSettingStep(ctx: ExampleCtx, session: string): Promise
     if (!always.result.text.includes(PONG) || always.result.isError) fail(`the always-on call answered ${always.result.text.slice(0, 160)}`);
     done.push("always on: offered loaded and answered with no Glossary");
     return done.join("; ");
+  } catch (err) {
+    // Which phases had passed when it broke: the kept page and the table name the one that did not.
+    return fail(`${err instanceof Error ? err.message : String(err)} (passed before it: ${done.length === 0 ? "nothing" : done.join("; ")})`);
   } finally {
     // Back to what the plugin declares, whatever happened, so no later row meets a tool left off.
     try {
