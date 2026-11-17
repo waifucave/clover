@@ -297,6 +297,8 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   const door = new EngineSurfaceDoor({ legacy: () => !(deps.hostOwnsScreen?.() ?? false), noIsland: () => deps.hostGaveUp?.() ?? false });
   /** The windows the pair took as its app (lane HS: none while a host owns the screen). */
   const pairApps = new Set<number>();
+  /** Whether a background host owns the screen now (the last `hostScreen`): MOSS's Quit stops the engine only with none. */
+  let hostOwns = false;
   // lane HS: end
   const router = new EngineCardRouter({ clock: deps.clock ?? new SystemClock(), hostLive: false });
   const undoor = door.watch(() => router.hostLive(door.islandLive()));
@@ -552,12 +554,25 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     "pair.quit": async (conn, p) => {
       // lane HS (the engine's lifetime with more than one program): a MOSS Code window's Quit while a MOSS window is up
       // stops nothing: that window leaves alone (out of the pair, so its close is no crash and nothing restarts it), and
-      // the engine, the host and MOSS keep working. Quitting MOSS never stops the engine (§3.1, item 112).
+      // the engine, the host and MOSS keep working.
       if (conn.role === "app" && pairApps.has(conn.connId) && [...conns.values()].some((c) => c.connId !== conn.connId && c.role === "app" && c.surface === "moss")) {
         pairApps.delete(conn.connId);
         stopBeat(conn.connId);
         deps.pair?.appReleased(String(conn.connId));
         deps.log?.("[moss] MOSS Code quits alone: a MOSS window is up, so the engine keeps working");
+        return { ok: true };
+      }
+      // lane HS (S8): MOSS's Quit when it is the last of our windows and no host is live stops the engine exactly as MOSS
+      // Code's does: otherwise nothing would stop an engine with no window, no host and no menu-bar icon. With another
+      // window of ours up, or a host owning the screen (its menu stops everything), it stops nothing and MOSS just goes.
+      if (conn.role === "app" && conn.surface === "moss") {
+        const otherWindow = [...conns.values()].some((c) => c.connId !== conn.connId && c.role === "app" && (c.surface === "moss" || c.surface === "code"));
+        if (otherWindow || hostOwns || deps.hostOwnsScreen?.() === true) {
+          deps.log?.(`[moss] MOSS quits alone: ${otherWindow ? "another window of ours is up" : "a host owns the screen"}, so the engine keeps working`);
+          return { ok: true };
+        }
+        deps.log?.("[moss] MOSS quits as the last window with no host: the engine stops too");
+        deps.pair?.quit("quit", String(conn.connId));
         return { ok: true };
       }
       if ((p as { handOver: boolean }).handOver) await deps.handOver?.();
@@ -834,6 +849,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
 
     // lane HS: start
     hostScreen(owns: boolean) {
+      hostOwns = owns;
       door.remount();
       for (const c of conns.values()) {
         if (c.role !== "app" || c.surface !== "code") continue;

@@ -740,6 +740,40 @@ describe("MOSS connections (C-M1)", () => {
       expect(b.pair.status().stopping).toBe("quit");
       code.close();
     });
+    test("(3) S8: no host and MOSS is the last window: its Quit stops the engine exactly as MOSS Code's does", async () => {
+      const b = await boot();
+      const moss = await Client.connect(b.socketPath);
+      await moss.hello("app", b.appToken, { surface: "moss" });
+      expect((await moss.request("pair.quit", { handOver: false })).result).toEqual({ ok: true });
+      expect(b.pair.status().stopping).toBe("quit");
+      moss.close();
+    });
+    test("(3) MOSS's Quit with another window of ours up, or a host owning the screen, stops nothing", async () => {
+      const b = await boot();
+      const moss = await Client.connect(b.socketPath);
+      await moss.hello("app", b.appToken, { surface: "moss" });
+      const code = await Client.connect(b.socketPath);
+      await code.hello("app", b.appToken, { surface: "code" });
+      await moss.request("pair.quit", { handOver: false });
+      expect(b.pair.status().stopping).toBeNull();
+      code.close();
+      await settle();
+      b.moss.hostScreen(true);
+      await moss.request("pair.quit", { handOver: false });
+      expect(b.pair.status().stopping).toBeNull();
+      expect(b.stops).toEqual([]);
+      moss.close();
+    });
+    test("S8: MOSS hears the engine gave up on the host (host_changed in the host area, its gaveUp), as MOSS Code does", async () => {
+      const b = await boot();
+      const moss = await Client.connect(b.socketPath);
+      await moss.hello("app", b.appToken, { surface: "moss" });
+      await moss.request("events.subscribe", { areas: ["host"] });
+      b.moss.coreEvent({ type: "host_changed", state: "absent", crashes: 0, since: 1, gaveUp: true } as Parameters<typeof b.moss.coreEvent>[0]);
+      await settle();
+      expect(moss.fromDaemon.filter((m) => m.method === "core.event" && m.params?.type === "host_changed").map((m) => [m.params.state, m.params.gaveUp])).toEqual([["absent", true]]);
+      moss.close();
+    });
     test("(4) an extra app connection that is no window of ours opening and closing never stops the engine", async () => {
       const b = await boot();
       const code = await Client.connect(b.socketPath);

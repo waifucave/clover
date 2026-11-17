@@ -1531,6 +1531,20 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
   const found = await until("the card's Approve button in the island's own window", 30_000, async () => (await buttonDocs())[0], 300);
   const btn0 = await until("the island's Approve button's place", 10_000, () => cdp.centerOf(found.session, BUTTON), 300);
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn0.x, y: btn0.y, button: "none", buttons: 0 }, found.session).catch(() => undefined);
+  // lane HS: a measurement on demand (`MOSS_ACCEPT_ISLAND_ROOM=400x340`, a local run): the island's page held at a GitHub
+  // runner's room, and where its card's buttons land then; the room is let go before the press.
+  const room = /^(\d+)x(\d+)$/.exec(process.env.MOSS_ACCEPT_ISLAND_ROOM ?? "");
+  if (room !== null) {
+    const page = (await cdp.documents()).find((d) => /^moss-core:\/\/app\/\?surface=island/.test(d.url));
+    if (page !== undefined) {
+      say(`island room as given for ${card.id}: ${await islandCardLayout(cdp, card.id)}`);
+      await cdp.send("Emulation.setDeviceMetricsOverride", { width: Number(room[1]), height: Number(room[2]), deviceScaleFactor: 0, mobile: false }, page.session).catch(() => undefined);
+      await sleep(1_500);
+      say(`island room ${room[1]}x${room[2]} for ${card.id}: ${await islandCardLayout(cdp, card.id)}`);
+      await cdp.send("Emulation.clearDeviceMetricsOverride", {}, page.session).catch(() => undefined);
+      await sleep(800);
+    } else say("island room: no island page to hold");
+  }
   // lane HS: the button's page as it is now: the island can fold the card and draw it again while it settles (a slower
   // machine's first frames), which replaces the page the first look found; the ready mark is read on the live one.
   const ready = await until("the sealed page's ready-to-answer mark on the island", 30_000, async () => {

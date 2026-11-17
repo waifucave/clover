@@ -11,6 +11,8 @@ import { EngineHostSupervisor } from "../supervisor";
 import { EngineTabFrames, pagesOwner } from "../tab-frames";
 import { APP_BROWSER_FEATURE } from "../../browser/app-port";
 import { EngineCardRouter } from "../../surfaces/card-router";
+import { sendCoreEvent } from "../../ipc/core-events";
+import { MOSS_EVENTS } from "@waifucave/moss-protocol";
 
 const app: AppInstallRecord = { record: 1, program: "code", bundlePath: "/Applications/MOSS Code.app", release: "1.111.1", carries: { engine: true, host: true }, seenAt: 1 };
 
@@ -221,6 +223,8 @@ describe("the reviewer's part one (S2, S4, S6)", () => {
     await t.supervisor.boot();
     const w = conn("code");
     expect(await t.call(w.c, "host.status", {})).toMatchObject({ state: "starting", crashes: 0 });
+    // S8: MOSS's window asks it too (the give-up notice is the engine's word to both programs).
+    expect(await t.call(conn("moss").c, "host.status", {})).toMatchObject({ state: "starting", crashes: 0 });
   });
 
   test("while a host owns the screen and isn't connected, the window is no pages' owner; with no host at all it is", () => {
@@ -351,4 +355,18 @@ describe("the host's island hears whether a window is in front (the strip line's
     t.door.frontChanged(true);
     expect(fronts()).toEqual([true, false]);
   });
+});
+
+test("R12 across programs: every card reaches the host's connection, wherever the router places it (the host stands its parts down on it)", () => {
+  const spec = MOSS_EVENTS.get("card_requested")!;
+  const resolvedSpec = MOSS_EVENTS.get("card_resolved")!;
+  const host = conn("host");
+  const code = conn("code");
+  const moss = conn("moss");
+  for (const c of [host, code, moss]) c.c.areas.add("approvals");
+  const routing = { connections: () => [host.c, code.c, moss.c] };
+  // The card's placement is the router's (`card_placed`) and is not in the card: nothing in the sending reads it.
+  expect(sendCoreEvent(routing, spec.fixture as Parameters<typeof sendCoreEvent>[1])).toBe(3);
+  expect(sendCoreEvent(routing, resolvedSpec.fixture as Parameters<typeof sendCoreEvent>[1])).toBe(3);
+  expect(host.notes.map((n) => (n.params as { type: string }).type)).toEqual(["card_requested", "card_resolved"]);
 });
