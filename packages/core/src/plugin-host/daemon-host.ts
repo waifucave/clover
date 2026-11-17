@@ -40,7 +40,7 @@ import type { EngineLivePictures } from "../pictures/live-pictures";
 import { streamsApi } from "../streams/api";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { areasParts, type AreaServices } from "./api/areas";
-import { AvatarService } from "./api/avatar";
+import { PointMessages } from "./api/point-messages";
 import { confirmApi } from "./api/confirm";
 import { keysApi } from "./api/keys";
 import { logsApi } from "./api/logs";
@@ -545,20 +545,13 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     }
   });
   const offCallEnded = o.pictures === undefined ? undefined : host.invocations.onEnded((id) => o.pictures!.callEnded(id));
-  // The figures the stages report (`avatar.report`): a stage that stops, goes off or is removed loses its reports, so what
-  // the core answers for a bot is always from the stage drawing it now.
-  const avatars = new AvatarService((event) => o.emit?.(event), Date.now, {
-    fills: (id) => o.registry.entries("ui").some((c) => c.pluginId === id && c.state === "active" && (c.value as { spot?: string } | undefined)?.spot === "bot.stage") && grantsInForce(o.registry.get(id)).includes("avatar.report"),
-    botExists: (bot) => o.registry.get(bot)?.manifest?.contributes?.bot !== undefined,
-  });
-  const offAvatarsRegistry = o.registry.watch((c) => {
-    if (c.type === "removed") return avatars.endStage(c.id);
+  // Point messages (`points.send`, `points.onMessage`): a plugin that stops, goes off or is removed loses its listeners.
+  const pointMessages = new PointMessages({ registry: o.registry });
+  const offMessagesRegistry = o.registry.watch((c) => {
+    if (c.type === "removed") return pointMessages.endPlugin(c.id);
     if (c.type !== "plugin") return;
     const r = o.registry.get(c.id);
-    if (r === undefined || !r.enabled || !RUNNING_STATES.has(r.state)) avatars.endStage(c.id);
-  });
-  const offAvatarsHost = host.watch((s) => {
-    if (s.state === "stopped") avatars.endStage(s.pluginId);
+    if (r === undefined || !r.enabled || !RUNNING_STATES.has(r.state)) pointMessages.endPlugin(c.id);
   });
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl, streams }),
@@ -570,7 +563,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     // P5: the programs a plugin's manifest names, run by the daemon outside its sandbox with the user's own access.
     outsideApi({ userHome: o.userHome ?? noUserHome(), mossHome: o.home, log, writable: (id) => o.picked?.(id)?.write ?? [] }),
     ...(areas !== undefined ? [areas.handlers] : []),
-    avatars.handlers(),
+    pointMessages.handlers(),
     turnsApi({ queues: turns, record: (id) => o.registry.get(id) }),
     streamsApi({ hub: streams }),
     ...(o.activity !== undefined ? [activityApi(o.activity)] : []),
@@ -871,8 +864,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       offTurnsHost();
       turns.close();
       offStreamsRegistry();
-      offAvatarsRegistry();
-      offAvatarsHost();
+      offMessagesRegistry();
       offStreamsHost();
       offCallEnded?.();
       streams.close();

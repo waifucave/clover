@@ -3,9 +3,7 @@
 // below) are exempt from the `<plugin-id>.` prefix rule, and a plugin that declares one must use the catalog's
 // declaration, or it is refused (§5.4).
 import { z } from "zod";
-import { utf16 } from "@waifucave/moss-protocol";
-import { EntryId, HandlerName, Path, Text } from "../manifest/fields";
-import { AVATAR_CAPABILITIES, AVATAR_FILE_CAPS, AVATAR_FILE_TYPES, AVATAR_FINDERS, AVATAR_MODEL_MAX_FILES, avatarFileProblem } from "./avatars";
+import { EntryId, HandlerName, Text } from "../manifest/fields";
 import { SPOTS } from "./spots";
 
 export interface CorePointInfo {
@@ -80,7 +78,7 @@ export const CORE_POINT_NAMES: ReadonlySet<string> = new Set(CORE_POINTS.map((p)
 export interface DataPointInfo {
   readonly name: string;
   readonly shape: "single" | "list" | "keyed";
-  /** A plugin's id, or `"core"`: a point the core and the app read themselves (avatar import, model serving) is the
+  /** A plugin's id, or `"core"`: a point the core and the app read themselves is the
    *  platform's. No plugin declares it; its entries are in force as soon as their plugin runs. */
   readonly declaredBy: string;
   /** For a platform point (`declaredBy: "core"`): the capabilities whose holders read its entries (`points.entries`,
@@ -93,34 +91,6 @@ export interface DataPointInfo {
   readonly oneAtATime?: boolean;
   readonly title?: string;
 }
-
-/** One `avatar.formats` entry: what a renderer plugin declares about the model format it draws. */
-export const AvatarFormatEntry = z.strictObject({
-  id: EntryId,
-  /** The format id: the key of the `avatar` entry that draws it, and a bot's `avatar.format`. */
-  format: utf16(32, 1).regex(/^[a-z0-9-]+$/),
-  name: Text,
-  /** What `avatar.file` names: its extensions, lower case with the dot (`.vrm`, `.model3.json`). */
-  entry: z.strictObject({ extensions: z.array(utf16(32, 2).regex(/^\.[a-z0-9]+(\.[a-z0-9]+)*$/)).min(1).max(8) }),
-  files: z.strictObject({
-    /** The kinds of file a model is made of, each with its extensions and a cap. */
-    kinds: z.array(z.strictObject({
-      ext: z.array(utf16(32, 2).regex(/^\.[a-z0-9]+(\.[a-z0-9]+)*$/)).min(1).max(16),
-      type: z.enum(AVATAR_FILE_TYPES),
-      maxBytes: z.number().int().min(1).max(Math.max(...Object.values(AVATAR_FILE_CAPS))).optional(),
-    }).superRefine((k, ctx) => {
-      if (k.maxBytes !== undefined && k.maxBytes > AVATAR_FILE_CAPS[k.type]) ctx.addIssue({ code: "custom", path: ["maxBytes"], message: `a ${k.type} file may be at most ${AVATAR_FILE_CAPS[k.type]} bytes` });
-    })).min(1).max(16),
-    find: z.enum(AVATAR_FINDERS).default("folder"),
-    maxFiles: z.number().int().min(1).max(AVATAR_MODEL_MAX_FILES).optional(),
-  }),
-  /** What the avatar picker may offer for this format. */
-  import: z.strictObject({ accepts: z.array(z.enum(["folder", "zip", "file"])).min(1).max(3) }).optional(),
-  capabilities: z.array(z.enum(AVATAR_CAPABILITIES)).max(8).optional(),
-  /** A picture to show when the model cannot be drawn: a file in the renderer's folder. */
-  portrait: Path.optional(),
-});
-export type AvatarFormatEntry = z.infer<typeof AvatarFormatEntry>;
 
 export const DATA_POINTS: readonly DataPointInfo[] = [
   { name: "webhook.ingress", shape: "list", declaredBy: "moss/trigger-webhook", kind: "code",
@@ -142,16 +112,6 @@ export const DATA_POINTS: readonly DataPointInfo[] = [
   { name: "island.line", shape: "list", declaredBy: "island", kind: "code",
     entry: z.strictObject({ id: EntryId, handler: HandlerName }),
     doc: "A line a plugin puts on the island: one line of plain text, an optional icon from the island's small named set and an optional progress bar, drawn in the island's own style with the plugin's name beside it. The island calls `handler` (an `IslandLineHandler`) only when MOSS isn't in front (the first line on its closed strip, the lines on its open Needs you tab) and draws what it returns; the island decides how many lines fit, in what order, and how long they last. Nothing is drawn when the handler returns nothing, and a plugin that is off or removed has no line." },
-  { name: "avatar.formats", shape: "list", declaredBy: "core", readBy: ["avatar.report", "bots.avatar"], kind: "data",
-    entry: AvatarFormatEntry,
-    doc: "A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is hardcoded per format (§5.5)." },
-  { name: "avatar.packs", shape: "list", declaredBy: "core", readBy: ["bots.avatar"], kind: "data",
-    entry: z.strictObject({ id: EntryId, name: Text.optional(), file: Path, format: utf16(32, 1).regex(/^[a-z0-9-]+$/), portrait: Path.optional(), license: utf16(200).optional() })
-      .superRefine((a, ctx) => {
-        const problem = avatarFileProblem(a.format, a.file);
-        if (problem) ctx.addIssue({ code: "custom", path: ["file"], message: problem });
-      }),
-    doc: "Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5)." },
 ];
 
 /** Every well-known name: exempt from the prefix rule, and declared only with the catalog's declaration. */

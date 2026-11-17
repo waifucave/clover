@@ -86,7 +86,7 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     // The user's own endpoint for this plugin's provider counts as a granted host, for that origin's host and port.
     const userOrigin = path === "net.fetch" && target?.host !== undefined ? o.userEndpoint?.(call.pluginId) : undefined;
     let granted = userOrigin !== undefined && userOrigin === originOf(call.args[0]) ? [...record.granted, `network:${hostEntryOf(target!.host!, target!.port)}`] : record.granted;
-    // A capability that is another's for more things (`avatar.control.all`) carries that other with it.
+    // A capability that is another's for more things (`plugins.manage` reads too) carries that other with it.
     granted = withImplied(granted);
     if (!ownCommand && !apiCallAllowed(path, call.process, granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });

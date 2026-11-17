@@ -3,13 +3,12 @@
 // by this table (B-M2); the UI runtime does the same in layers (lane E). `satisfies` keeps it exactly in step with
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
-  ApprovalsApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
+  ApprovalsApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, OutsideApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   ShellApi, TerminalApi, UiSendApi, UsageApi,
   TurnsApi, StreamsApi, SessionsApi, ActivityApi, PicturesApi,
 } from "../api/plugin-api";
 import { isKindFamily, kindCapability, type HostProcess } from "@waifucave/moss-protocol";
-import type { AvatarApi } from "./avatar-cues";
 
 type Fn = (...args: never[]) => unknown;
 type FnKeys<T> = { [K in keyof T & string]-?: NonNullable<T[K]> extends Fn ? K : never }[keyof T & string];
@@ -24,7 +23,7 @@ export type ApiCallPath =
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
   | `plugins.${FnKeys<PluginsApi>}` | `shell.${FnKeys<ShellApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}`
-  | `desktop.${FnKeys<DesktopNotifications>}` | `avatar.${FnKeys<AvatarApi>}` | `avatar.${FnKeys<AvatarReportApi>}`
+  | `desktop.${FnKeys<DesktopNotifications>}`
   | `turns.${FnKeys<TurnsApi>}` | `streams.${FnKeys<StreamsApi>}`
   | `sessions.${FnKeys<SessionsApi>}` | `activity.${FnKeys<ActivityApi>}` | `pictures.${FnKeys<PicturesApi>}`;
 
@@ -37,6 +36,10 @@ export const OUTSIDE_OUTPUT_MAX = 1_048_576;
 export const OUTSIDE_TIMEOUT_MS = 60_000;
 export const OUTSIDE_TIMEOUT_MAX_MS = 600_000;
 export const NOTIFY_PER_HOUR = 20;
+/** Point messages (`points.send`): the most one may carry, serialized, and how many a plugin may send a second (its host
+ *  half and its parts together, every point). */
+export const POINT_MESSAGE_MAX_BYTES = 65_536;
+export const POINT_MESSAGES_PER_SECOND = 60;
 
 export interface ApiCallInfo {
   /** The capability it needs; `call:*` is `call:<the target's top-level id>`, `network:*` the URL's host, and a family
@@ -68,6 +71,9 @@ export const API_CALLS = {
   "points.entries": both(), "points.watch": both(), "points.call": both(),
   /** A one-at-a-time point's active entry (§5.4): its declarer's tree and its fillers read it. */
   "points.active": both(), "points.onActive": both(),
+  /** Point messages: between a point's declarer and its fillers, both ways, in order, capped. Filling the point (its
+   *  `fills` line on the filler's OK card) is the gate. */
+  "points.send": both(), "points.onMessage": both(),
   /** Its own tree's commands with no capability; another plugin's with `call:<its top-level id>`. */
   "commands.run": both("call:*"), "commands.list": both(),
   "host.call": { where: "ui" }, "host.on": { where: "ui" },
@@ -149,10 +155,6 @@ export const API_CALLS = {
    *  desktop notifier (§10). Any other plugin reaches the user through `notify.send`, under the core's rules (its name
    *  shown, its rate, the user's mute, never while a card waits). */
   "desktop.show": { where: "moss" }, "desktop.close": { where: "moss" },
-  /** A bot plugin's figure: its own bot only (the bot whose id is the plugin's top-level id), from its components and its
-   *  host half alike. The renderer's side is the stage's: only the bundled `moss` tree reports what it drew. */
-  "avatar.cue": both("avatar.control"), "avatar.catalogue": both("avatar.read"), "avatar.box": both("avatar.read"), "avatar.watch": both("avatar.read"),
-  "avatar.report": { capability: "avatar.report", where: "ui" },
   /** One-at-a-time queues (§5.4 "Turns"), in both halves, with no capability of their own: the name decides. A plugin's
    *  own (`<its id>/<name>`) is open to it; another plugin's only if that plugin's manifest lists the name
    *  (`contributes.turns`); a device turn (`device/speech`) needs the capability the turns catalog names (`audio`). */

@@ -11,12 +11,7 @@ export type BotView = {
   model: string;
   effort?: string;
   theme?: string;
-  avatar?: {
-    src: string;
-    format: string;
-    credit?: string;
-  };
-  userLayer: ("name" | "instructions" | "model" | "effort" | "avatar" | "theme" | "layout" | "lan")[];
+  userLayer: ("name" | "instructions" | "model" | "effort" | "theme" | "layout" | "lan")[];
   lan?: boolean;
   state: "idle" | "thinking" | "asleep" | "paused";
   computer?: string;
@@ -305,21 +300,14 @@ export type UiPluginView = {
     theme?: string;
     layout?: string;
     userLayout?: string;
-    avatar?: {
-      file: string;
-      format: string;
-    };
   };
-  avatarFormats?: {
-    format: string;
-    extensions: string[];
+  dataFiles?: {
+    folder: string;
     kinds: {
       ext: string[];
       type: "json" | "binary" | "image" | "audio" | "text";
       maxBytes: number;
     }[];
-    find: "folder" | "cubism-model3";
-    maxFiles?: number;
   }[];
   layer: string;
   icon?: string;

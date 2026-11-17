@@ -20,7 +20,7 @@ export interface SpotInfo {
   readonly name: string;
   readonly shape: "single" | "list" | "keyed";
   /** Who declares it: the app's plugin runtime (a core point), or a bundled part of `moss`. */
-  readonly declaredBy: "app" | "shell" | "settings" | "bot-tab" | "bot-stage" | "bot-editor" | "composer" | "conversation" | "file-view" | "island" | "pill";
+  readonly declaredBy: "app" | "shell" | "settings" | "bot-tab" | "bot-editor" | "composer" | "conversation" | "file-view" | "island" | "pill";
   /** What Bots offers a bot's own plugin here, on that bot's tab only (§5.5, the owner's rule of November 14): the whole
    *  spot (`true`), only these keys (a keyed spot: `panel`'s Browser and agent panels), or nothing (`false`: a part
    *  beside the bot fills it, `"app": true`). */
@@ -79,8 +79,8 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "app.tray", shape: "list", declaredBy: "app", botsOffer: false, needs: ["tray"], fields: titled,
     props: none,
     doc: "A line in the menu-bar (tray) menu, with the `tray` capability: `toggles` names one of the plugin's own `app.surface` entries (the line hides and shows it, and the choice is kept), or `command` names a command of the plugin's own that the line runs." },
-  // Retired by spec revision 19 (§5.5, items 99 and 100, G8): `bot.tab`, `bot.header`, `bot.side`, `bot.stage` with its
-  // `avatar` spot and `bot.stage.action`, and `BOTS_OFFER` below. A bot has no tab in a plugin window; lane MC removes
+  // Retired by spec revision 19 (§5.5, items 99 and 100, G8): `bot.tab`, `bot.header`, `bot.side`, and `BOTS_OFFER`
+  // below (the figure's spots left with the avatar, G7: `catalogs/retired.ts`). A bot has no tab in a plugin window; lane MC removes
   // them with bots out of MOSS Code's window.
   { name: "bot.tab", shape: "keyed", declaredBy: "app", botsOffer: true, context: ["bot"], fields: none,
     props: z.object({ bot: BotRef }),
@@ -109,7 +109,7 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "A section of the settings screen, which the settings part (`main` key `settings`) declares." },
   { name: "bot.editor.section", shape: "list", declaredBy: "bot-editor", botsOffer: false, context: ["bot"], fields: titledOpt,
     props: z.object({ bot: BotRef }),
-    doc: "A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given. The avatar's section is the character plugin's." },
+    doc: "A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given." },
   { name: "status", shape: "list", declaredBy: "shell", botsOffer: false, fields: titledOpt, props: none,
     doc: "The shell's status bar; the inherited `tile` becomes an entry here (§12)." },
   // A bot's tab (`bot.tab`).
@@ -117,8 +117,6 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef }), doc: "The tab's header." },
   { name: "bot.header.action", shape: "list", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: titled,
     props: z.object({ bot: BotRef }), doc: "Buttons in the tab's header." },
-  { name: "bot.stage", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "The stage, where the avatar stands." },
   { name: "bot.side", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
     props: z.object({ bot: BotRef }), doc: "The tab's side area." },
   { name: "bot.controls", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
@@ -143,13 +141,6 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "composer", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], needs: ["conversation.post"], fields: none,
     props: z.object({ bot: BotRef, session: z.string() }),
     doc: "The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; each acting one needs the user's own key press or click, and a model switch on a bot's main conversation is a sealed card unless it is the default composer's. The default composer also lists the running plugins' commands and runs one as the user (its slash menu); another plugin's entry doesn't get those." },
-  // Inside the tab's parts.
-  { name: "avatar", shape: "keyed", declaredBy: "bot-stage", botsOffer: true, keys: ["vrm", "live2d"], context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef, file: z.string(), format: z.string(), speaking: z.boolean(), speech: z.looseObject({}).optional() }),
-    doc: "Draws the bot's avatar, keyed by the avatar file's format (`vrm`, `live2d`, or a plugin's own; `AVATAR_FORMATS`), and lip-syncs it from `speech` (a `SpeechFeed`)." },
-  { name: "bot.stage.action", shape: "list", declaredBy: "bot-stage", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }),
-    doc: "Small controls on a bot's stage, over its figure (a corner each places itself in): a voice plugin's mute and stop, say. Each entry draws its own control for the bot it is given." },
   { name: "composer.action", shape: "keyed", declaredBy: "composer", botsOffer: true, context: ["bot"], fields: titledOpt,
     props: z.object({ bot: BotRef, session: z.string() }),
     doc: "The composer's buttons, keyed by action id: an entry keyed `attach`, `model`, `level`, `send` or `stop` draws that button another way (or hides it); one with any other key adds a button of its own, drawn among the buttons plugins add, in the spot's order (`order`, then plugin and id)." },

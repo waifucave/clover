@@ -163,7 +163,7 @@ export const TOKENS: readonly TokenInfo[] = [
   t("radius.small", "dimension", "6px", undefined, "Small corners: chips, rows."),
   t("radius.medium", "dimension", "8px", undefined, "Medium corners: buttons, fields."),
   t("radius.large", "dimension", "12px", undefined, "Large corners: panels, inner cards."),
-  t("radius.huge", "dimension", "24px", undefined, "The largest corners: sheets, the stage."),
+  t("radius.huge", "dimension", "24px", undefined, "The largest corners: sheets."),
   t("radius.round", "dimension", "999px", undefined, "A capsule's end."),
   t("space.xs", "dimension", "4px", undefined, "4 on the grid."),
   t("space.s", "dimension", "8px", undefined, "8 on the grid."),
@@ -220,17 +220,6 @@ export const TOKENS: readonly TokenInfo[] = [
   t("pill.plume.tail", "color", "#0D54FF", undefined, "The working plume where it cools."),
   t("pill.plume.body", "color", "#298CFF", undefined, "The working plume's body."),
   t("pill.plume.hot", "color", "#CCEDFF", undefined, "The working plume at the nozzle."),
-  // The bot's stage and its avatar.
-  t("stage.background", "paint", "linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%)", "linear-gradient(180deg, #1D1D23 0%, #151519 100%)", "The stage behind the avatar."),
-  t("stage.floor", "color", "#1C1B221F", "#0000008C", "The soft pool of shadow under the avatar."),
-  t("stage.glow", "color", "#2F6FDF1F", "#4180E31F", "The light behind the avatar."),
-  t("stage.foreground", "paint", "#00000000", undefined, "A paint over the avatar's lower edge (grass, mist), so a figure the stage crops reads as standing behind it."),
-  t("stage.foreground.height", "dimension", "0px", undefined, "How far up the stage that paint reaches."),
-  t("stage.text", "color", "#676674", "#9B9AA8", "Credits and notes on the stage."),
-  t("avatar.light.key", "color", "#FFFFFF", "#F2EEFF", "The avatar's key light."),
-  t("avatar.light.fill", "color", "#F2F6FF", "#C9D8F2", "The avatar's fill light."),
-  t("avatar.light.rim", "color", "#FFFFFF", "#DCE6F7", "The avatar's rim light."),
-  t("avatar.exposure", "number", 1, 0.95, "The avatar's exposure: 1 is neutral."),
 ];
 
 export const TOKEN_NAMES: ReadonlySet<string> = new Set(TOKENS.map((x) => x.name));

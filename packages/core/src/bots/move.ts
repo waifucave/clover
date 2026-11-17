@@ -14,7 +14,7 @@
 // `bots/<seg>/bot.json` last; and, after every bot, the journal `user-layers/moved/bots.json`.
 // What it leaves where it is: the bot's memory, agents' transcripts and conversation (`bots/<seg>/memory`, `agents`,
 // `transcripts/<seg>/`, all under the same id), its routines, the user layer file (its LAN switch is still read from
-// it), and the plugin itself: its Live2D figure, scenes and stage tools are a later lane's (an avatar pack).
+// it), and the plugin itself (a figure left the platform for the avatar plugin's packs).
 //
 // When something is missing or malformed:
 // * a plugin whose record has no OK (never approved, refused) and isn't bundled: `failed`, "its plugin was never OK'd",

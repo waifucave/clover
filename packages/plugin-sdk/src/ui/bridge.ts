@@ -12,10 +12,6 @@ import type { TokenValue } from "../catalogs/tokens";
 import type { StringTable } from "./strings";
 
 export * from "./strings";
-export { cleanSpeechMessage, SPEECH_BATCH_MAX, type SpeechMessage } from "./speech";
-import type { SpeechMessage } from "./speech";
-export { cleanAvatarDown, cleanAvatarUp, type AvatarDown, type AvatarUp } from "./avatar-control";
-import type { AvatarDown, AvatarUp } from "./avatar-control";
 
 /** Where a part is, as the runtime tells it: the tab (its bot), the surface, the session's kind, the OS, the window's
  *  material, safe mode. */
@@ -213,12 +209,6 @@ export type LayerMessage =
   | { type: "window"; narrow: boolean }
   /** A child frame's content height, for the parent to size it (§5.5: the core sizes the frame). */
   | { type: "child-size"; child: string; height: number }
-  /** The speech the bot's avatar frame lip-syncs to, from its parent (the stage): numbers only (`cleanSpeechMessage`). */
-  | { type: "speech"; mount: string; speech: SpeechMessage }
-  /** A cue for the bot's avatar frame, from its parent (the stage): data only (`cleanAvatarDown`). */
-  | { type: "avatar"; mount: string; message: AvatarDown }
-  /** What an avatar frame says about its model and figure, to its parent only (`cleanAvatarUp`). */
-  | { type: "avatar-up"; child: string; message: AvatarUp }
   /** An act of the window a bot's own frame asked for through `shell.*` (main checked the capability, the user's press and whose tab shows), to the main
    *  window's `moss` shell only. */
   | { type: "shell-act"; act: ShellAct }
@@ -328,13 +318,6 @@ export interface LayerBridge {
   entries(mount: string, spot: string, key?: string, bot?: string, session?: string): Promise<readonly SpotEntryView[]>;
   /** New props for a child frame. */
   setProps(child: string, props: unknown): void;
-  /** The speech an `avatar` child frame lip-syncs to: a batch of numbers (`SpeechMessage`), only to a child of this
-   *  document's (main checks, as for props). */
-  speech?(child: string, message: SpeechMessage): void;
-  /** A cue for an `avatar` child frame (`AvatarDown`), only to a child of this document's (main checks, as for speech). */
-  avatar?(child: string, message: AvatarDown): void;
-  /** An `avatar` frame's state for its parent document (`AvatarUp`): main sends it to the parent only. */
-  avatarUp?(message: AvatarUp): void;
   /** Calls a callback the parent handed this frame. */
   callback(id: string, args: unknown[]): void;
   /** This frame's content height. */

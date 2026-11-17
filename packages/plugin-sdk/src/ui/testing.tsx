@@ -486,9 +486,6 @@ export function setUpTestLayer(runtime: TestRuntime, root: { pluginId: string; e
       return entries.map((e) => ({ ref: entryRef(e), id: e.id, pluginId: e.pluginId, pluginName: e.pluginName ?? e.pluginId, bundled: (e.source ?? "bundled") === "bundled", ...(e.key !== undefined ? { key: e.key } : {}), fields: e.fields ?? {} }));
     },
     setProps: (child, props) => note("setProps", child, [props]),
-    speech: (child, m) => note("speech", child, [m]),
-    avatar: (child, m) => note("avatar", child, [m]),
-    avatarUp: (m) => note("avatarUp", rootMount, [m]),
     callback: (id, args) => note("callback", rootMount, [id, args]),
     reportSize: () => undefined,
     release: (gone) => { for (const m of gone) mounts.delete(m); },

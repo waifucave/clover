@@ -141,30 +141,6 @@
       "warns": false
     },
     {
-      "name": "avatar.read",
-      "lets": "Read the figure of its own bot: the names its model answers to (expressions, motions, outfit parts), where the figure is on the stage, and hear them change",
-      "ok": "sees your bot's figure",
-      "warns": false
-    },
-    {
-      "name": "avatar.control",
-      "lets": "Make the figure of its own bot play an expression or a motion, switch an outfit part, calm or liven it, look at a point, or move its mouth with speech levels; the renderer says plainly what it doesn't do",
-      "ok": "moves your bot's figure",
-      "warns": false
-    },
-    {
-      "name": "avatar.control.all",
-      "lets": "Do what avatar.control does for any bot's figure, not only its own: play cues and send the mouth's levels (speech) to any bot's stage; the renderer says plainly what it doesn't do",
-      "ok": "moves any of your bots' figures",
-      "warns": false
-    },
-    {
-      "name": "avatar.report",
-      "lets": "Report which renderer draws a bot's figure, what its model has and where it stands (the stage's own)",
-      "ok": "tells MOSS how your bots' figures look and where they stand, which other plugins and your bots then see, and receives your bots' expression, motion and speech cues to draw",
-      "warns": true
-    },
-    {
       "name": "notify",
       "lets": "Send the user a notification through the notifiers",
       "ok": "sends you notifications",
@@ -190,15 +166,9 @@
     },
     {
       "name": "bots.edit",
-      "lets": "On the user's own press in its frame: change a bot's settings (every field of its user layer but the avatar: its name, instructions, model, voice, and whether its browser may reach the home network), its tab's layout switches, and its own plugin's settings for that bot; open MOSS's own key dialog for that bot's keys (the key never passes the plugin); read the model list and MOSS's layout settings",
+      "lets": "On the user's own press in its frame: change a bot's settings (its name, instructions, model, voice, and whether its browser may reach the home network), its tab's layout switches, and its own plugin's settings for that bot; open MOSS's own key dialog for that bot's keys (the key never passes the plugin); read the model list and MOSS's layout settings",
       "ok": "changes your bots' settings when you press its controls: their names, instructions, models, voices and keys, and whether a bot's browser may reach your home network",
       "warns": true
-    },
-    {
-      "name": "bots.avatar",
-      "lets": "On the user's own press in its frame: set a bot's avatar from a model file the user picks in MOSS's own file dialog (the path never reaches the plugin), and its avatar and credit fields",
-      "ok": "changes your bots' avatars to files you pick, and lists the avatar packs installed",
-      "warns": false
     },
     {
       "name": "plugins.read",
@@ -671,257 +641,6 @@
         "required": [
           "id",
           "handler"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "avatar.formats",
-      "shape": "list",
-      "declaredBy": "core",
-      "kind": "data",
-      "doc": "A model format a renderer plugin draws: the files its models are made of (closed kinds, capped), how they are found from the entry file, what the picker may import, and what the renderer can do. Nothing in the app is hardcoded per format (§5.5).",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$"
-          },
-          "format": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 32,
-            "pattern": "^[a-z0-9-]+$"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "en": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "en"
-                ],
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            ]
-          },
-          "entry": {
-            "type": "object",
-            "properties": {
-              "extensions": {
-                "minItems": 1,
-                "maxItems": 8,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "maxLength": 32,
-                  "pattern": "^\\.[a-z0-9]+(\\.[a-z0-9]+)*$",
-                  "minLength": 2
-                }
-              }
-            },
-            "required": [
-              "extensions"
-            ],
-            "additionalProperties": false
-          },
-          "files": {
-            "type": "object",
-            "properties": {
-              "kinds": {
-                "minItems": 1,
-                "maxItems": 16,
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "ext": {
-                      "minItems": 1,
-                      "maxItems": 16,
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "maxLength": 32,
-                        "pattern": "^\\.[a-z0-9]+(\\.[a-z0-9]+)*$",
-                        "minLength": 2
-                      }
-                    },
-                    "type": {
-                      "type": "string",
-                      "enum": [
-                        "json",
-                        "binary",
-                        "image",
-                        "audio",
-                        "text"
-                      ]
-                    },
-                    "maxBytes": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 134217728
-                    }
-                  },
-                  "required": [
-                    "ext",
-                    "type"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "find": {
-                "default": "folder",
-                "type": "string",
-                "enum": [
-                  "folder",
-                  "cubism-model3"
-                ]
-              },
-              "maxFiles": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 512
-              }
-            },
-            "required": [
-              "kinds"
-            ],
-            "additionalProperties": false
-          },
-          "import": {
-            "type": "object",
-            "properties": {
-              "accepts": {
-                "minItems": 1,
-                "maxItems": 3,
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "enum": [
-                    "folder",
-                    "zip",
-                    "file"
-                  ]
-                }
-              }
-            },
-            "required": [
-              "accepts"
-            ],
-            "additionalProperties": false
-          },
-          "capabilities": {
-            "maxItems": 8,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "lipsync",
-                "expressions",
-                "motions",
-                "outfits",
-                "lookat",
-                "pace"
-              ]
-            }
-          },
-          "portrait": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "format": "path",
-            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
-          }
-        },
-        "required": [
-          "id",
-          "format",
-          "name",
-          "entry",
-          "files"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "avatar.packs",
-      "shape": "list",
-      "declaredBy": "core",
-      "kind": "data",
-      "doc": "Avatar files with their format and portrait, so an avatar pack is a data plugin (§5.5).",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128,
-            "pattern": "^[a-z0-9]([a-z0-9._-]{0,126}[a-z0-9])?$"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "en": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "en"
-                ],
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            ]
-          },
-          "file": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "format": "path",
-            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
-          },
-          "format": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 32,
-            "pattern": "^[a-z0-9-]+$"
-          },
-          "portrait": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "format": "path",
-            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
-          },
-          "license": {
-            "type": "string",
-            "maxLength": 200
-          }
-        },
-        "required": [
-          "id",
-          "file",
-          "format"
         ],
         "additionalProperties": false
       }
@@ -1534,7 +1253,7 @@
       "context": [
         "bot"
       ],
-      "doc": "A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given. The avatar's section is the character plugin's.",
+      "doc": "A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1760,63 +1479,6 @@
         "required": [
           "title"
         ]
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "bot.stage",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "The stage, where the avatar stands.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
       },
       "props": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2447,141 +2109,6 @@
         "required": [
           "bot",
           "session"
-        ]
-      }
-    },
-    {
-      "name": "avatar",
-      "shape": "keyed",
-      "declaredBy": "bot-stage",
-      "botsOffer": true,
-      "keys": [
-        "vrm",
-        "live2d"
-      ],
-      "context": [
-        "bot"
-      ],
-      "doc": "Draws the bot's avatar, keyed by the avatar file's format (`vrm`, `live2d`, or a plugin's own; `AVATAR_FORMATS`), and lip-syncs it from `speech` (a `SpeechFeed`).",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          },
-          "file": {
-            "type": "string"
-          },
-          "format": {
-            "type": "string"
-          },
-          "speaking": {
-            "type": "boolean"
-          },
-          "speech": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": {}
-          }
-        },
-        "required": [
-          "bot",
-          "file",
-          "format",
-          "speaking"
-        ]
-      }
-    },
-    {
-      "name": "bot.stage.action",
-      "shape": "list",
-      "declaredBy": "bot-stage",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "Small controls on a bot's stage, over its figure (a corner each places itself in): a voice plugin's mute and stop, say. Each entry draws its own control for the bot it is given.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
         ]
       }
     },
@@ -3816,7 +3343,7 @@
       "name": "radius.huge",
       "type": "dimension",
       "default": "24px",
-      "doc": "The largest corners: sheets, the stage."
+      "doc": "The largest corners: sheets."
     },
     {
       "name": "radius.round",
@@ -4141,74 +3668,6 @@
       "type": "color",
       "default": "#CCEDFF",
       "doc": "The working plume at the nozzle."
-    },
-    {
-      "name": "stage.background",
-      "type": "paint",
-      "default": "linear-gradient(180deg, #FFFFFF 0%, #F4F2F8 100%)",
-      "dark": "linear-gradient(180deg, #1D1D23 0%, #151519 100%)",
-      "doc": "The stage behind the avatar."
-    },
-    {
-      "name": "stage.floor",
-      "type": "color",
-      "default": "#1C1B221F",
-      "dark": "#0000008C",
-      "doc": "The soft pool of shadow under the avatar."
-    },
-    {
-      "name": "stage.glow",
-      "type": "color",
-      "default": "#2F6FDF1F",
-      "dark": "#4180E31F",
-      "doc": "The light behind the avatar."
-    },
-    {
-      "name": "stage.foreground",
-      "type": "paint",
-      "default": "#00000000",
-      "doc": "A paint over the avatar's lower edge (grass, mist), so a figure the stage crops reads as standing behind it."
-    },
-    {
-      "name": "stage.foreground.height",
-      "type": "dimension",
-      "default": "0px",
-      "doc": "How far up the stage that paint reaches."
-    },
-    {
-      "name": "stage.text",
-      "type": "color",
-      "default": "#676674",
-      "dark": "#9B9AA8",
-      "doc": "Credits and notes on the stage."
-    },
-    {
-      "name": "avatar.light.key",
-      "type": "color",
-      "default": "#FFFFFF",
-      "dark": "#F2EEFF",
-      "doc": "The avatar's key light."
-    },
-    {
-      "name": "avatar.light.fill",
-      "type": "color",
-      "default": "#F2F6FF",
-      "dark": "#C9D8F2",
-      "doc": "The avatar's fill light."
-    },
-    {
-      "name": "avatar.light.rim",
-      "type": "color",
-      "default": "#FFFFFF",
-      "dark": "#DCE6F7",
-      "doc": "The avatar's rim light."
-    },
-    {
-      "name": "avatar.exposure",
-      "type": "number",
-      "default": 1,
-      "dark": 0.95,
-      "doc": "The avatar's exposure: 1 is neutral."
     }
   ],
   "apiCalls": {
@@ -4234,6 +3693,12 @@
       "where": "both"
     },
     "points.onActive": {
+      "where": "both"
+    },
+    "points.send": {
+      "where": "both"
+    },
+    "points.onMessage": {
       "where": "both"
     },
     "commands.run": {
@@ -4625,26 +4090,6 @@
     },
     "desktop.close": {
       "where": "moss"
-    },
-    "avatar.cue": {
-      "capability": "avatar.control",
-      "where": "both"
-    },
-    "avatar.catalogue": {
-      "capability": "avatar.read",
-      "where": "both"
-    },
-    "avatar.box": {
-      "capability": "avatar.read",
-      "where": "both"
-    },
-    "avatar.watch": {
-      "capability": "avatar.read",
-      "where": "both"
-    },
-    "avatar.report": {
-      "capability": "avatar.report",
-      "where": "ui"
     },
     "turns.take": {
       "where": "both"

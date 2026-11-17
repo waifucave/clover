@@ -70,28 +70,6 @@
                   "type": "string",
                   "maxLength": 256
                 },
-                "avatar": {
-                  "type": "object",
-                  "properties": {
-                    "src": {
-                      "type": "string",
-                      "maxLength": 4096
-                    },
-                    "format": {
-                      "type": "string",
-                      "maxLength": 32
-                    },
-                    "credit": {
-                      "type": "string",
-                      "maxLength": 1200
-                    }
-                  },
-                  "required": [
-                    "src",
-                    "format"
-                  ],
-                  "additionalProperties": false
-                },
                 "userLayer": {
                   "type": "array",
                   "items": {
@@ -101,7 +79,6 @@
                       "instructions",
                       "model",
                       "effort",
-                      "avatar",
                       "theme",
                       "layout",
                       "lan"
@@ -226,28 +203,6 @@
                 "type": "string",
                 "maxLength": 256
               },
-              "avatar": {
-                "type": "object",
-                "properties": {
-                  "src": {
-                    "type": "string",
-                    "maxLength": 4096
-                  },
-                  "format": {
-                    "type": "string",
-                    "maxLength": 32
-                  },
-                  "credit": {
-                    "type": "string",
-                    "maxLength": 1200
-                  }
-                },
-                "required": [
-                  "src",
-                  "format"
-                ],
-                "additionalProperties": false
-              },
               "userLayer": {
                 "type": "array",
                 "items": {
@@ -257,7 +212,6 @@
                     "instructions",
                     "model",
                     "effort",
-                    "avatar",
                     "theme",
                     "layout",
                     "lan"
@@ -390,49 +344,6 @@
                   }
                 ]
               },
-              "avatar": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "file": {
-                        "type": "string",
-                        "maxLength": 4096
-                      },
-                      "format": {
-                        "type": "string",
-                        "maxLength": 32
-                      },
-                      "portrait": {
-                        "type": "string",
-                        "maxLength": 4096
-                      },
-                      "credit": {
-                        "type": "string",
-                        "maxLength": 1200
-                      }
-                    },
-                    "required": [
-                      "file",
-                      "format"
-                    ]
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "avatarCredit": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "maxLength": 1200
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
               "theme": {
                 "anyOf": [
                   {
@@ -504,148 +415,6 @@
             "additionalProperties": false
           }
         ]
-      }
-    },
-    "bot.importAvatar": {
-      "doc": "Copies a model the user owns (a folder or zip holding an installed format's entry file, or one file of a format that imports single files, read on the daemon's own computer) into the user's folder and makes it the bot's avatar; what each format is comes from its renderer's `avatar.formats` declaration, and a model whose renderer isn't installed and on is refused, naming its format. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
-      "owner": "D",
-      "direction": "to-daemon",
-      "roles": [
-        "app",
-        "cli"
-      ],
-      "userOnly": true,
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 81,
-            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
-          },
-          "path": {
-            "type": "string",
-            "maxLength": 4096
-          }
-        },
-        "required": [
-          "id",
-          "path"
-        ]
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "format": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 32
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 200
-          },
-          "files": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "bytes": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "credit": {
-            "type": "string",
-            "maxLength": 1200
-          }
-        },
-        "required": [
-          "format",
-          "files",
-          "bytes"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "bot.avatarFormats": {
-      "doc": "The avatar formats an import takes now: each installed renderer's that is on (`avatar.formats`), with what the picker offers for it.",
-      "owner": "D",
-      "direction": "to-daemon",
-      "roles": [
-        "app",
-        "cli"
-      ],
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "formats": {
-            "maxItems": 64,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "format": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 32
-                },
-                "name": {
-                  "type": "string",
-                  "maxLength": 200
-                },
-                "accepts": {
-                  "maxItems": 3,
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "enum": [
-                      "folder",
-                      "zip",
-                      "file"
-                    ]
-                  }
-                },
-                "files": {
-                  "maxItems": 32,
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "maxLength": 32
-                  }
-                },
-                "entries": {
-                  "maxItems": 16,
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "maxLength": 32
-                  }
-                }
-              },
-              "required": [
-                "format",
-                "name",
-                "accepts",
-                "files",
-                "entries"
-              ],
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": [
-          "formats"
-        ],
-        "additionalProperties": false
       }
     },
     "bots.pause": {
@@ -3167,27 +2936,6 @@
                 "type": "string",
                 "maxLength": 256
               },
-              "avatar": {
-                "type": "object",
-                "properties": {
-                  "src": {
-                    "type": "string",
-                    "maxLength": 4096
-                  },
-                  "format": {
-                    "type": "string",
-                    "maxLength": 32
-                  },
-                  "credit": {
-                    "type": "string",
-                    "maxLength": 1200
-                  }
-                },
-                "required": [
-                  "src",
-                  "format"
-                ]
-              },
               "userLayer": {
                 "type": "array",
                 "items": {
@@ -3197,7 +2945,6 @@
                     "instructions",
                     "model",
                     "effort",
-                    "avatar",
                     "theme",
                     "layout",
                     "lan"

@@ -12,6 +12,7 @@ import {
   BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, isPluginId, type ValidationIssue,
 } from "@waifucave/moss-protocol";
 import { capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
+import { RETIRED_BOT_AVATAR, retiredCapability, retiredMessage, retiredPoint } from "../catalogs/retired";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { hookReadsStdinAsScript } from "./hook-command";
 import { CORE_POINTS, CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo, isPlatformDataPoint } from "../catalogs/points";
@@ -198,10 +199,6 @@ function collectPaths(m: Record<string, unknown>): { path: Seg[]; value: string;
   if (isObject(c.bot)) {
     const b = c.bot;
     for (const k of ["instructions", "layout", "greeting", "memory"]) add(["contributes", "bot", k], b[k], "contribution");
-    if (isObject(b.avatar)) {
-      add(["contributes", "bot", "avatar", "file"], b.avatar.file, "contribution");
-      add(["contributes", "bot", "avatar", "portrait"], b.avatar.portrait, "contribution");
-    }
   }
   const list = (key: string) => (Array.isArray(c[key]) ? (c[key] as unknown[]) : []);
   list("models").forEach((e, i) => isObject(e) && add(["contributes", "models", i, "catalog"], e.catalog, "entry"));
@@ -336,6 +333,15 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
         continue;
       }
     }
+    // Files that come with each entry (`files`): each names a top-level field of `fields` whose format is `path`.
+    if (isObject(d.files)) {
+      const props = isObject(d.fields) && isObject(d.fields.properties) ? d.fields.properties : {};
+      const wrong = Object.keys(d.files).filter((k) => !(isObject(props[k]) && (props[k] as Record<string, unknown>).format === "path"));
+      if (wrong.length > 0) {
+        f.error(refuses, "point_files", [...at, "files"], `\`files\` names the entry fields whose files come along; ${wrong.map((k) => `"${k}"`).join(", ")} ${wrong.length === 1 ? "isn't a field" : "aren't fields"} of \`fields\` with format \`path\``);
+        continue;
+      }
+    }
     const where = jsonPointer(at);
     // A UI spot may be declared on several of a plugin's entries (lane F: its panel and its Files view both declare
     // `file.preview`), each a place the spot shows, all with the same declaration; any other point is declared once.
@@ -441,7 +447,9 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
 
   const capabilities = Array.isArray(top.capabilities) ? top.capabilities.filter((c): c is string => typeof c === "string") : [];
   capabilities.forEach((c, i) => {
-    if (!isCapability(c)) f.error("plugin", "capability_unknown", ["capabilities", i], `"${c}" is not a capability (see the catalog)`);
+    const retired = retiredCapability(c);
+    if (retired !== undefined) f.error("plugin", "capability_retired", ["capabilities", i], retiredMessage(retired));
+    else if (!isCapability(c)) f.error("plugin", "capability_unknown", ["capabilities", i], `"${c}" is not a capability (see the catalog)`);
     else if (c === "approvals.all" && !capabilities.includes("approvals")) f.error("plugin", "capability_needs", ["capabilities", i], "`approvals.all` needs `approvals` too");
     else if (capabilities.indexOf(c) !== i) f.warn("capability_duplicate", ["capabilities", i], `"${c}" is listed twice`);
   });
@@ -589,6 +597,13 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   if (isObject(kept.bot) && kept.bot.voice !== undefined) {
     f.warn("bot_voice", ["contributes", "bot", "voice"], "a bot's voice is no longer set here and this is ignored; give your bot a default voice with `moss.voice.defaults` (MOSS Voice's point), which the user's own choice overrides");
     delete (kept.bot as Record<string, unknown>).voice;
+  }
+
+  // A bot's own figure was once set here (`contributes.bot.avatar`): an older bot still loads, the field ignored, and the
+  // warning says where a figure goes now (an avatar pack).
+  if (isObject(kept.bot) && kept.bot.avatar !== undefined) {
+    f.warn("bot_avatar_retired", ["contributes", "bot", "avatar"], `${retiredMessage(RETIRED_BOT_AVATAR)}; this is ignored`);
+    delete (kept.bot as Record<string, unknown>).avatar;
   }
 
   // Tool names are unique within a top-level plugin and contain no `__` (§5.9, §6.7).
@@ -1115,6 +1130,11 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     return false;
   }
   const spotName = e.spot as string;
+  const retiredSpot = retiredPoint(spotName);
+  if (retiredSpot !== undefined) {
+    f.error("entry", "spot_retired", [...at, "spot"], retiredMessage(retiredSpot));
+    return false;
+  }
   const spot = spotInfo(spotName);
   if (e.target !== undefined && e.hide !== true) {
     f.error("entry", "ui_target", [...at, "target"], "`target` names the entry a `hide` takes out of a list spot; this entry hides nothing");
@@ -1234,6 +1254,11 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
 /** A dotted `contributes` key: a point another plugin declares (§5.4). A well-known data point's entries are checked
  *  now; any other waits until its point appears, and is checked then. */
 function checkPluginPointValue(f: Findings, key: string, value: unknown, at: Seg[], ctx: { hasHost: boolean }): unknown {
+  const retired = retiredPoint(key);
+  if (retired !== undefined) {
+    f.error("contribution", "point_retired", at, retiredMessage(retired));
+    return undefined;
+  }
   if (CORE_POINT_NAMES.has(key) || SPOT_NAMES.has(key)) {
     f.error("contribution", "fill_spot_through_ui", at, `"${key}" is a UI spot; fill it with a \`ui\` entry`);
     return undefined;
@@ -1437,6 +1462,11 @@ export function fillsOkLines(reports: readonly ManifestReport[], declared?: Fill
   const top = reports.find((r) => r.id !== undefined && !r.id.includes("/"))?.id;
   const points = new Set<string>();
   for (const r of reports) for (const c of r.contributions) if (c.entries > 0) points.add(c.point);
+  // A UI spot a plugin declares is filled through `ui` (an entry naming its spot): its `fills` line counts the same.
+  for (const r of reports) {
+    const ui = (r.manifest?.contributes as { ui?: unknown } | undefined)?.ui;
+    if (Array.isArray(ui)) for (const e of ui) if (isObject(e) && typeof e.spot === "string" && e.spot.includes(".")) points.add(e.spot);
+  }
   const decls: FillsDecl[] = [];
   for (const point of points) {
     const f = coreFills(point) ?? (point.includes(".") ? declared?.(point) : undefined);
@@ -1708,16 +1738,11 @@ export function readOnlyReachesNetwork(
  *  - `call:<plugin>`: another plugin's commands, and their effects;
  *  - `logs.read`: every plugin's logs, other plugins' data;
  *  - `network:*`: the network, already a condition of its own (`readOnlyReachesNetwork`).
- *  The two `avatar.*` capabilities stay allowed: the plugin's own bot's figure is its display (`avatar.report`, which
- *  tells the core what the stage drew for every bot, is not here). */
+ */
 export const CONTAINED_TOOL_CAPABILITIES: readonly string[] = [
   "conversation.read", "memory.read", "bots.read", "routines.read", "computers.read", "devices.read", "usage.read",
   // The window's own parts (`shell.*`): display only, acts count only by the user's own press in a plugin's frame.
   "shell.read", "shell.control",
-  // The figure's own display: `avatar.control` cues only the plugin's own bot's avatar (an expression, a motion, an
-  // outfit part, the pace, a look-at point: nothing it can read, send or keep), at most 20 a second; `avatar.read` reads
-  // that figure's names and box.
-  "avatar.read", "avatar.control",
 ];
 
 /** Whether a server's display-only tools may skip the card: everything that holds a read-only tool to its card

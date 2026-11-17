@@ -1,7 +1,6 @@
 // The tabs the shell ships: a bot's tab (the `bot.tab` entry with no key, which fills every bot without one of its own)
 // and an agent's live tab (`main` keyed `agent`, and `panel` keyed `agent` for a bot's coding agent opened from its
-// slim column). Each lays out the spots it declares: the conversation over the composer, and the stage above them
-// when a plugin fills it. The column beside the conversation (`bot.side`, the session column) is the shell's frame's.
+// slim column). Each lays out the spots it declares: the conversation over the composer. The column beside the conversation (`bot.side`, the session column) is the shell's frame's.
 import type { BotRef } from "./local";
 import type { BotView, EntryProps, SessionView } from "@waifucave/moss-plugin-sdk";
 import { Spot, useSpotEntries, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
@@ -10,7 +9,7 @@ import { useLoad } from "./data";
 import { S } from "./strings";
 import { BotTab } from "./Window";
 
-/** A bot's tab: its main conversation, the composer, and the stage when an avatar plugin stands there. */
+/** A bot's tab: its main conversation and the composer. */
 export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?: (session: string) => void }>) {
   const api = usePluginApi();
   const bot = useLoad(() => api.bots?.get(props.bot.id) ?? Promise.reject(new Error("no bots.read")), [api, props.bot.id]);
@@ -20,20 +19,18 @@ export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?:
   const header = own("bot.header");
   const controls = own("bot.controls");
   if (!bot) return <div className="cl-shell-empty" role="status">{S.loading}</div>;
-  const stage = bot.avatar !== undefined;
   const at = { bot: props.bot, session: bot.mainSession };
   return (
     <BotTab
       header={header ? <Spot name="bot.header" props={{ bot: props.bot }} /> : undefined}
       controls={controls ? <Spot name="bot.controls" props={at} /> : undefined}
-      stage={stage ? <Spot name="bot.stage" props={{ bot: props.bot }} /> : undefined}
       conversation={<Spot name="conversation" props={{ ...at, onOpenAgent: props.onOpenAgent }} />}
       composer={<Spot name="composer" props={at} />}
     />
   );
 }
 
-/** The bot as the daemon holds it now: read once, then followed through `bots.watch` (a model pick, a new avatar). */
+/** The bot as the daemon holds it now: read once, then followed through `bots.watch` (a model pick). */
 function useLiveBot(bot: BotRef): BotView | undefined {
   const api = usePluginApi();
   const [now, setNow] = useState<BotView | undefined>(undefined);

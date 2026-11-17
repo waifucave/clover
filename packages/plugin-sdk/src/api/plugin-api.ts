@@ -19,7 +19,6 @@ import {
   topPluginIdOf, type ActivityView, type DataKind, type PictureView, type PicturePublishMeta,
 } from "@waifucave/moss-protocol";
 
-import type { AvatarApi, AvatarReport } from "../catalogs/avatar-cues";
 
 export type Unsubscribe = () => void;
 
@@ -348,6 +347,21 @@ export interface PointsApi {
   active(point: string): Promise<ActiveFiller | undefined>;
   /** Hears the active entry change: the user's choice, or the default taking over when the active one stops. */
   onActive(point: string, listener: (active: ActiveFiller | undefined) => void): Unsubscribe;
+  /** A message on a point a plugin declares (point messages): between the point's declaring plugin and the plugins
+   *  with an active entry in it, never anyone else. From the declarer it goes to every filler (or the one `to` names);
+   *  from a filler it goes to the declarer. Plain data, at most `POINT_MESSAGE_MAX_BYTES` serialized and
+   *  `POINT_MESSAGES_PER_SECOND` a second per plugin; every one is delivered, in order. Filling such a point is what
+   *  its declarer's `fills` line on the filler's OK card says, so the card is the gate. */
+  send(point: string, value: unknown, opts?: { to?: string }): Promise<void>;
+  /** Hears the messages on a point the plugin declares or fills (`send`), each with the plugin that sent it, while it
+   *  declares or fills it. */
+  onMessage(point: string, listener: (message: PointMessage) => void): Unsubscribe;
+}
+
+/** A point message as its receiver hears it: who sent it (a plugin id) and what. */
+export interface PointMessage {
+  readonly from: string;
+  readonly value: unknown;
 }
 
 /** Which entry of a one-at-a-time point is active: its plugin and entry id, never its value. */
@@ -621,12 +635,6 @@ export interface ComputersApi {
   /** For the bound session too, as `takeHold` is. */
   setActionRunning(computer: string, running: boolean): Promise<void>;
   mossWindows(computer: string): Promise<MossWindow[]>;
-}
-
-/** The stage's own call (bundled `moss` tree, components only): which renderer drew a bot's figure, what its model has
- *  and where it stands; `undefined` clears it. */
-export interface AvatarReportApi {
-  report(bot: string, report: AvatarReport | undefined): Promise<void>;
 }
 
 /** `devices.read`: the user's devices, for the island's Devices tab and the like: names, kinds, links, online state
@@ -1045,8 +1053,6 @@ export interface PluginApi {
   /** Its own tree's logs with no capability; MOSS's and every other plugin's with `logs.read`. */
   readonly logs: LogsApi;
   readonly notify?: NotifyApi;
-  /** `avatar.read`, `avatar.control`: the plugin's own bot's figure, each call by its capability. */
-  readonly avatar?: Partial<AvatarApi> & Partial<AvatarReportApi>;
   /** Only the bundled `moss` tree's process: this computer's desktop notifications, for its notifier. */
   readonly desktop?: DesktopNotifications;
   /** One-at-a-time queues the platform runs (§5.4 "Turns"): its own turns, another plugin's it offers, the device's. */

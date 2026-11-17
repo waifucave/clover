@@ -214,11 +214,6 @@
         "default": "anthropic/claude-sonnet-5-5",
         "effort": "medium"
       },
-      "avatar": {
-        "file": "assets/alpha.vrm",
-        "format": "vrm",
-        "portrait": "assets/portrait.svg"
-      },
       "theme": "alpha",
       "layout": "tab/layout.json"
     },
@@ -430,8 +425,6 @@
     "bots.read",
     "conversation.read",
     "shell.control",
-    "shell.read",
-    "avatar.read",
-    "avatar.control"
+    "shell.read"
   ]
 }

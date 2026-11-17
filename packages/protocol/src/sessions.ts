@@ -24,7 +24,7 @@ import { coreEvent, defineEvent, defineMethod } from "./rpc";
 export const BotState = z.enum(["idle", "thinking", "asleep", "paused"]);
 
 /** To be retired in part by spec revision 19 (§6.1, G7, G8): a bot becomes engine data (`BotRecordView`, bots.ts) and its
- *  `avatar`, `theme`, `layout` and the user layer go with the plugin bot; lane BT moves the bots over (`bot.move.status`). */
+ *  `theme`, `layout` and the user layer go with the plugin bot (a figure left the platform for the avatar plugin); lane BT moves the bots over (`bot.move.status`). */
 export const BotView = z.object({
   /** The bot's id is its plugin's id (§6.1). */
   id: BotId,
@@ -35,14 +35,8 @@ export const BotView = z.object({
   model: utf16(200),
   effort: utf16(32).optional(),
   theme: utf16(256).optional(),
-  /** The avatar it stands with on its stage: the file's asset URL and its format (a renderer's `avatar.formats` id: `vrm`, `live2d`, or one a plugin brings), when it has one (§6.6). */
-  avatar: z.object({
-    src: utf16(4096), format: utf16(32),
-    /** The model's own credit or terms note as a user's own avatar carries it (plain text, at most 300 characters; set at import from the model's own notes, and the user's to edit or clear). */
-    credit: utf16(1200).optional(),
-  }).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
-  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "avatar", "theme", "layout", "lan"])),
+  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "theme", "layout", "lan"])),
   /** The bot's browser tabs may reach the LAN (private and link-local addresses; never loopback or metadata, lane L's
    *  #260). Only the person sets it, in the user layer (`bot.setUserLayer`, theirs alone); it is never a plugin's. */
   lan: z.boolean().optional(),
@@ -60,9 +54,6 @@ export const UserLayerPatch = z.object({
   instructions: utf16(200_000).nullable().optional(),
   model: utf16(200).nullable().optional(),
   effort: utf16(32).nullable().optional(),
-  avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional(), credit: utf16(1200).optional() }).nullable().optional(),
-  /** Sets (text) or clears (`null`) the credit note of the user's own avatar; the avatar must be the user's own. */
-  avatarCredit: utf16(1200).nullable().optional(),
   theme: utf16(256).nullable().optional(),
   layout: utf16(4096).nullable().optional(),
   /** The bot's LAN setting (lane L's `lanBots`): written only by the person, through their own app or terminal, or a
@@ -290,32 +281,6 @@ export const SESSIONS_METHODS = {
     name: "bot.setUserLayer", owner: "D", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({ id: BotId, patch: UserLayerPatch }), result: ChangeResult,
     doc: "Sets or clears fields of a bot's user layer; a change to its instructions applies at its next turn.",
-  }),
-  // `bot.importAvatar` and `bot.avatarFormats` are retired by spec revision 19 (§5.4 "There is no avatar in the platform",
-  // G7): the bundled avatar plugin takes them as its own points (lane MC).
-  botImportAvatar: defineMethod({
-    name: "bot.importAvatar", owner: "D", roles: ["app", "cli"], userOnly: true,
-    params: z.object({ id: BotId, path: utf16(4096) }),
-    result: z.object({
-      /** The model's format, as its renderer declares it (`avatar.formats`), and the format's name in English. */
-      format: utf16(32, 1), name: utf16(200).optional(),
-      files: z.number().int().nonnegative(), bytes: z.number().int().nonnegative(), credit: utf16(1200).optional(),
-    }),
-    doc: "Copies a model the user owns (a folder or zip holding an installed format's entry file, or one file of a format that imports single files, read on the daemon's own computer) into the user's folder and makes it the bot's avatar; what each format is comes from its renderer's `avatar.formats` declaration, and a model whose renderer isn't installed and on is refused, naming its format. A plain-text readme, license, credit or terms file at the top of the folder or zip is kept as the avatar's `credit` note (neutralised plain text, the first 300 characters; the user's to edit or clear). Only this computer's app or terminal may call it.",
-  }),
-  botAvatarFormats: defineMethod({
-    name: "bot.avatarFormats", owner: "D", roles: ["app", "cli"],
-    params: z.object({}),
-    result: z.object({
-      formats: z.array(z.object({
-        format: utf16(32, 1), name: utf16(200),
-        /** What the picker offers for it: a folder, a zip, a single file. */
-        accepts: z.array(z.enum(["folder", "zip", "file"])).max(3),
-        /** The extensions (with the dot) a picked single file of it may have, and what names it in a folder or zip. */
-        files: z.array(utf16(32)).max(32), entries: z.array(utf16(32)).max(16),
-      })).max(64),
-    }),
-    doc: "The avatar formats an import takes now: each installed renderer's that is on (`avatar.formats`), with what the picker offers for it.",
   }),
   botsPause: defineMethod({
     name: "bots.pause", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,

@@ -231,12 +231,23 @@ describe("plugin.ui and plugin.layer.api", () => {
     expect([layerOf("moss"), layerOf("moss/island"), layerOf("luna"), layerOf("luna/tarot-panel"), layerOf("mossish")]).toEqual(["moss", "moss", "luna", "luna--tarot-panel", "mossish"]);
   });
 
-  test("a renderer's avatar.formats reach the view: its kinds, the extensions that pick it, the finder; a size over the format's ceiling is clamped, a renderer with no UI still shows", () => {
-    const record = { id: "pic", name: "Pic", enabled: true, state: "running", treeHash: "sha256:x", source: "local", granted: [], folder: "/p/pic", manifest: { manifest: 1, id: "pic", name: "Pic" } };
-    const declared = { id: "pngtuber", format: "pngtuber", name: "Pngtuber", entry: { extensions: [".pngtuber.json"] }, files: { kinds: [{ ext: [".json"], type: "json", maxBytes: 99_999_999 }, { ext: [".png"], type: "image", maxBytes: 4_194_304 }], find: "folder", maxFiles: 16 } };
-    const registry = { list: () => [record], entries: (point: string) => (point === "avatar.formats" ? [{ pluginId: "pic", state: "active", value: declared }, { pluginId: "pic", state: "waiting", value: { ...declared, format: "unfinished" } }] : []) } as never;
+  test("files that come with a point's entries reach the view (a word-list point, nothing about figures): the folder of each active entry's path, the declared kinds, a cap over the kind's ceiling clamped; a data plugin with no UI still shows", () => {
+    const record = { id: "words-en", name: "English words", enabled: true, state: "running", treeHash: "sha256:x", source: "local", granted: [], folder: "/p/words-en", manifest: { manifest: 1, id: "words-en", name: "English words" } };
+    const decl = { shape: "list", fields: { type: "object", properties: { id: { type: "string" }, list: { type: "string", format: "path" } } }, files: { list: { kinds: [{ ext: [".json"], type: "json", maxBytes: 99_999_999 }, { ext: [".mp3"], type: "audio", maxBytes: 1_000 }] } } };
+    const registry = {
+      list: () => [record],
+      points: () => [{ name: "spell.lists", shape: "list", declaredBy: { pluginId: "spell", ref: "host" }, spot: false, active: true, decl }],
+      entries: (point: string) => (point === "spell.lists" ? [
+        { pluginId: "words-en", state: "active", value: { id: "common", list: "lists/common/words.json" } },
+        { pluginId: "words-en", state: "waiting", value: { id: "later", list: "lists/later/words.json" } },
+        { pluginId: "words-en", state: "active", value: { id: "bad", list: "../out/words.json" } },
+      ] : []),
+    } as never;
     const [view] = uiPluginViews(registry);
-    expect(view?.avatarFormats).toEqual([{ format: "pngtuber", extensions: [".pngtuber.json"], kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".png"], type: "image", maxBytes: 4_194_304 }], find: "folder", maxFiles: 16 }]);
+    expect(view?.dataFiles).toEqual([{ folder: "lists/common", kinds: [{ ext: [".json"], type: "json", maxBytes: 8 * 1024 * 1024 }, { ext: [".mp3"], type: "audio", maxBytes: 1_000 }] }]);
+    // The declaration gone (its declarer off): no files come along.
+    const off = { ...(registry as Record<string, unknown>), points: () => [] } as never;
+    expect(uiPluginViews(off)[0]?.dataFiles).toBeUndefined();
   });
 });
 

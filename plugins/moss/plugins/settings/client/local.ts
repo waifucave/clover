@@ -8,16 +8,6 @@ export interface BotRef {
   name: string;
 }
 
-/** An `avatar.packs` entry: an avatar file with its format and portrait. */
-export interface AvatarPackEntry {
-  id: string;
-  name?: string;
-  file: string;
-  format: string;
-  portrait?: string;
-  license?: string;
-}
-
 /** A component an entry names. */
 export type EntryComponent<P = any> = UiComponent<EntryProps<P>>;
 

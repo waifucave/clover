@@ -1,5 +1,5 @@
 // The Voice section of Settings (`settings.section`), filled by MOSS Voice: whether replies are spoken at all ("Speak
-// replies", this plugin's own `speakReplies`; the stage's chip is the quick mute of the same setting). Which voice speaks
+// replies", this plugin's own `speakReplies`). Which voice speaks
 // isn't kept here: its own point `moss.voice.modes` takes one filler at a time (P4), and Settings draws its picker (titled "Voice")
 // and tells the user when the one they picked stops.
 import { usePluginApi } from "@waifucave/moss-plugin-sdk/ui";

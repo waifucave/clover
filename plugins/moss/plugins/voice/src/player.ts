@@ -1,6 +1,6 @@
 // MOSS Voice's player (spec §6.6), in its background part (`app.background`): it plays what the host half streams it
 // (a bot's reply in its voice, pcm16-24k: 16-bit little-endian mono at 24 kHz, no header) on one AudioContext, one
-// utterance at a time, and sends what it plays to the bot's stage as speech cues (`levels.ts`).
+// utterance at a time, and sends what it plays as mouth levels to the plugins that fill `moss.voice.speech` (`levels.ts`).
 //
 // The rule (MOSS Voice's own queue):
 // * One utterance at a time from this plugin, and one voice at a time on the device: the utterance at the head of the
@@ -316,7 +316,7 @@ export class SpeechPlayer {
     this.#d.changed?.();
   }
 
-  /** Stopped, replaced or dropped: what sounds stops now and the stage's mouth is cut. */
+  /** Stopped, replaced or dropped: what sounds stops now and the mouth levels are cut. */
   #drop(u: Utterance, cut: boolean): void {
     for (const s of u.sources) {
       s.onended = null;

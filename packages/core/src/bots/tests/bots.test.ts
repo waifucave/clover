@@ -51,18 +51,15 @@ describe("Alpha", () => {
       icon?: string; contributes: { bot: Record<string, unknown>; themes?: { id: string; file: string }[] };
     };
     const has = (p: string) => existsSync(join(ALPHA_FOLDER, ...p.split("/")));
-    const bot = manifest.contributes.bot as { theme?: string; layout?: string; avatar?: { file: string; format: string; portrait?: string } };
+    const bot = manifest.contributes.bot as { theme?: string; layout?: string; avatar?: unknown };
     if (has("tab/theme.json")) {
       expect(manifest.contributes.themes).toContainEqual({ id: "alpha", file: "tab/theme.json" });
       expect(bot.theme).toBe("alpha");
     } else expect(bot.theme).toBeUndefined();
     if (has("tab/layout.json")) expect(bot.layout).toBe("tab/layout.json");
     else expect(bot.layout).toBeUndefined();
-    if (has("assets/alpha.vrm")) expect(bot.avatar).toMatchObject({ file: "assets/alpha.vrm", format: "vrm" });
-    else expect(bot.avatar).toBeUndefined();
-    for (const portrait of ["assets/portrait.webp", "assets/portrait.svg", "assets/portrait.png"]) {
-      if (has(portrait)) expect(bot.avatar?.portrait).toBe(portrait);
-    }
+    // Her figure is an avatar pack now (the avatar plugin's `moss.character.packs`): her bot names none.
+    expect(bot.avatar).toBeUndefined();
   });
 
   test("the core loads Alpha and lists it with its state; its one conversation opens with its greeting", async () => {
@@ -72,7 +69,7 @@ describe("Alpha", () => {
     expect(views).toHaveLength(1);
     const alpha = BotView.parse(views[0]);
     expect(alpha).toEqual({
-      id: "alpha", name: "Alpha", portrait: "moss-asset://alpha/assets/portrait.svg", avatar: { src: "moss-asset://alpha/assets/alpha.vrm", format: "vrm" }, model: "anthropic/claude-sonnet-5-5", effort: "medium",
+      id: "alpha", name: "Alpha", model: "anthropic/claude-sonnet-5-5", effort: "medium",
       theme: "alpha", userLayer: [], state: "idle", computer: "Studio", mainSession: "b_alpha",
     });
     expect(b.host.get("b_alpha")).toMatchObject({ kind: "bot", bot: "alpha", title: "Alpha", model: "anthropic/claude-sonnet-5-5", effort: "medium" });
@@ -328,26 +325,6 @@ describe("the user layer", () => {
     await b.shutdown();
   });
 
-  test("a layer stored by an earlier build (the user's own Live2D model over a plugin that ships a VRM) is the avatar after the upgrade", async () => {
-    const root = tempDir();
-    const dir = writePlugin(root, "luna", {
-      "moss.json": botManifest("luna", "Luna", { avatar: { file: "assets/luna.vrm", format: "vrm", portrait: "assets/portrait.svg" } }),
-      "bot/instructions.md": "You are Luna.",
-      "assets/luna.vrm": "glTF",
-      "assets/portrait.svg": "<svg/>",
-    });
-    const home = tempDir();
-    const inputs = (await pluginFromFolder(dir)).inputs;
-    // The file as the picker's import wrote it on 0.x-12b: the whole layer under `fields`, the avatar as `user:<folder>/<entry>`.
-    mkdirSync(join(home, "user-layers"), { recursive: true });
-    writeFileSync(userLayerFile(home, "luna"), JSON.stringify({ userLayer: 1, bot: "luna", fields: { avatar: { file: "user:k3x9q2/hero.model3.json", format: "live2d", credit: "Model by someone; free for personal use" } } }));
-    const b = await boot({ home, plugins: inputs });
-    expect(b.bots.get("luna")).toMatchObject({ userLayer: ["avatar"], avatar: { src: "/_a/luna/k3x9q2/hero.model3.json", format: "live2d", credit: "Model by someone; free for personal use" } });
-    expect(b.bots.list().find((x) => x.id === "luna")?.avatar?.format).toBe("live2d");
-    // The user's model has no portrait of its own: the dock and lists keep the plugin's face, not a letter.
-    expect(b.bots.get("luna")?.portrait).toBeTruthy();
-    await b.shutdown();
-  });
 
   test("a model no plugin that is on offers is refused in words the picker shows; one whose plugin is still starting is taken; clearing it is never checked", async () => {
     const asked: string[] = [];

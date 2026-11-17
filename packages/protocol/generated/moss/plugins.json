@@ -3439,26 +3439,6 @@
                     "userLayout": {
                       "type": "string",
                       "maxLength": 4096
-                    },
-                    "avatar": {
-                      "type": "object",
-                      "properties": {
-                        "file": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 4096
-                        },
-                        "format": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 32
-                        }
-                      },
-                      "required": [
-                        "file",
-                        "format"
-                      ],
-                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -3466,25 +3446,15 @@
                   ],
                   "additionalProperties": false
                 },
-                "avatarFormats": {
-                  "maxItems": 16,
+                "dataFiles": {
+                  "maxItems": 64,
                   "type": "array",
                   "items": {
                     "type": "object",
                     "properties": {
-                      "format": {
+                      "folder": {
                         "type": "string",
-                        "minLength": 1,
-                        "maxLength": 32
-                      },
-                      "extensions": {
-                        "maxItems": 8,
-                        "type": "array",
-                        "items": {
-                          "type": "string",
-                          "maxLength": 32,
-                          "minLength": 2
-                        }
+                        "maxLength": 4096
                       },
                       "kinds": {
                         "maxItems": 16,
@@ -3524,25 +3494,11 @@
                           ],
                           "additionalProperties": false
                         }
-                      },
-                      "find": {
-                        "type": "string",
-                        "enum": [
-                          "folder",
-                          "cubism-model3"
-                        ]
-                      },
-                      "maxFiles": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 512
                       }
                     },
                     "required": [
-                      "format",
-                      "extensions",
-                      "kinds",
-                      "find"
+                      "folder",
+                      "kinds"
                     ],
                     "additionalProperties": false
                   }

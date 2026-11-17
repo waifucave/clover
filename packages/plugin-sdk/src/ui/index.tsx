@@ -24,13 +24,11 @@ import type {
 import { CALLBACK_KEY, type DragOffer, type LayerBridge, type LayerMessage, type MenuItem, type MountContext, type MountInfo, type OpenTarget, type SpotItem, type SpotView, type SurfaceEnvironment, type SurfaceRequest, type ThemeSheet, type StringTable, type SpotEntryView, type PendingQuestion, type UserSendTarget, type ShellMethod } from "./bridge";
 import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
-import { ReceivedSpeech, SpeechForwarder, cleanSpeechMessage } from "./speech";
-import { AvatarControlHub, cleanAvatarDown, cleanAvatarUp, type AvatarState } from "./avatar-control";
-import type { AvatarBox, AvatarCatalogueNames, AvatarCue } from "../catalogs/avatar-cues";
 
 export * from "./bridge";
-export { AvatarControlHub, avatarBoxFromRect, cleanAvatarCue, type AvatarState } from "./avatar-control";
-// Mouth levels from speech, for any avatar renderer (./mouth): the five vowel weights from the `avatar` spot's speech feed.
+// Mouth levels from speech (./mouth), for any part that moves a mouth: the five vowel weights from a speech feed, and
+// `TimedSpeech` (./speech), a feed made from mouth levels stamped in epoch milliseconds.
+export { TimedSpeech, type TimedSpeechClock, type TimedSpeechStats } from "./speech";
 export { LipSync, SpeechRing, frameSource, ringSource, analyserSource, bufferSource, speechFrames, PushedSpeech, MAX_FRAME_SECONDS, visemeWeights, MouthSmoother, VISEMES, SHUT, SILENCE_RMS, FULL_RMS, DARK_HZ, BRIGHT_HZ, clamp01, rmsOf, spectralCentroidOf, FFT_SIZE, type LipSyncSource, type SpeechFeatureSource, type SpeechFeatures, type AnalyserLike, type VisemeWeights } from "./mouth";
 // What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
 // React of its own (`moss plugin new`'s UI and point templates do).
@@ -110,14 +108,6 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
       }
     }
     if (m.type === "focus-returned") restoreFocus();
-    if (m.type === "speech") {
-      const speech = cleanSpeechMessage(m.speech);
-      if (speech !== undefined) receivedSpeech.get(m.mount)?.accept(speech);
-    }
-    if (m.type === "avatar") {
-      const down = cleanAvatarDown(m.message);
-      if (down !== undefined) framedAvatars.get(m.mount)?.cue(down.cue);
-    }
     if (m.type === "questions") r.questions = m.questions;
     if (m.type === "api-event") {
       const e = m.params as { type?: unknown; card?: CardMeta; id?: unknown; outcome?: unknown } | undefined;
@@ -230,116 +220,6 @@ interface Part {
 }
 
 const PartContext = createContext<Part | null>(null);
-
-/** The speech an `avatar` renderer lip-syncs to (`useAvatarSpeech`): the stage's own feed for a renderer in its
- *  document, or what its parent sends a renderer in a frame of its own. */
-export interface AvatarSpeech {
-  /** The feed: frames on the audio clock, and the clock. Undefined where the app isn't describing speech to this part. */
-  readonly feed: SpeechFeed | undefined;
-  /** Whether the bot is speaking now. */
-  readonly speaking: boolean;
-}
-const NO_SPEECH: AvatarSpeech = { feed: undefined, speaking: false };
-const AvatarSpeechContext = createContext<AvatarSpeech>(NO_SPEECH);
-
-/** The receivers of this document's framed `avatar` renderers, by mount (`LayerRoot`). */
-const receivedSpeech = new Map<string, ReceivedSpeech>();
-
-/** For the stage (the `moss` layer's character part, or whatever plays the bot's speech): the feed the `avatar`
- *  spot's renderers under it lip-sync to. A renderer in this document reads it with `useAvatarSpeech`; a renderer in a
- *  frame of its own gets its frames sent on, numbers only, while the frame can be seen. Not for plugins. */
-export function AvatarSpeechProvider({ feed, speaking, children }: { feed: SpeechFeed | undefined; speaking: boolean; children?: ReactNode }) {
-  const value = useMemo<AvatarSpeech>(() => ({ feed, speaking }), [feed, speaking]);
-  return <AvatarSpeechContext.Provider value={value}>{children}</AvatarSpeechContext.Provider>;
-}
-
-/** In an `avatar` renderer: the speech of the bot it draws, to move its mouth by. The same in the `moss` layer and in
- *  a plugin's own frame: `feed.subscribe` hands frames `{ t, rms, centroid }` (loudness 0–1 and brightness in Hz, on the
- *  audio clock, a little ahead of when they play), `feed.now()` is that clock now, and `speaking` says whether the bot
- *  speaks. Only numbers reach a plugin's frame: no audio, no text. */
-export function useAvatarSpeech(): AvatarSpeech {
-  return useContext(AvatarSpeechContext);
-}
-
-/** What an `avatar` renderer uses to take cues and publish its model's names and the figure's box (`useAvatarControl`). */
-const AvatarControlContext = createContext<AvatarControlHub | undefined>(undefined);
-/** The hubs of this document's framed `avatar` renderers, by mount (`LayerRoot`). */
-const framedAvatars = new Map<string, AvatarControlHub>();
-
-/** For the stage: the hub its `avatar` renderers take cues from and publish to. A renderer in this document reads it
- *  with `useAvatarControl`; a renderer in a frame of its own gets each cue sent on and its state read back, as plain
- *  data through main, while the frame can be seen. Not for plugins. */
-export function AvatarControlProvider({ hub, children }: { hub: AvatarControlHub | undefined; children?: ReactNode }) {
-  useEffect(() => {
-    if (hub === undefined || typeof document === "undefined") return;
-    const sync = () => hub.setVisible(!document.hidden);
-    sync();
-    document.addEventListener("visibilitychange", sync);
-    return () => document.removeEventListener("visibilitychange", sync);
-  }, [hub]);
-  return <AvatarControlContext.Provider value={hub}>{children}</AvatarControlContext.Provider>;
-}
-
-/** What `useAvatarControl` gives a renderer. */
-export interface AvatarControl {
-  /** Takes the cues for this figure (an expression, a motion, an outfit part, the pace, a look-at point). A renderer
-   *  plays what its `avatar.formats` `capabilities` list; a cue it doesn't list never reaches it (the core answers the
-   *  caller plainly). Returns the unsubscribe, for an effect's cleanup. */
-  onCue(listener: (cue: AvatarCue) => void): () => void;
-  /** Tells the app what the loaded model has, by its own names (and where each outfit part stands); undefined when
-   *  nothing is loaded. Call it when a model loads or changes. */
-  setCatalogue(names: AvatarCatalogueNames | undefined): void;
-  /** Tells the app where the figure stands on the stage, in the stage's own pixels from its top left: its box and
-   *  the anchors it knows (`headTop`, `face`, `mouth`, `chest`). Say it when a model loads and when it moves
-   *  materially: it is throttled here, and nothing goes while the window is hidden. Only the canvas is enough. */
-  setBox(box: AvatarBox | undefined): void;
-}
-const NO_CONTROL: AvatarControl = { onCue: () => () => undefined, setCatalogue: () => undefined, setBox: () => undefined };
-
-/** In an `avatar` renderer: receive the bot plugin's cues and publish the model's catalogue and the figure's box. The
- *  same in the `moss` layer and in a plugin's own frame. Outside the stage it does nothing. */
-export function useAvatarControl(): AvatarControl {
-  const hub = useContext(AvatarControlContext);
-  return useMemo<AvatarControl>(() => (hub === undefined ? NO_CONTROL : {
-    onCue: (l) => hub.onCue(l),
-    setCatalogue: (n) => hub.setNames(n),
-    setBox: (b) => hub.setBox(b),
-  }), [hub]);
-}
-
-/** A framed `avatar` renderer's own control: cues from its parent, its state up to it. */
-function FramedAvatar({ mount, children }: { mount: string; children: ReactNode }) {
-  const hub = useMemo(() => new AvatarControlHub((state: AvatarState) => {
-    rt().bridge.avatarUp?.({ kind: "state", names: state.names ?? null, box: state.box ?? null });
-  }), [mount]);
-  useEffect(() => {
-    framedAvatars.set(mount, hub);
-    return () => {
-      hub.close();
-      if (framedAvatars.get(mount) === hub) framedAvatars.delete(mount);
-    };
-  }, [mount, hub]);
-  return <AvatarControlProvider hub={hub}>{children}</AvatarControlProvider>;
-}
-
-/** A framed `avatar` renderer's own speech: what its parent sends, as a feed. */
-function FramedSpeech({ mount, children }: { mount: string; children: ReactNode }) {
-  const feed = useMemo(() => {
-    const received = new ReceivedSpeech();
-    receivedSpeech.set(mount, received);
-    return received;
-  }, [mount]);
-  const [speaking, setSpeaking] = useState(false);
-  useEffect(() => {
-    receivedSpeech.set(mount, feed);
-    const off = feed.onSpeaking(setSpeaking);
-    return () => {
-      off();
-      if (receivedSpeech.get(mount) === feed) receivedSpeech.delete(mount);
-    };
-  }, [mount, feed]);
-  return <AvatarSpeechProvider feed={feed} speaking={speaking}>{children}</AvatarSpeechProvider>;
-}
 
 /** The document's strings, as the core last sent them. */
 const StringsContext = createContext<StringTable>(EMPTY_STRINGS);
@@ -487,7 +367,7 @@ export function LayerRoot({ info }: { info: MountInfo }) {
   const view = <EntryView part={part} component={component} props={props} />;
   return (
     <StringsContext.Provider value={strings}>
-      {info.spot === "avatar" ? <FramedSpeech mount={info.mount}><FramedAvatar mount={info.mount}>{view}</FramedAvatar></FramedSpeech> : view}
+      {view}
     </StringsContext.Provider>
   );
 }
@@ -530,10 +410,13 @@ export type SpotProps = Omit<SpotElementProps, "key" | "spotKey" | "entry"> & {
   fallback?: ReactNode;
   /** The bot whose tab shows, for the spots that offer `when.bot` outside a bot's tab (`sidebar`, `bar`): heard from the `moss` layer only. */
   forBot?: string;
+  /** An entry in a frame of its own fills the room this part gives the spot (and scrolls inside itself), instead of
+   *  taking the height its content reports: a drawing that is as big as its box, say. */
+  fill?: boolean;
 };
 
 /** `<Spot name spotKey props>`: shows a spot this part declares (§5.5). */
-export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, forBot }: SpotProps) {
+export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, forBot, fill }: SpotProps) {
   const entry = entryRef ?? only;
   const part = usePart();
   const hints = useContext(SpotHints);
@@ -570,13 +453,13 @@ export function Spot({ name, spotKey, entry: entryRef, only, props, fallback, fo
   }
   return (
     <div data-moss-spot={name} data-moss-key={spotKey} data-moss-conflict={view.conflict ? "" : undefined} style={{ display: "contents" }}>
-      {view.items.map((item) => <SpotItemView key={item.mount} item={item} parent={part} spot={name} spotKey={view.key} props={props} />)}
+      {view.items.map((item) => <SpotItemView key={item.mount} item={item} parent={part} spot={name} spotKey={view.key} props={props} fill={fill} />)}
     </div>
   );
 }
 
-function SpotItemView({ item, parent, spot, spotKey, props }: { item: SpotItem; parent: Part; spot: string; spotKey: string | undefined; props: unknown }) {
-  if (item.kind === "frame") return <LayerFrame item={item} props={props} spot={spot} />;
+function SpotItemView({ item, parent, spot, spotKey, props, fill }: { item: SpotItem; parent: Part; spot: string; spotKey: string | undefined; props: unknown; fill?: boolean | undefined }) {
+  if (item.kind === "frame") return <LayerFrame item={item} props={props} spot={spot} {...(fill === true ? { fill: true } : {})} />;
   if (item.kind === "web") return <WebPart item={item} />;
   return <InlineItem item={item} parent={parent} spot={spot} spotKey={spotKey} props={props} />;
 }
@@ -725,12 +608,12 @@ function useNear(el: Element | null): boolean {
  *  for a while, it sleeps: the core drops its document (and the layer's process with its last frame), and it wakes
  *  rebuilt from the core's state when it comes near again (§5.5). */
 /** The spots whose frames fill the room they are given and scroll inside themselves, instead of taking the height their
- *  content reports: the window's `main` and `panel` columns, and the stage's `avatar`. */
-const FILL_SPOTS: readonly string[] = ["main", "panel", "avatar"];
+ *  content reports: the window's `main` and `panel` columns, and any spot whose declaring part asks it (`<Spot fill>`). */
+const FILL_SPOTS: readonly string[] = ["main", "panel"];
 /** In a flex column it takes what is left (and may shrink under it); anywhere else, the whole height of its container. */
 const FILL_STYLE: CSSProperties = { height: "100%", flex: "1 1 0", minHeight: 0 };
 
-function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "frame" }>; props: unknown; spot: string }) {
+function LayerFrame({ item, props, spot, fill: fillAsked }: { item: Extract<SpotItem, { kind: "frame" }>; props: unknown; spot: string; fill?: boolean }) {
   const r = rt();
   const [url, setUrl] = useState(item.url);
   const [asleep, setAsleep] = useState(item.asleep === true);
@@ -742,42 +625,7 @@ function LayerFrame({ item, props, spot }: { item: Extract<SpotItem, { kind: "fr
   const toldProps = useRef<string | undefined>(undefined);
   const [el, setEl] = useState<Element | null>(null);
   const near = useNear(el);
-  const fill = FILL_SPOTS.includes(spot);
-  // An `avatar` renderer in a frame of its own: the stage's speech, sent on as numbers while the frame can be seen.
-  const speech = useContext(AvatarSpeechContext);
-  const shown = useDocumentShown();
-  const forwarder = useRef<SpeechForwarder | undefined>(undefined);
-  useEffect(() => {
-    if (spot !== "avatar" || speech.feed === undefined || r.bridge.speech === undefined) return;
-    const send = r.bridge.speech.bind(r.bridge);
-    const f = new SpeechForwarder(speech.feed, (message) => send(item.mount, message));
-    forwarder.current = f;
-    return () => {
-      f.close();
-      if (forwarder.current === f) forwarder.current = undefined;
-    };
-  }, [spot, speech.feed, item.mount, r]);
-  useEffect(() => forwarder.current?.setOpen(shown && !asleep && gone === undefined), [shown, asleep, gone, speech.feed, item.mount]);
-  useEffect(() => forwarder.current?.setSpeaking(speech.speaking), [speech.speaking, speech.feed, item.mount]);
-  // The same frame's cues, sent on while it can be seen, and what it says about its model and figure, read into the stage's hub.
-  const avatarHub = useContext(AvatarControlContext);
-  const seen = shown && !asleep && gone === undefined;
-  useEffect(() => {
-    if (spot !== "avatar" || avatarHub === undefined || !seen || r.bridge.avatar === undefined) return;
-    const send = r.bridge.avatar.bind(r.bridge);
-    return avatarHub.onCue((cue) => send(item.mount, { kind: "cue", cue }));
-  }, [spot, avatarHub, seen, item.mount, r]);
-  useEffect(() => {
-    if (spot !== "avatar" || avatarHub === undefined) return;
-    const off = onLayerMessage((m) => {
-      if (m.type !== "avatar-up" || m.child !== item.mount) return;
-      const up = cleanAvatarUp(m.message);
-      if (up === undefined) return;
-      if (up.names !== undefined) avatarHub.setNames(up.names ?? undefined);
-      if (up.box !== undefined) avatarHub.setBox(up.box ?? undefined);
-    });
-    return () => { off(); avatarHub.setNames(undefined); avatarHub.setBox(undefined); };
-  }, [spot, avatarHub, item.mount]);
+  const fill = fillAsked === true || FILL_SPOTS.includes(spot);
   useEffect(() => {
     if (item.url !== "") setUrl(item.url);
   }, [item.url]);
@@ -1288,21 +1136,6 @@ export function usePluginApi(): PluginApi {
           });
         },
       } as unknown as PluginApi["browser"],
-      // The plugin's own bot's figure (`avatar.read`, `avatar.control`), through the core, which judges each cue; the stage's
-      // own `report` (bundled `moss` tree only). The watch hears the core's `moss.avatar.changed` message for this plugin.
-      avatar: {
-        cue: (cue: unknown, opts?: unknown) => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.cue", args: opts === undefined ? [cue] : [cue, opts] }).then((r) => r.result),
-        catalogue: () => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.catalogue", args: [] }).then((r) => r.result),
-        box: () => call<{ result: unknown }>("plugin.layer.call", { call: "avatar.box", args: [] }).then((r) => r.result),
-        report: (bot: string, report: unknown) => call<unknown>("plugin.layer.call", { call: "avatar.report", args: [bot, report ?? null] }).then(() => undefined),
-        watch: (listener: (change: unknown) => void): Unsubscribe => {
-          subscribe(part.mount, part.entry.pluginId, "plugins");
-          return onApiEvent(part.entry.pluginId, (method, params) => {
-            const e = params as { type?: unknown; pluginId?: unknown; event?: unknown; value?: unknown } | undefined;
-            if (method === "core.event" && e?.type === "plugin_ui_message" && e.pluginId === part.entry.pluginId && e.event === "moss.avatar.changed") listener(e.value);
-          });
-        },
-      } as unknown as PluginApi["avatar"],
       // What the user hands the page (`files.pick*`, gesture-bound, served by the app's main process, which opens its own dialog):
       // tokens for the plugin's host half (`host.call`) and the media URL below. The rest of `files` (`stat`, `readText`,
       // `write`, `watch` …) is the catalog's, through the core's fence as the plugin, as its host half's.
