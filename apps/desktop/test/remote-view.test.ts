@@ -44,7 +44,7 @@ test("a session's tab shown in the panel's view opens a view stream at the panel
   expect(h.calls.at(-1)).toEqual({ method: "browser.view.close", params: { stream: "s1" } });
 });
 
-test("MOSS Code's panel shows no bot's tab, and nothing while the window runs its own pages", async () => {
+test("the panel asks for whatever tab is placed in its view (the engine's rule decides), and nothing while the window runs its own pages", async () => {
   const h = harness();
   h.views.setTarget("browser", target);
   h.views.tabChanged(tab("t1", { kind: "user" }, "browser"));
@@ -53,7 +53,7 @@ test("MOSS Code's panel shows no bot's tab, and nothing while the window runs it
   h.views.tabChanged(tab("t2", { kind: "bot", bot: "b_1" } as TabView["owner"], "panel-2"));
   h.views.setTarget("panel-2", target);
   await settle();
-  expect(h.calls.map((c) => (c.params as { tab: string }).tab)).toEqual(["t1"]);
+  expect(h.calls.map((c) => (c.params as { tab: string }).tab)).toEqual(["t1", "t2"]);
 });
 
 test("the person's input goes out only after a real press in the panel's own frame; a forged one never does", async () => {

@@ -27,16 +27,23 @@ export function programOf(conn: MossConn): Program | undefined {
   return conn.program;
 }
 
-/** Which tabs a window may see: MOSS's window bots' tabs only; MOSS Code's code sessions' and the person's own. */
-export function viewMayShow(program: Program | undefined, tab: Pick<TabView, "owner">): boolean {
+/** Where the bots live (lane BT's one switch, `bots/source.ts`): `code` while MOSS Code's window still shows them (the
+ *  switch at its default, `plugins`), `moss` once they are served as records to the MOSS app. The controller's ruling:
+ *  the views' rule follows it, here and nowhere else. */
+export type BotsShownIn = "code" | "moss";
+
+/** Which tabs a window may see. While MOSS Code shows the bots, its window sees every tab as today's does (and MOSS's
+ *  sees bots' tabs). Once the bots are MOSS's: MOSS Code's window code sessions' and the person's own, MOSS's bots'. */
+export function viewMayShow(program: Program | undefined, tab: Pick<TabView, "owner">, bots: BotsShownIn = "moss"): boolean {
   if (program === "moss") return tab.owner.kind === "bot";
-  if (program === "code") return tab.owner.kind === "session" || tab.owner.kind === "user";
+  if (program === "code") return tab.owner.kind === "session" || tab.owner.kind === "user" || (bots === "code" && tab.owner.kind === "bot");
   return false;
 }
 
-/** Which tabs take the person's input from a view: MOSS Code's, on a code session's tab or the person's own. */
-export function viewTakesInput(program: Program | undefined, tab: Pick<TabView, "owner">): boolean {
-  return program === "code" && (tab.owner.kind === "session" || tab.owner.kind === "user");
+/** Which tabs take the person's input from a view: MOSS Code's, on a code session's tab or the person's own, and on a
+ *  bot's while MOSS Code still shows the bots (today's rule). MOSS's view is watch only. */
+export function viewTakesInput(program: Program | undefined, tab: Pick<TabView, "owner">, bots: BotsShownIn = "moss"): boolean {
+  return program === "code" && (tab.owner.kind === "session" || tab.owner.kind === "user" || (bots === "code" && tab.owner.kind === "bot"));
 }
 
 export interface HostDoorDeps {
@@ -57,6 +64,8 @@ export interface HostDoorDeps {
   openApp(program: "moss" | "code"): Promise<void>;
   /** Stops the host, both apps and the engine (after the answer to the click has gone). */
   quitEverything(): void;
+  /** Where the bots are shown now (lane BT's switch); default `moss`, the rule after the bots have left MOSS Code. */
+  botsShownIn?(): BotsShownIn;
   /** A tab the browser knows, by id (the MOSS Browser's `BrowserService`). */
   tab(id: string): TabView | undefined;
   /** A tab's pictures (`tab-frames.ts`); `accept` takes `host.tab.frame`. */
@@ -177,7 +186,7 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       if (conn.role !== "app" || (program !== "moss" && program !== "code")) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, "a tab's view is a window's");
       const tab = deps.tab(p.tab);
       if (tab === undefined) throw new MossRpcError(ERR.INVALID_PARAMS, "no such tab");
-      if (!viewMayShow(program, tab)) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, program === "moss" ? "MOSS's window shows only bots' tabs" : "MOSS Code's window shows no bot's tab");
+      if (!viewMayShow(program, tab, deps.botsShownIn?.())) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, program === "moss" ? "MOSS's window shows only bots' tabs" : "MOSS Code's window shows no bot's tab");
       if (host === undefined) throw new MossRpcError(ERR.RETRY, "the background host isn't running; it starts again by itself");
       const stream = `view-${randomUUID()}`;
       const view: ViewStream = { connId: conn.connId, tab: tab.id, program };
@@ -203,7 +212,7 @@ export function hostDoor(deps: HostDoorDeps): HostDoor {
       if (v === undefined || v.connId !== conn.connId) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, "input goes only to a view this window opened");
       const tab = deps.tab(v.tab);
       if (tab === undefined) throw new MossRpcError(ERR.INVALID_PARAMS, "the tab is gone");
-      if (!viewTakesInput(program, tab)) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, "this tab takes no input from a view");
+      if (!viewTakesInput(program, tab, deps.botsShownIn?.())) throw new MossRpcError(MOSS_ERR.NOT_THE_USER, "this tab takes no input from a view");
       const h = host;
       if (h === undefined) throw new MossRpcError(ERR.RETRY, "the background host isn't running");
       await deps.ask(h, HOST_METHODS.hostTabInput.name, { id: tab.id, events: p.events as TabInputEvent[] }, HOST_TAB_INPUT_TIMEOUT_MS);

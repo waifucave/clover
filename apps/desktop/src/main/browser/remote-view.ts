@@ -4,8 +4,8 @@
 // `browser.view.input` on that stream (`remote-input.ts` says which input is the person's own).
 //
 // * Which tab shows where: the tab whose `view` is the panel's view name and whose place is `shown` (the engine's
-//   `tab_changed`), in the place the view's frame has in the window now (`ViewFrames`). Only a code session's tab or
-//   the person's own: MOSS Code's window shows no bot's tab (the engine refuses one too).
+//   `tab_changed`), in the place the view's frame has in the window now (`ViewFrames`). Whose tabs MOSS Code's window
+//   may show is the engine's one rule (`host/door.ts` `viewMayShow`, by lane BT's bot switch): a refused view stays empty.
 // * Nothing of a plugin reaches it: the viewport is the app's own view (its own partition, no network, its page only),
 //   its input comes in on its own contents only, and `browser.view.input` leaves from the main process's own connection.
 // * `RemoteViews` is the logic, over `RemoteViewDeps`; `electronRemoteViewport` makes the drawn view (Electron).
@@ -35,7 +35,7 @@ export interface RemoteViewDeps {
 
 interface Open { tab: string; stream?: string; vp: RemoteViewport; opening: boolean; closed: boolean }
 
-const SHOWN_HERE = (t: TabView) => t.place === "shown" && (t.owner.kind === "session" || t.owner.kind === "user");
+const SHOWN_HERE = (t: TabView) => t.place === "shown";
 
 export class RemoteViews {
   readonly #tabs = new Map<string, TabView>();

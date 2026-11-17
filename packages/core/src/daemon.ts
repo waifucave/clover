@@ -3486,7 +3486,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     get: (id) => { const v = daemonParts?.bots?.host.get(id); return v === undefined ? undefined : { kind: dataKindOfSession(v), ...(v.bot !== undefined ? { bot: v.bot } : {}) }; },
   };
   let activityTracker: ActivityTracker | undefined;
-  const browserDrives = browserPictureBridge({ pictures: livePictures, sessions: pictureSessions, frames: opts.tabFrames });
+  // lane HS: the browser's own picture from the pages owner's frames (`host/tab-frames.ts`, fed by `host.tab.frame`), in the
+  // bridge's shape; a test's `opts.tabFrames` stands in when given.
+  const hostTabFrames: TabFrames = {
+    subscribe: (tab, fn) => {
+      const frames = hostSupervision?.frames;
+      if (frames === undefined) return () => {};
+      return frames.subscribe(tab, (f) => fn({ format: f.format, width: f.width, height: f.height, bytes: Buffer.from(f.data, "base64") }));
+    },
+  };
+  const browserDrives = browserPictureBridge({ pictures: livePictures, sessions: pictureSessions, frames: opts.tabFrames ?? hostTabFrames });
   Object.assign(mossLaneHandlers, pictureWindowHandlers({ pictures: livePictures, now: () => Date.now() }), laneMethodHandlers(Object.fromEntries(
     Object.entries(activityMossHandlers(activityFeed)).map(([name, h]) => [name, async (params: unknown) => h(params)]),
   )));

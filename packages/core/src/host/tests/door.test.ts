@@ -6,7 +6,7 @@ import type { AppInstallRecord, TabView } from "@waifucave/moss-protocol";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakeHostWorld } from "../../contracts/fakes/host-supervisor";
 import type { MossConn } from "../../ipc/moss";
-import { hostDoor } from "../door";
+import { hostDoor, viewMayShow, viewTakesInput } from "../door";
 import { EngineHostSupervisor } from "../supervisor";
 import { EngineTabFrames, pagesOwner } from "../tab-frames";
 import { APP_BROWSER_FEATURE } from "../../browser/app-port";
@@ -282,4 +282,31 @@ test("R12: host.surfaces is the ready host's alone, kept as this computer's MOSS
   expect(kept).toEqual([[island]]);
   t.door.closed(h.c);
   expect(kept.at(-1)).toEqual([]);
+});
+
+describe("the views follow lane BT's bot switch (the controller's ruling)", () => {
+  const owners = { bot: { kind: "bot", bot: "b_1" }, session: { kind: "session", session: "s_1" }, user: { kind: "user" } } as const;
+  test("while MOSS Code shows the bots (the switch at its default), its panel shows and drives a bot's tab as today", () => {
+    for (const o of Object.values(owners)) {
+      expect(viewMayShow("code", { owner: o as TabView["owner"] }, "code")).toBe(true);
+      expect(viewTakesInput("code", { owner: o as TabView["owner"] }, "code")).toBe(true);
+    }
+    expect(viewTakesInput("moss", { owner: owners.bot as TabView["owner"] }, "code")).toBe(false);
+  });
+  test("once the bots are records (MOSS_BOT_SOURCE=records), a bot's tab is refused in MOSS Code's panel and watch only in MOSS", async () => {
+    expect(viewMayShow("code", { owner: owners.bot as TabView["owner"] }, "moss")).toBe(false);
+    expect(viewTakesInput("code", { owner: owners.bot as TabView["owner"] }, "moss")).toBe(false);
+    expect([viewMayShow("moss", { owner: owners.bot as TabView["owner"] }, "moss"), viewTakesInput("moss", { owner: owners.bot as TabView["owner"] }, "moss")]).toEqual([true, false]);
+    // Through the door: the switch's word refuses MOSS Code's view of a bot's tab; at the default it opens.
+    for (const [bots, opens] of [["moss", false], ["code", true]] as const) {
+      const t = setup({ botsShownIn: () => bots });
+      await t.supervisor.boot();
+      const h = conn("host", { features: ["browser"] });
+      t.conns.push(h.c);
+      await t.call(h.c, "host.ready", ready);
+      const w = conn("code");
+      const opened = t.call(w.c, "browser.view.open", { tab: "bot-tab", viewport: { width: 640, height: 480 } });
+      if (opens) await expect(opened).resolves.toMatchObject({ stream: expect.any(String) }); else await expect(opened).rejects.toThrow("shows no bot's tab");
+    }
+  });
 });

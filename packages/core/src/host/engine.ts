@@ -12,6 +12,7 @@ import { EngineHostSupervisor } from "./supervisor";
 import { EngineTabFrames } from "./tab-frames";
 import { engineHostWorld, hostLockHolder, launchApp } from "./world";
 import { hostOwnsScreen } from "./mounts";
+import { botSource } from "../bots/source";
 
 export interface HostSupervisionInput {
   readonly home: string;
@@ -82,6 +83,8 @@ export function startHostSupervision(input: HostSupervisionInput): HostSupervisi
     lockPid: () => hostLockHolder(input.home, input.os),
     midWork: () => midWorkOf(input.busy()),
     tab: (id) => input.tabs().find((t) => t.id === id),
+    // The views follow lane BT's switch: MOSS Code shows the bots until they are served as records.
+    botsShownIn: () => (botSource(input.env) === "plugins" ? "code" : "moss"),
     openApp: async (program) => {
       const live = input.connections().find((c) => c.role === "app" && c.program === program);
       if (live !== undefined) { live.send("app.show", { what: { kind: "window" } }); return; }
