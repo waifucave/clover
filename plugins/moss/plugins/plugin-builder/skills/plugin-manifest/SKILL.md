@@ -108,7 +108,9 @@ spot is never a key here, it goes in `ui`. plugin-catalog lists every point and 
   default (on-demand when unsaid). `readOnly` / `contained` / `webSearch` / `webFetch`: tools the approvals judge as
   their list says (plugin-cards); `browserTools`: tools that take the Browser tool's verbs (`input.verb`) and drive the
   calling bot's own tab through `api.browser` (the plugin holds `browser`), judged as the Browser tool; `needs`: `{ "<tool>": "<capability>" }`, a tool offered only while the plugin holds
-  that capability. `instructions`
+  that capability. `picture: true` (a `host` server only): its tools publish a live picture of their work for the
+  session of the tool call they serve (`api.pictures.publish`, not served yet), and its card says "It shows a live
+  picture of what it is doing." `instructions`
   (a Markdown file, about 4 KB at most), `perComputer`, `scope` (its own, over the plugin's: `own-bot` keeps the
   server's tools inside the plugin's bot), `when: { os }`. A session sees a tool as `mcp__<server>__<tool>`.
 - **`skills`** (list): a path or glob (`skills/*/SKILL.md`), or `{ "path": "<glob>", "scope": "own-bot" }` for skills

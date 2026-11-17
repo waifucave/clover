@@ -365,6 +365,31 @@ export const GrantAccess = z.enum(["read", "write"]);
 export const PluginGrantView = z.object({ token: GrantToken, path: utf16(4096, 1), kind: GrantKind, access: GrantAccess, addedAt: Timestamp });
 export type PluginGrantView = z.infer<typeof PluginGrantView>;
 
+// -------------------------------------------------------------------------------------------------
+// The tool setting (spec revision 19, §6.7, item 103, G10; owner lane TS, shapes pinned by lane SP)
+// -------------------------------------------------------------------------------------------------
+
+/** What the user sets for each plugin tool, beside its permission (always block, ask, always allow), in one list
+ *  (`tool.permissions`): `off` (no bot or agent sees it), `on-demand` (found and loaded through `Glossary`, or an ACP
+ *  agent's own tool search when it has one) or `always` (preloaded). Not the engine's built-in shell and file tools. */
+export const TOOL_AVAILABILITIES = ["off", "on-demand", "always"] as const;
+export const ToolAvailability = z.enum(TOOL_AVAILABILITIES);
+export type ToolAvailability = z.infer<typeof ToolAvailability>;
+
+/** The default with no value stored: what the plugin declares (`tools` in its server's manifest entry): `preload` is
+ *  always on, `on-demand` is on demand. */
+export function defaultAvailability(declared: "preload" | "on-demand"): ToolAvailability {
+  return declared === "preload" ? "always" : "on-demand";
+}
+
+export const ToolSettingsChangedEvent = coreEvent("tool_settings_changed", {
+  server: utf16(256, 1),
+  /** One tool, or absent for every tool the plugin lists now. */
+  tool: utf16(256, 1).optional(),
+  permission: z.enum(["allow", "ask", "deny"]).optional(),
+  availability: ToolAvailability.optional(),
+});
+
 export const PLUGINS_METHODS = {
   pluginList: defineMethod({
     name: "plugin.list", owner: "B", roles: ["app", "cli"],
@@ -479,6 +504,10 @@ export const PLUGINS_METHODS = {
           permission: z.enum(["allow", "ask", "deny"]),
           /** A tool that was not listed when the user last set a value for this plugin: it starts at `ask`. */
           isNew: z.boolean().optional(),
+          /** The tool setting (§6.7, lane TS): this computer's value, and what the manifest declares, which gives the
+           *  default. Absent from an engine that doesn't serve the setting yet. */
+          availability: ToolAvailability.optional(),
+          declared: z.enum(["preload", "on-demand"]).optional(),
           /** What a card's "Always allow" saved for one bot, on which computers: taken back one bot at a time. */
           cardRules: z.array(z.object({ bot: BotId, computers: z.array(ComputerName).max(64) })).max(256),
         })).max(1024),
@@ -496,6 +525,17 @@ export const PLUGINS_METHODS = {
     }),
     result: Ok,
     doc: "Always allow (no card, whatever the call is given), Ask (what the approval level decides) or Always block (refused, with no card, and the bot is told the user blocked it in Settings), for every bot on this computer. Takes effect on the next call. Only the user sets it.",
+  }),
+  toolSetAvailability: defineMethod({
+    name: "tool.setAvailability", owner: "TS", roles: ["app", "cli"], userOnly: true,
+    params: z.object({
+      server: utf16(256, 1),
+      /** One tool, or absent for every tool the plugin lists now (a tool added later starts at its declared default). */
+      tool: utf16(256, 1).optional(),
+      availability: ToolAvailability,
+    }),
+    result: Ok,
+    doc: "Off, on demand (behind Glossary, or an ACP agent's own tool search) or always on, for every bot and agent on this computer; the next turn uses it. Only the user sets it.",
   }),
   toolTakeBackRule: defineMethod({
     name: "tool.takeBackRule", owner: "A", roles: ["app", "cli"], userOnly: true,
@@ -1035,6 +1075,11 @@ export const PluginFoundEvent = coreEvent("plugin_found", { id: TopPluginId, fol
 export const PluginCardNoteEvent = coreEvent("plugin_card_note", { card: CardId, change: utf16(64, 1), note: utf16(500, 1) });
 
 export const PLUGINS_EVENTS = {
+  toolSettingsChanged: defineEvent({
+    type: "tool_settings_changed", owner: "TS", roles: ["app", "cli", "layer"], capability: "tools.permissions", schema: ToolSettingsChangedEvent,
+    fixture: { type: "tool_settings_changed", ts: 1781270000000, server: "blender", tool: "Render", availability: "on-demand" },
+    doc: "A plugin tool's permission or availability changed on this computer.",
+  }),
   pluginChanged: defineEvent({
     type: "plugin_changed", owner: "B", roles: ["app", "cli", "layer"], capability: "plugins.watch", schema: PluginChangedEvent,
     fixture: { type: "plugin_changed", ts: 1781270000000, id: "luna/tarot-panel", state: "waiting", enabled: true, reason: "waiting for `island.tab`", waitingFor: ["island.tab"] },

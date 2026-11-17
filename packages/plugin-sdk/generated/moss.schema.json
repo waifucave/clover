@@ -521,6 +521,10 @@
                   "maxLength": 512
                 }
               },
+              "picture": {
+                "type": "boolean",
+                "const": true
+              },
               "instructions": {
                 "$ref": "#/$defs/__schema1"
               },

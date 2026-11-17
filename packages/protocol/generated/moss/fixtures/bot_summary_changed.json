@@ -1,0 +1,13 @@
+{
+  "type": "bot_summary_changed",
+  "ts": 1781270000000,
+  "summary": {
+    "id": "alpha",
+    "last": {
+      "text": "Done: the report is in your folder.",
+      "from": "bot",
+      "at": 1781270000000
+    },
+    "unread": true
+  }
+}

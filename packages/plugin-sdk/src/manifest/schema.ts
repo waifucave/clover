@@ -180,6 +180,10 @@ export const McpServerSchema = z.strictObject({
   /** A tool offered only while its plugin holds a capability (`{ "WebFetch": "network:public" }`): one that could only
    *  refuse without it isn't listed. Each capability must be one the plugin declares. */
   needs: z.record(utf16(64, 1).regex(/^[A-Za-z0-9_.-]+$/), utf16(512, 1)).optional(),
+  /** `host` only (spec revision 19, §3.6, G5, item 115): this server's tools publish a live picture of their work for the
+   *  session of the tool call they serve (the plugin API's `pictures.publish`); the OK card says it "shows a live picture
+   *  of what it is doing". Adding it in an update asks again. */
+  picture: z.literal(true).optional(),
   /** Extra text for the MCP block, capped at about 4 KB (§6.1). */
   instructions: Path.optional(),
   /** `host` only: bound to its computer, so a local server (§9.1). */
@@ -382,6 +386,8 @@ export const UiSchema = z.object({
 
 /** The core points, by their `contributes` key, and each one's shape there. */
 export const CORE_CONTRIBUTION_SCHEMAS = {
+  /** Retired by spec revision 19 (§5.3 "There is no `bot` point", item 101): bots become engine data; lane BT moves each
+   *  plugin's bot into a record once (protocol bots.ts), and the entry goes after the move. */
   bot: BotSchema,
   models: z.array(ModelSchema).max(64),
   mcpServers: z.record(utf16(64, 1).regex(/^[A-Za-z0-9_-]+$/), McpServerSchema),

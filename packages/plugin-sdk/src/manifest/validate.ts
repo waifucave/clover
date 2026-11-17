@@ -29,6 +29,9 @@ import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
 import type { Manifest, PointDecl } from "./types";
 
+/** The OK card's line for a plugin whose tools publish a live picture (spec revision 19, item 115's words). */
+export const PICTURE_OK_LINE = "It shows a live picture of what it is doing.";
+
 /** Environment names a plugin's server never sets (the core refuses them too, `refuseReservedPluginEnv`). Matched
  *  without case: Windows' environment names are case-insensitive, and a manifest runs on every OS. */
 export const RESERVED_ENV = /^(MOSS_|BUN_|LD_|DYLD_|NODE_(?!(ENV|NO_WARNINGS)$))/i;
@@ -79,6 +82,9 @@ export interface ManifestReport {
    *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
    *  to hide it (the controller's ruling on #377). */
   envSecrets: string[];
+  /** The servers that publish a live picture (`picture: true`, spec revision 19 §3.6), which the OK names. Optional: a
+   *  report made before revision 19 has none. */
+  pictureServers?: string[];
   /** It declares programs of its own (a `stdio` server, a helper, or a Node host, MOSS's own plugins only), which
    *  MOSS's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
   ownPrograms: boolean;
@@ -690,6 +696,16 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     f.error("plugin", "read_only_too_long", ["contributes", "mcpServers"], `the read-only and display-only tools would fill ${readOnlyLines} lines of the OK card, and at most ${READ_ONLY_OK_MAX_LINES} lines of ${OK_LINE_MAX.toLocaleString("en-US")} characters fit: list fewer or shorter names`);
   }
 
+  // A live picture (G5): published through the plugin API, so only by the plugin's own `host` server.
+  const pictureServers: string[] = [];
+  if (isObject(contributes.mcpServers)) {
+    for (const [name, s] of Object.entries(contributes.mcpServers)) {
+      if (s.picture !== true) continue;
+      if (s.type !== "host") f.error("plugin", "picture_not_host", ["contributes", "mcpServers", name, "picture"], `a live picture is published through the plugin API, so only a host server's tools publish one`);
+      else pictureServers.push(name);
+    }
+  }
+
   const envSecrets: string[] = [];
   if (isObject(contributes.mcpServers)) {
     for (const [name, s] of Object.entries(contributes.mcpServers)) {
@@ -724,6 +740,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     containedTools,
     webTools,
     envSecrets,
+    ...(pictureServers.length > 0 ? { pictureServers: pictureServers.sort() } : {}),
     ownPrograms,
     hostPrograms,
     outside,
@@ -1585,6 +1602,7 @@ export function describeOk(
     for (const r of report.containedTools ?? []) lines.push(...containedOkLines(r, containedToolsHold(r, treeNet)));
     for (const w of report.webTools ?? []) lines.push(...webToolOkLines(w));
   }
+  if ((report.pictureServers?.length ?? 0) > 0) lines.push(PICTURE_OK_LINE);
   if (report.envSecrets.length > 0) {
     lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
   }

@@ -40,6 +40,9 @@ export interface DeviceRecord {
    *  names its answer key here too: it never answers with its link key (`publicKey`), so a phone without one answers
    *  no card. */
   answerKey?: { publicKey: string; held: AnswerKeyHolder; alg?: AnswerKeyAlg };
+  /** A desktop's answer keys per program (spec revision 19, ruling C; `program-keys.ts`, lane RT): MOSS, MOSS Code and the
+   *  background host each register their own. `answerKey` above stays the `code` program's until lane RT moves it here. */
+  answerKeys?: Partial<Record<"moss" | "code" | "host", { publicKey: string; held: AnswerKeyHolder; alg?: AnswerKeyAlg }>>;
   /** Its X25519 box key, raw 32 bytes as base64url (H-M1's ask), which account-scope boxes are sealed to (lane I's);
    *  absent until the device has published one. A revoked device's is never used. */
   boxKey?: string;

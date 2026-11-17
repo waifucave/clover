@@ -291,6 +291,29 @@ describe("MOSS connections (C-M1)", () => {
     c.close();
   });
 
+  test("an app hello's surface (spec revision 19, G1): absent is code, with today's mounts; one live host; app role only", async () => {
+    const b = await boot();
+    const code = await Client.connect(b.socketPath);
+    const r = await code.hello("app", b.appToken);
+    expect(r.result).toMatchObject({ surface: "code", mount: { surface: "code", browserPages: true } });
+    expect(r.result.mount.points).toContain("app.surface");
+    const host = await Client.connect(b.socketPath);
+    expect((await host.hello("app", b.appToken, { surface: "host" })).result).toMatchObject({ surface: "host", mount: { surface: "host", points: ["themes", "locales", "app.surface", "app.background", "app.tray"] } });
+    const second = await Client.connect(b.socketPath);
+    const refused = await second.hello("app", b.appToken, { surface: "host" });
+    expect(refused.error).toMatchObject({ code: MOSS_ERR.SURFACE_REFUSED, data: { reason: "second-host", surface: "host" } });
+    const moss = await Client.connect(b.socketPath);
+    expect((await moss.hello("app", b.appToken, { surface: "moss" })).result).toMatchObject({ surface: "moss", mount: { points: [], places: [] } });
+    const cli = await Client.connect(b.socketPath);
+    expect((await cli.hello("cli", b.legacy.harness, { surface: "code" })).error).toMatchObject({ code: MOSS_ERR.SURFACE_REFUSED, data: { reason: "not-app" } });
+    // The host's connection closes: a new host may say hello.
+    host.close();
+    await Bun.sleep(50);
+    const again = await Client.connect(b.socketPath);
+    expect((await again.hello("app", b.appToken, { surface: "host" })).result?.surface).toBe("host");
+    for (const c of [code, second, moss, cli, again]) c.close();
+  });
+
   // The peer-image check over a real socket (macOS): the server's default checks the connection's audit token against
   // the profile's MOSS app, and this test's own process (bun) isn't it. A check against bun's own signature (the
   // requirement alone: bun's entitlements open it, so the hardened check refuses it too) lets the same hello in, so

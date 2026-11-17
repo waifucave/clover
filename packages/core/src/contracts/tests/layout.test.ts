@@ -43,7 +43,10 @@ describe("the contracts' layout", () => {
       "runDeviceRegistryConformance", "runFenceConformance", "runLeaseConformance", "runLinkTransportConformance",
       "runPluginHostConformance", "runPluginRegistryConformance", "runSecretStoreConformance", "runSessionHostConformance",
       "runTreeConformance",
-    ]);
+      // The split's (spec revision 19).
+      "runSurfaceDoorConformance", "runCardRouterConformance", "runProgramAnswerKeysConformance", "runReleaseHomeConformance",
+      "runHostSupervisorConformance", "runActivityFeedConformance", "runLivePicturesConformance", "runBotRecordsConformance", "runToolSettingsConformance",
+    ].sort());
     expect(readFileSync(join(root, "index.ts"), "utf8")).not.toContain("conformance");
   });
 
@@ -62,9 +65,11 @@ describe("the contracts' layout", () => {
       "FakeClock", "MemorySecretStore", "FakeFence", "FakeApprovalBroker", "FakePluginRegistry", "FakePluginHost",
       "FakeSessionHost", "FakeSessionDriver", "FakeLinkNetwork", "FakeDeviceRegistry", "FakeLeaseAuthority",
       "FakeComputerRegistry", "FakeTree", "FakeAgentBackend", "FakeBrowser",
+      "FakeSurfaceDoor", "FakeCardRouter", "FakeProgramAnswerKeys", "FakeReleaseHome",
+      "FakeHostSupervisor", "FakeHostWorld", "FakeActivityFeed", "FakeLivePictures", "FakeBotRecords", "FakeToolSettings",
     ];
     for (const name of expected) expect(typeof (fakes as Record<string, unknown>)[name]).toBe("function");
-    for (const name of ["compareStamps", "judge", "levelDecision", "acpOutcomeFor", "cardMetaOf", "crashBackoffMs", "originOf", "holdsOverlap", "splitTreePath", "deviceIdFor"]) {
+    for (const name of ["compareStamps", "judge", "levelDecision", "acpOutcomeFor", "cardMetaOf", "crashBackoffMs", "originOf", "holdsOverlap", "splitTreePath", "deviceIdFor", "readerMay", "isImageOf", "botIdFromName"]) {
       expect(typeof (contracts as Record<string, unknown>)[name]).toBe("function");
     }
   });

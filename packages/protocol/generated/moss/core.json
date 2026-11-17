@@ -79,6 +79,19 @@
               "minLength": 1,
               "maxLength": 64
             }
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "moss",
+              "code",
+              "host"
+            ]
+          },
+          "release": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
           }
         },
         "required": [
@@ -250,6 +263,84 @@
             "items": {
               "type": "string"
             }
+          },
+          "surface": {
+            "type": "string",
+            "enum": [
+              "moss",
+              "code",
+              "host"
+            ]
+          },
+          "mount": {
+            "type": "object",
+            "properties": {
+              "surface": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
+              },
+              "points": {
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "places": {
+                "maxItems": 3,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "engine",
+                    "screen",
+                    "window"
+                  ]
+                }
+              },
+              "browserPages": {
+                "type": "boolean"
+              },
+              "drawsCards": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "surface",
+              "points",
+              "places",
+              "browserPages",
+              "drawsCards"
+            ],
+            "additionalProperties": false
+          },
+          "release": {
+            "type": "object",
+            "properties": {
+              "standing": {
+                "type": "string",
+                "enum": [
+                  "same",
+                  "ahead"
+                ]
+              },
+              "engine": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+              }
+            },
+            "required": [
+              "standing",
+              "engine"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -322,7 +413,7 @@
         "properties": {
           "areas": {
             "minItems": 1,
-            "maxItems": 9,
+            "maxItems": 14,
             "type": "array",
             "items": {
               "type": "string",
@@ -335,7 +426,12 @@
                 "agents",
                 "app",
                 "browser",
-                "usage"
+                "usage",
+                "surfaces",
+                "host",
+                "release",
+                "activity",
+                "bots"
               ]
             }
           }
@@ -377,7 +473,7 @@
         "properties": {
           "areas": {
             "minItems": 1,
-            "maxItems": 9,
+            "maxItems": 14,
             "type": "array",
             "items": {
               "type": "string",
@@ -390,7 +486,12 @@
                 "agents",
                 "app",
                 "browser",
-                "usage"
+                "usage",
+                "surfaces",
+                "host",
+                "release",
+                "activity",
+                "bots"
               ]
             }
           }

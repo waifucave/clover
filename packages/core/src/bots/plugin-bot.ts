@@ -1,6 +1,9 @@
 // A bot as its plugin declares it (spec §5.9 `Bot`, §6.1): the `bot` entry of a plugin's manifest, read from the
 // plugin registry, with the files it names read from the plugin's folder. Owner: lane D.
 //
+// Retired by spec revision 19 (§6.1 "A bot is engine data", item 101): lane BT reads these once for the move into bot
+// records (contracts `BotRecords.move`, `PluginBotForMove`), then the plugin bot format goes.
+//
 // * **One bot per plugin**, and the bot's id is the plugin's id. A pack of bots keeps each one in a child plugin, so
 //   a pack's bots are `pack/luna` and `pack/nova` (§6.1), whose files and folders write the `/` as `--` (§5.1).
 // * Only an active `bot` entry of a plugin that is on is a bot. A plugin switched off, refused, blocked or removed

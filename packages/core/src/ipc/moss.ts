@@ -16,6 +16,7 @@
 import {
   MOSS_ERR, MOSS_METHODS, MOSS_PROTOCOL_MIN_VERSION, MOSS_ROLES, MOSS_PROTOCOL_VERSION, MossHelloParams, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type MossHelloResult, type MossRole, type SessionKind,
+  DEFAULT_SURFACE, LEGACY_CODE_MOUNTS, SURFACE_MOUNTS, type Surface,
 } from "@waifucave/moss-protocol";
 import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type MossTokens } from "../auth/moss-tokens";
@@ -41,6 +42,8 @@ export interface MossConn {
   readonly caller: Caller;
   readonly features: readonly string[];
   readonly clientName: string;
+  /** An `app` connection's surface (spec revision 19, G1): `code` when its hello named none. Undefined for other roles. */
+  readonly surface?: Surface;
   /** A plugin-host connection's verified process (review S1): handlers take the call's process from here, never
    *  from a plugin id a plugin could share. */
   readonly hostProcess?: { readonly hostProcess: "moss" | "shared" | "own"; readonly pluginId?: string };
@@ -398,10 +401,25 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   };
 
   // A connection after its hello: kept for routing (`coreEvent`) and closing.
+  // An `app` hello's surface (G1): absent is `code`, today's app; on any other role it is refused, and so is a second live
+  // `host` for this home (one per home, §3.1). It picks the mount list only; it grants no method.
+  const surfaceOf = (h: MossHelloParams): Surface | undefined => {
+    if (h.role !== "app") {
+      if (h.surface !== undefined) throw new MossRpcError(MOSS_ERR.SURFACE_REFUSED, "surface is the app role's alone", { reason: "not-app", surface: h.surface });
+      return undefined;
+    }
+    const surface = h.surface ?? DEFAULT_SURFACE;
+    if (surface === "host" && [...conns.values()].some((c) => c.surface === "host")) {
+      throw new MossRpcError(MOSS_ERR.SURFACE_REFUSED, "a background host is already live for this home", { reason: "second-host", surface });
+    }
+    return surface;
+  };
+
   const register = (connId: number, h: MossHelloParams, caller: Caller, write: (bytes: Uint8Array) => void, extra: Pick<MossConn, "hostProcess" | "bridgeConnection">): { conn: MossConn; result: MossHelloResult } => {
     if (conns.has(connId)) throw new MossRpcError(ERR.INVALID_REQUEST, "that connection already said hello");
+    const surface = surfaceOf(h);
     const conn: MossConn = {
-      connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...extra,
+      connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...extra, ...(surface !== undefined ? { surface } : {}),
       send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
       notify(method, p) {
         if (conn.relayed === true && method !== CODE_AGENT_LINE_NOTIFICATION) return;
@@ -413,7 +431,11 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     deps.log?.(`[moss] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}`);
     return {
       conn,
-      result: { ok: true, serverVersion: deps.serverVersion, protocolVersion: MOSS_PROTOCOL_VERSION, caller, device: deps.deviceId, features: [...(deps.features ?? [])] },
+      result: {
+        ok: true, serverVersion: deps.serverVersion, protocolVersion: MOSS_PROTOCOL_VERSION, caller, device: deps.deviceId, features: [...(deps.features ?? [])],
+        // Until the background host runs (lane HS), a `code` window still mounts the screen's points itself.
+        ...(surface !== undefined ? { surface, mount: surface === "code" ? LEGACY_CODE_MOUNTS : SURFACE_MOUNTS[surface] } : {}),
+      },
     };
   };
 

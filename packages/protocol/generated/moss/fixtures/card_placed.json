@@ -1,0 +1,13 @@
+{
+  "type": "card_placed",
+  "ts": 1781270000000,
+  "card": "card_abcdef",
+  "place": {
+    "kind": "island"
+  },
+  "before": {
+    "kind": "strip",
+    "program": "code",
+    "window": "main"
+  }
+}

@@ -915,6 +915,14 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256
+                  },
+                  "program": {
+                    "type": "string",
+                    "enum": [
+                      "moss",
+                      "code",
+                      "host"
+                    ]
                   }
                 },
                 "required": [
@@ -1388,6 +1396,14 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 256
+                },
+                "program": {
+                  "type": "string",
+                  "enum": [
+                    "moss",
+                    "code",
+                    "host"
+                  ]
                 }
               },
               "required": [
@@ -2127,6 +2143,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -2679,6 +2703,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -3229,6 +3261,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -3777,6 +3817,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -4322,6 +4370,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -4830,6 +4886,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -5342,6 +5406,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -5867,6 +5939,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -6419,6 +6499,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -6924,6 +7012,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -7429,6 +7525,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -7940,6 +8044,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -8498,6 +8610,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -9156,6 +9276,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -10052,6 +10180,14 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 256
+              },
+              "program": {
+                "type": "string",
+                "enum": [
+                  "moss",
+                  "code",
+                  "host"
+                ]
               }
             },
             "required": [
@@ -10585,6 +10721,14 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 256
+                  },
+                  "program": {
+                    "type": "string",
+                    "enum": [
+                      "moss",
+                      "code",
+                      "host"
+                    ]
                   }
                 },
                 "required": [

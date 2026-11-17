@@ -115,6 +115,11 @@ export type DeviceView = {
     held: "secure-enclave" | "keystore" | "keychain" | "app-keychain" | "tpm" | "dpapi" | "secret-service" | "none";
     alg?: "ed25519" | "p256";
   };
+  answersBy?: {
+    program: "moss" | "code" | "host";
+    held: "secure-enclave" | "keystore" | "keychain" | "app-keychain" | "tpm" | "dpapi" | "secret-service" | "none";
+    alg?: "ed25519" | "p256";
+  }[];
 };
 
 export type PluginSummary = {

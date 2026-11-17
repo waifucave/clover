@@ -3,26 +3,32 @@
 // area file. The allow lists are derived, never hand-kept: a method names its roles, and `allowedMethods(role)` is
 // exactly the methods that name it (spec §3.1, §10: a companion plugin can't widen the remote lists).
 import { z } from "zod";
+import { ACTIVITY_EVENTS, ACTIVITY_METHODS, isKindFamily, kindCapability } from "./activity";
 import { AGENTS_EVENTS, AGENTS_METHODS } from "./agents";
 import { APP_EVENTS, APP_METHODS } from "./app";
 import { APPROVALS_EVENTS, APPROVALS_METHODS } from "./approvals";
+import { BOTS_EVENTS, BOTS_METHODS } from "./bots";
 import { BROWSER_EVENTS, BROWSER_METHODS } from "./browser";
 import { Ok } from "./common";
 import { COMPUTERS_EVENTS, COMPUTERS_METHODS } from "./computers";
 import { DEVICES_EVENTS, DEVICES_METHODS } from "./devices";
+import { HOST_EVENTS, HOST_METHODS } from "./host";
 import { PLUGINS_EVENTS, PLUGINS_METHODS } from "./plugins";
+import { RELEASE_EVENTS, RELEASE_METHODS } from "./release";
 import { MOSS_ROLES, MossHelloParams, MossHelloResult, type MossRole } from "./roles";
 import { defineMethod, type EventSpec, type MethodSpec } from "./rpc";
 import { SESSIONS_EVENTS, SESSIONS_METHODS } from "./sessions";
+import { SURFACES_EVENTS, SURFACES_METHODS } from "./surfaces";
 import { USAGE_EVENTS, USAGE_METHODS } from "./usage";
 
-/** The areas, in the order of plan §3. Each is one file with one owning lane. */
-export const MOSS_AREAS = ["plugins", "approvals", "sessions", "devices", "computers", "agents", "app", "browser", "usage"] as const;
+/** The areas, in the order of plan §3, then the split's (spec revision 19, §13). Each is one file with one owning lane. */
+export const MOSS_AREAS = ["plugins", "approvals", "sessions", "devices", "computers", "agents", "app", "browser", "usage", "surfaces", "host", "release", "activity", "bots"] as const;
 export type MossArea = (typeof MOSS_AREAS)[number];
 
 export const AREA_OWNERS: Record<MossArea, string> = {
   plugins: "B", approvals: "C", sessions: "D (with A)", devices: "H", computers: "J", agents: "K",
   app: "E (with C, D, G, M)", browser: "L", usage: "D",
+  surfaces: "RT", host: "HS", release: "RL", activity: "AF", bots: "BT",
 };
 
 const AllRoles = MOSS_ROLES;
@@ -76,6 +82,11 @@ export const AREA_METHODS = {
   app: APP_METHODS,
   browser: BROWSER_METHODS,
   usage: USAGE_METHODS,
+  surfaces: SURFACES_METHODS,
+  host: HOST_METHODS,
+  release: RELEASE_METHODS,
+  activity: ACTIVITY_METHODS,
+  bots: BOTS_METHODS,
 } as const satisfies Record<MossArea, Record<string, MethodSpec>>;
 
 export const AREA_EVENTS = {
@@ -88,6 +99,11 @@ export const AREA_EVENTS = {
   app: APP_EVENTS,
   browser: BROWSER_EVENTS,
   usage: USAGE_EVENTS,
+  surfaces: SURFACES_EVENTS,
+  host: HOST_EVENTS,
+  release: RELEASE_EVENTS,
+  activity: ACTIVITY_EVENTS,
+  bots: BOTS_EVENTS,
 } as const satisfies Record<MossArea, Record<string, EventSpec>>;
 
 /** Every MOSS method, by wire name. */
@@ -156,12 +172,18 @@ export function peerCallVerdict(method: string, role: string, as?: { kind: strin
 }
 
 /** Whether a plugin caller with these capabilities may call a method (§5.4): plugin roles need the method's
- *  capability; `call:*` means `call:<the target's top-level id>`, checked against the command's plugin. */
+ *  capability; `call:*` means `call:<the target's top-level id>`, checked against the command's plugin; a family by kind
+ *  (`activity.read.*`, `picture.read.*`, spec revision 19 §3.6) means that family's capability for the kind of data the
+ *  call reaches, `target` (`sessions` or `bots`), and is refused without one. */
 export function pluginMayCall(method: MethodSpec, capabilities: readonly string[], target?: string): boolean {
   if (method.capability === undefined) return true;
   if (method.capability === "call:*") {
     if (target === undefined) return false;
     return capabilities.includes(`call:${target.split("/")[0]}`);
+  }
+  if (isKindFamily(method.capability)) {
+    if (target !== "sessions" && target !== "bots") return false;
+    return capabilities.includes(kindCapability(method.capability, target));
   }
   return capabilities.includes(method.capability);
 }

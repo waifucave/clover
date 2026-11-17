@@ -1,0 +1,561 @@
+{
+  "area": "surfaces",
+  "owner": "RT",
+  "methods": {
+    "presence.report": {
+      "doc": "A program's windows: which is focused and visible and which session or bot each shows (§3.5); it places the pending cards again.",
+      "owner": "RT",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "windows": {
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "window": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^[A-Za-z0-9._:-]+$"
+                },
+                "focused": {
+                  "type": "boolean"
+                },
+                "visible": {
+                  "type": "boolean"
+                },
+                "showing": {
+                  "anyOf": [
+                    {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "session"
+                            },
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128,
+                              "pattern": "^[A-Za-z0-9._:-]+$"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "id"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "bot"
+                            },
+                            "id": {
+                              "type": "string",
+                              "maxLength": 81,
+                              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "id"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "window",
+                "focused",
+                "visible",
+                "showing"
+              ]
+            }
+          }
+        },
+        "required": [
+          "windows"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ttlMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "ttlMs"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "card.placement": {
+      "doc": "Where the router places each pending card on this computer now (all of them, or the ids named).",
+      "owner": "RT",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "noSessions": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ids": {
+            "maxItems": 256,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+            }
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "placements": {
+            "maxItems": 1024,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "card": {
+                  "type": "string",
+                  "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+                },
+                "place": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "conversation"
+                        },
+                        "program": {
+                          "type": "string",
+                          "enum": [
+                            "moss",
+                            "code"
+                          ]
+                        },
+                        "window": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[A-Za-z0-9._:-]+$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "program",
+                        "window"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "strip"
+                        },
+                        "program": {
+                          "type": "string",
+                          "enum": [
+                            "moss",
+                            "code"
+                          ]
+                        },
+                        "window": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64,
+                          "pattern": "^[A-Za-z0-9._:-]+$"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "program",
+                        "window"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "island"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "elsewhere"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "card",
+                "place"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "placements"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "device.programKey.set": {
+      "doc": "Registers this program's answer key on this desktop, proved by the key's own signature; one per program.",
+      "owner": "RT",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "publicKey": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+          },
+          "held": {
+            "type": "string",
+            "enum": [
+              "secure-enclave",
+              "keystore",
+              "keychain",
+              "app-keychain",
+              "tpm",
+              "dpapi",
+              "secret-service",
+              "none"
+            ]
+          },
+          "alg": {
+            "type": "string",
+            "enum": [
+              "ed25519",
+              "p256"
+            ]
+          },
+          "signature": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+          },
+          "rotation": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+              },
+              "at": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "signature": {
+                "type": "string",
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+              }
+            },
+            "required": [
+              "from",
+              "at",
+              "signature"
+            ]
+          }
+        },
+        "required": [
+          "publicKey",
+          "held",
+          "signature"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "events": {
+    "card_placed": {
+      "doc": "A pending card's place on this computer, and where it moved from; transient (presence is live state).",
+      "owner": "RT",
+      "scope": "core",
+      "roles": [
+        "app"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "card_placed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+          },
+          "place": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "conversation"
+                  },
+                  "program": {
+                    "type": "string",
+                    "enum": [
+                      "moss",
+                      "code"
+                    ]
+                  },
+                  "window": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "program",
+                  "window"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "strip"
+                  },
+                  "program": {
+                    "type": "string",
+                    "enum": [
+                      "moss",
+                      "code"
+                    ]
+                  },
+                  "window": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "program",
+                  "window"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "island"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "elsewhere"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            ]
+          },
+          "before": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "conversation"
+                  },
+                  "program": {
+                    "type": "string",
+                    "enum": [
+                      "moss",
+                      "code"
+                    ]
+                  },
+                  "window": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "program",
+                  "window"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "strip"
+                  },
+                  "program": {
+                    "type": "string",
+                    "enum": [
+                      "moss",
+                      "code"
+                    ]
+                  },
+                  "window": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "program",
+                  "window"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "island"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "elsewhere"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "card",
+          "place"
+        ]
+      }
+    }
+  }
+}

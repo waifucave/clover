@@ -6,9 +6,9 @@ import type {
   ApprovalsApi, AvatarReportApi, BotsApi, DesktopNotifications, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
   LogsApi, MemoryApi, NetApi, NotifyApi, OutsideApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   ShellApi, TerminalApi, UiSendApi, UsageApi,
-  TurnsApi, StreamsApi,
+  TurnsApi, StreamsApi, SessionsApi, ActivityApi, PicturesApi,
 } from "../api/plugin-api";
-import type { HostProcess } from "@waifucave/moss-protocol";
+import { isKindFamily, kindCapability, type HostProcess } from "@waifucave/moss-protocol";
 import type { AvatarApi } from "./avatar-cues";
 
 type Fn = (...args: never[]) => unknown;
@@ -25,7 +25,8 @@ export type ApiCallPath =
   | `plugins.${FnKeys<PluginsApi>}` | `shell.${FnKeys<ShellApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}`
   | `desktop.${FnKeys<DesktopNotifications>}` | `avatar.${FnKeys<AvatarApi>}` | `avatar.${FnKeys<AvatarReportApi>}`
-  | `turns.${FnKeys<TurnsApi>}` | `streams.${FnKeys<StreamsApi>}`;
+  | `turns.${FnKeys<TurnsApi>}` | `streams.${FnKeys<StreamsApi>}`
+  | `sessions.${FnKeys<SessionsApi>}` | `activity.${FnKeys<ActivityApi>}` | `pictures.${FnKeys<PicturesApi>}`;
 
 /** How many notifications a plugin may send in a minute, and in an hour (`notify.send`, its host half and its layer
  *  together). */
@@ -38,7 +39,9 @@ export const OUTSIDE_TIMEOUT_MAX_MS = 600_000;
 export const NOTIFY_PER_HOUR = 20;
 
 export interface ApiCallInfo {
-  /** The capability it needs; `call:*` is `call:<the target's top-level id>`, `network:*` the URL's host. */
+  /** The capability it needs; `call:*` is `call:<the target's top-level id>`, `network:*` the URL's host, and a family
+   *  by kind (`activity.read.*`, `picture.read.*`, spec revision 19 §3.6) that family's capability for the kind of data
+   *  the call reaches (`target.kind`). */
   readonly capability?: string;
   /** Host halves in any process; only a host half in a process of the plugin's own (`own`, never a worker of a shared
    *  process); only the `moss` process (the owner's answer to S4); components (UI layers); or both. */
@@ -50,6 +53,9 @@ export interface ApiCallInfo {
 
 /** Where a call comes from: a component, or a host half in the process the core started it in (`HostProcess`). */
 export type ApiCaller = "ui" | HostProcess;
+
+/** Why the split's calls aren't served yet (spec revision 19, §13 Split 1). */
+const SPLIT_NOT_YET = "comes with the split's engine pieces (spec revision 19, §3.6)";
 
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
 /** The MOSS Browser's calls: the bundled tree's Browser tool (its host half, for the session whose tool call it serves) and
@@ -157,11 +163,21 @@ export const API_CALLS = {
    *  connects only one plugin's own halves, or (`points.stream`) a caller to a handler it may already `points.call`. */
   "points.stream": both(),
   "streams.open": both(), "streams.accept": both(), "streams.write": both(), "streams.end": both(), "streams.cancel": both(), "streams.ack": both(),
+  /** Spec revision 19 (§3.6, G4 to G6), shapes pinned by lane SP; lane AF serves them. Code sessions by `sessions.read`;
+   *  the activity feed and live pictures by kind; `pictures.publish` by the server's manifest (`picture: true`) and the
+   *  tool call it serves, with no capability. */
+  "sessions.list": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET }, "sessions.get": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET },
+  "sessions.watch": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET }, "sessions.history": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET },
+  "sessions.follow": { capability: "sessions.read", where: "both", notYet: SPLIT_NOT_YET },
+  "activity.list": { capability: "activity.read.*", where: "both", notYet: SPLIT_NOT_YET }, "activity.watch": { capability: "activity.read.*", where: "both", notYet: SPLIT_NOT_YET },
+  "pictures.list": { capability: "picture.read.*", where: "both", notYet: SPLIT_NOT_YET }, "pictures.watch": { capability: "picture.read.*", where: "both", notYet: SPLIT_NOT_YET },
+  "pictures.open": { capability: "picture.read.*", where: "both", notYet: SPLIT_NOT_YET },
+  "pictures.publish": { where: "host", notYet: SPLIT_NOT_YET },
 } as const satisfies Record<ApiCallPath, ApiCallInfo>;
 
 /** Whether a plugin with these capabilities has a call, where it runs (§5.4: without the capability, the call doesn't
  *  exist for that plugin). `target` is the command's plugin for `commands.run`, the URL's host for `net.fetch`. */
-export function apiCallAllowed(call: string, where: ApiCaller, capabilities: readonly string[], target?: { plugin?: string; host?: string; port?: number }, allowNetwork?: (caps: readonly string[], host: string, port?: number) => boolean): boolean {
+export function apiCallAllowed(call: string, where: ApiCaller, capabilities: readonly string[], target?: { plugin?: string; host?: string; port?: number; kind?: "sessions" | "bots" }, allowNetwork?: (caps: readonly string[], host: string, port?: number) => boolean): boolean {
   const info = (API_CALLS as Record<string, ApiCallInfo>)[call];
   if (!info) return false;
   const reaches = info.where === "both"
@@ -171,5 +187,6 @@ export function apiCallAllowed(call: string, where: ApiCaller, capabilities: rea
   if (info.capability === undefined) return true;
   if (info.capability === "call:*") return target?.plugin !== undefined && capabilities.includes(`call:${target.plugin.split("/")[0]}`);
   if (info.capability === "network:*") return target?.host !== undefined && allowNetwork !== undefined && allowNetwork(capabilities, target.host, target.port);
+  if (isKindFamily(info.capability)) return target?.kind !== undefined && capabilities.includes(kindCapability(info.capability, target.kind));
   return capabilities.includes(info.capability);
 }

@@ -13,8 +13,16 @@ import { utf16 } from "./strings";
 export const MOSS_PROTOCOL_VERSION = 1;
 export const MOSS_PROTOCOL_MIN_VERSION = 1;
 
-/** The thirteen lanes of the plan (§4). Every method and event names the lane that implements it. */
-export const LANES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"] as const;
+/** The thirteen lanes of the plan (§4), then the split's lanes (spec revision 19, §13 "Split 1 to 3"; ids chosen by lane
+ *  SP, the spine of the split). Every method and event names the lane that implements it.
+ *  * `RT`: the router, presence, the window's card strip and the answer key per program (§3.5, §5.5);
+ *  * `HS`: the background host, its supervision, the menu bar and the browser's offscreen pages (§3.1, §3.4, §12.1);
+ *  * `RL`: install and one release: the hello's release check, the apps' records, the install lock (§3.1);
+ *  * `BT`: bots as engine data and the one-time move of plugin bots (§6.1);
+ *  * `AF`: the activity feed, a tool's live picture and reads by kind (§3.6);
+ *  * `TS`: the tool setting's engine half (§6.7);
+ *  * `MA`: the MOSS app (§6.10); `MC`: MOSS Code's changes and the avatar plugin (§9.4, §10). */
+export const LANES = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "RT", "HS", "RL", "BT", "AF", "TS", "MA", "MC"] as const;
 export type Lane = (typeof LANES)[number];
 
 // -------------------------------------------------------------------------------------------------
@@ -294,6 +302,12 @@ export const MOSS_ERR = {
   /** A plugin-host connection named a plugin that doesn't run in its process (a third-party worker presenting a
    *  `moss/*` id), or made a call only the `moss` process makes (the account token, `keys.*`; S4). */
   PROCESS_REFUSED: -32020,
+  /** The hello's `surface` was refused (spec §3.1, G1): a second live `host` for this home, or a `surface` on a role other
+   *  than `app`; `data` is `SurfaceRefusal` (surfaces.ts). */
+  SURFACE_REFUSED: -32021,
+  /** The hello's client runs an older release than the engine (spec §3.1 "One release for everything"): it updates
+   *  itself before it connects; `data` is `ReleaseRefusal` (release.ts). */
+  RELEASE_REFUSED: -32022,
 } as const;
 
 /** The most child plugins a tree has (§5.6): the plugin SDK refuses a tree with more, so every list of a plugin's children
