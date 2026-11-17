@@ -2,7 +2,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { AppInstallRecord } from "@waifucave/moss-protocol";
 import { bundlePathOf, recordPath, writeOwnRecord } from "../src/main/install-record";
 
@@ -32,7 +32,7 @@ test("a bad record is not written and the write never throws", () => {
 
 test("the bundle is the .app on macOS, the install folder elsewhere, the source folder unpackaged", () => {
   const base = { execPath: "/opt/moss/moss", appPath: "/src/apps/moss" };
-  expect(bundlePathOf({ ...base, packaged: true, platform: "darwin", resourcesPath: "/Applications/MOSS.app/Contents/Resources", execPath: "/Applications/MOSS.app/Contents/MacOS/MOSS" })).toBe("/Applications/MOSS.app");
-  expect(bundlePathOf({ ...base, packaged: true, platform: "linux", resourcesPath: "/opt/moss/resources" })).toBe("/opt/moss");
-  expect(bundlePathOf({ ...base, packaged: false, platform: "darwin", resourcesPath: "/x" })).toBe("/src/apps/moss");
+  expect(bundlePathOf({ ...base, packaged: true, platform: "darwin", resourcesPath: "/Applications/MOSS.app/Contents/Resources", execPath: "/Applications/MOSS.app/Contents/MacOS/MOSS" })).toBe(normalize("/Applications/MOSS.app"));
+  expect(bundlePathOf({ ...base, packaged: true, platform: "linux", resourcesPath: "/opt/moss/resources" })).toBe(normalize("/opt/moss"));
+  expect(bundlePathOf({ ...base, packaged: false, platform: "darwin", resourcesPath: "/x" })).toBe(normalize("/src/apps/moss"));
 });
