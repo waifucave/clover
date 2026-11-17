@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeClock } from "../../src/contracts/fakes/clock";
+import { darwinTest } from "../helpers/darwin-only";
 import { codesignCheck, copyAcceptable, engineCopyRequirement, type CopyPolicy } from "../../src/update/engine-copy";
 import { judgeHello, NO_RELEASE } from "../../src/update/release-door";
 import { appRecordPath, EngineReleaseHome, MAX_RECORD_BYTES } from "../../src/update/release-home";
@@ -125,7 +126,7 @@ describe("which paths the engine takes a copy or a host from", () => {
     expect(seen[0]).toContain('identifier "com.waifucave.moss.code"');
     expect(copyAcceptable(p, "host", policy([rec(p)], "darwin", () => true))).toEqual({ ok: true });
   });
-  test.skipIf(process.platform !== "darwin")("macOS: codesign itself refuses an unsigned file (a real check on a temp file)", () => {
+  darwinTest("macOS: codesign itself refuses an unsigned file (a real check on a temp file)", () => {
     const f = join(root, "unsigned-core");
     writeFileSync(f, "#!/bin/sh\n");
     expect(codesignCheck(f, engineCopyRequirement("dist", true))).toBe(false);

@@ -3598,7 +3598,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     platform: process.platform, profile: releaseProfile,
     developerId: process.platform === "darwin" && appPeerRequirement(releaseProfile).includes(DEVELOPER_ID_CLAUSES),
     records: () => releaseHome.apps(),
-    // A test build only (never a release build): the acceptance run's stand-in engine is unsigned, so it may stand in for the
+    // A test build only (never a release build): the acceptance run's stand-in engine carries no signature, so it may stand in for the
     // code requirement; the `--version` check still runs on it. `MOSS_TEST_ENGINE_COPY_CHECK=pass`.
     ...(typeof __MOSS_TEST_BUILD__ === "string" && process.env.MOSS_TEST_ENGINE_COPY_CHECK === "pass" ? { check: () => true } : {}),
   };
