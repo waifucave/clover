@@ -4,7 +4,8 @@
 //   * The real profile only: the dist profile, on its own default home (`~/.moss`, by `isDefaultMossHome`), in a build
 //     that isn't test-marked. Then the old home is the installed old app's home under the user's home
 //     (`other-installs.ts`, the one place that spells it).
-//   * A dev profile, a custom or temp home, or a test-marked build, with no override: no old home. Nothing is offered,
+//   * A dev profile, a custom or temp home, an engine run from source (not a shipped build, whatever its profile and
+//     home), or a test-marked build, with no override: no old home. Nothing is offered,
 //     and nothing of the old install is read (not even whether it exists).
 //   * The override `MOSS_OLD_HOME` names a fixture for tests and the acceptance run (the same kind of seam as
 //     `MOSS_HOME` for the home). A release build that isn't test-marked ignores it, saying so once: anything that
@@ -50,6 +51,9 @@ export function oldHomeFor(q: OldHomeQuery): OldHome {
     noteIgnoredEnvOverride(OLD_HOME_ENV, q.log);
   }
   if (testBuild) return { path: undefined, why: "this build reads no old home without the override (it is marked for tests)" };
+  // A source run (a checkout's engine, not a shipped one) reads nothing without the override, even on the real
+  // profile's default home: only a shipped engine finds the old home by itself.
+  if (!dist) return { path: undefined, why: "an engine run from source reads no old home without the override" };
   if (q.profile !== "dist") return { path: undefined, why: "only the real profile is offered the old home" };
   const homedir = q.homedir ?? realHomedir;
   if (!isDefaultMossHome(q.home, "dist", homedir)) return { path: undefined, why: "this engine runs on a home of its own (not the profile's default)" };

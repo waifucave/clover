@@ -25,6 +25,8 @@ export const OLD_INSTALL_HOME_DIR = CLOVER_HOME_DIR;
 export const OLD_INSTALL_DEV_HOME_DIR = CLOVER_DEV_HOME_DIR;
 export const OLD_INSTALL_LOGIN_LABEL = CLOVER_KEYCHAIN_SERVICE;
 export const OLD_APP_NAME = "Clover";
+/** The installed old app's bundle in the system's Applications folder (macOS), built from its name. */
+export const OLD_APP_BUNDLE_DIR = ["/Applications", `${OLD_APP_NAME}.app`] as const;
 
 /** The live Winter install's home folder, under the user's home. */
 export const WINTER_HOME_DIR = ".winter";

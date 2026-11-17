@@ -12,10 +12,17 @@
 //          binary
 //   Windows: not looked for (the old task is read through `schtasks`, which this lane leaves to a later one).
 // Only an item that serves the copied home (by real path) and whose binary exists is offered.
-import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { OLD_INSTALL_HOME_DIR, OLD_INSTALL_LOGIN_LABEL } from "../../other-installs";
+//
+// The press runs the binary only when it is the old engine's own (the plist is a file anyone of the user's could have
+// written): its real path is inside the installed old app (`/Applications/<old app>.app/Contents/`, macOS) or the old
+// home's `bin/` folder, and on macOS its code signature meets Apple's anchor and the product's team (the requirement
+// style of `bundled-identities.ts`). Linux keeps no signature to check, so there the place alone decides. Anything
+// else: the "could not" card, and nothing runs.
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
+import { MOSS_TEAM_ID } from "../../bundled-identities";
+import { OLD_APP_BUNDLE_DIR, OLD_APP_NAME, OLD_INSTALL_HOME_DIR, OLD_INSTALL_LOGIN_LABEL } from "../../other-installs";
 import { readOldText } from "./copy";
 import { OLD_ENGINE_HOME_ENV, OLD_SYSTEMD_UNIT } from "./names";
 
@@ -78,13 +85,48 @@ const realRunner: Runner = (bin, args, env) => new Promise((resolve) => {
   child.on("exit", (code) => { clearTimeout(timer); resolve({ code, out }); });
 });
 
+/** Where the old engine's own binary may be: inside the installed old app (macOS), or the old home's `bin/` folder. */
+export function oldBinaryPlaces(oldHome: string, platform: NodeJS.Platform = process.platform): string[] {
+  return [join(real(oldHome), "bin"), ...(platform === "darwin" ? [join(...OLD_APP_BUNDLE_DIR, "Contents")] : [])];
+}
+
+/** The code requirement the old engine's binary meets on macOS: Apple's anchor and the product's team. */
+export function oldEngineRequirement(team: string = MOSS_TEAM_ID): string {
+  if (!/^[A-Z0-9]{10}$/.test(team)) throw new Error(`not a team identifier: ${team}`);
+  return `anchor apple generic and certificate leaf[subject.OU] = "${team}"`;
+}
+
+const codesignSatisfies = (path: string, requirement: string): boolean =>
+  spawnSync("/usr/bin/codesign", ["--verify", "--strict", `-R=${requirement}`, path], { stdio: "ignore" }).status === 0;
+
+export interface DisableOptions {
+  run?: Runner;
+  platform?: NodeJS.Platform;
+  /** Seams for tests: the places the binary may be, and the signature check. */
+  places?: readonly string[];
+  verify?: (bin: string) => boolean;
+}
+
 /** Runs the old engine's own `autostart disable` for `oldHome`, with a plain environment (no MOSS variable reaches
- *  it). `ok` false says why, in the old engine's words when it gave any. */
-export async function disableOldLoginItem(item: OldLoginItem, oldHome: string, run: Runner = realRunner): Promise<{ ok: boolean; why?: string }> {
-  if (!existsSync(item.bin)) return { ok: false, why: "its program isn't there any more" };
+ *  it), when the binary is the old engine's own (see the file's header). `ok` false says why, in the old engine's
+ *  words when it gave any. */
+export async function disableOldLoginItem(item: OldLoginItem, oldHome: string, o: DisableOptions = {}): Promise<{ ok: boolean; why?: string }> {
+  const platform = o.platform ?? process.platform;
+  const run = o.run ?? realRunner;
+  let bin: string;
+  try {
+    bin = realpathSync(item.bin);
+    if (!lstatSync(bin).isFile()) return { ok: false, why: "its program isn't a file" };
+  } catch {
+    return { ok: false, why: "its program isn't there any more" };
+  }
+  const places = (o.places ?? oldBinaryPlaces(oldHome, platform)).map(real);
+  if (!places.some((pl) => bin.startsWith(pl.endsWith(sep) ? pl : pl + sep))) return { ok: false, why: `its program (${bin}) isn't ${OLD_APP_NAME}'s own: it is neither in ${OLD_APP_NAME}'s app nor in its folder's bin folder` };
+  const verify = o.verify ?? (platform === "darwin" ? (b: string) => codesignSatisfies(b, oldEngineRequirement()) : () => true);
+  if (!verify(bin)) return { ok: false, why: `its program isn't signed as ${OLD_APP_NAME}'s` };
   const env: Record<string, string> = { [OLD_ENGINE_HOME_ENV]: oldHome, HOME: dirname(oldHome), PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
   for (const k of ["USER", "LOGNAME", "TMPDIR"]) if (process.env[k] !== undefined) env[k] = process.env[k]!;
-  const r = await run(item.bin, ["autostart", "disable"], env);
+  const r = await run(bin, ["autostart", "disable"], env);
   if (r.code === 0) return { ok: true };
   const said = r.out.trim().split("\n").filter((l) => l.trim() !== "").pop()?.slice(0, 300);
   return { ok: false, why: said !== undefined && said !== "" ? said : `it exited with ${r.code ?? "a signal"}` };

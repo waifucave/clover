@@ -57,6 +57,7 @@ export const OFFER_TEXT = {
   notice: {
     title: `Your data is here from ${OLD}`,
     what: `Your bots, conversations, memory, routines, plugins and settings were copied. ${OLD}'s own folder was left exactly as it was.`,
+    kept: "Your approval levels, trusted folders and saved \"Always allow\" choices came over as they were.",
     plugins: "Plugins you installed yourself wait for your OK again, as their files were updated for MOSS: switch each one on in Plugins to see its card.",
     login: `${OLD} still starts when you log in, so both would run your routines. "Turn off ${OLD}'s login start" runs ${OLD}'s own autostart disable command for its folder: this changes ${OLD}'s own login setting (${OLD} moves its login item into its own folder). ${OLD} stays installed and can still be opened; nothing else of it changes.`,
     setAside: (folder: string) => `What this computer's MOSS held before the copy (conversations or settings made before you pressed) is kept, set aside, in ${folder}.`,
@@ -179,7 +180,7 @@ async function notice(d: OfferDeps): Promise<boolean> {
   }
   const item = (d.loginItem ?? (() => oldLoginItem(d.oldHome)))();
   const aside = setAside(d.home);
-  const lines = [...(left === undefined ? [] : leftBehindLines(left)), OFFER_TEXT.notice.plugins, ...(aside === undefined ? [] : [OFFER_TEXT.notice.setAside(aside)]), ...(item === undefined ? [] : [OFFER_TEXT.notice.login])];
+  const lines = [...(left === undefined ? [] : leftBehindLines(left)), OFFER_TEXT.notice.kept, OFFER_TEXT.notice.plugins, ...(aside === undefined ? [] : [OFFER_TEXT.notice.setAside(aside)]), ...(item === undefined ? [] : [OFFER_TEXT.notice.login])];
   const options: CardOption[] = item === undefined
     ? [{ id: "ok", kind: "approve", label: OFFER_TEXT.notice.ok }]
     : [{ id: "login-off", kind: "approve", label: OFFER_TEXT.notice.loginOff }, { id: "leave", kind: "deny", label: OFFER_TEXT.notice.leave }];

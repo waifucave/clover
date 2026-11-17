@@ -1,7 +1,7 @@
 // The offer and its notice (`offer.ts`), the one function that says where the old home is (`locate.ts`), the old
 // engine's liveness (`alive.ts`) and its login item (`login-item.ts`): fixtures and fakes only.
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,12 +9,13 @@ import type { ApprovalDecision, ApprovalRequest } from "../../../src/contracts/a
 import { oldEndpoint, oldEngineAlive } from "../../../src/migration/old-home/alive";
 import { markFresh, readChoice, writeChoice } from "../../../src/migration/old-home/choice";
 import { OLD_HOME_ENV, oldHomeFor } from "../../../src/migration/old-home/locate";
-import { disableOldLoginItem, oldLoginItem } from "../../../src/migration/old-home/login-item";
+import { disableOldLoginItem, oldBinaryPlaces, oldEngineRequirement, oldLoginItem } from "../../../src/migration/old-home/login-item";
 import { OLD_ENGINE_HOME_ENV, OLD_SYSTEMD_UNIT } from "../../../src/migration/old-home/names";
 import { OFFER_TEXT, runOldHomeOffer } from "../../../src/migration/old-home/offer";
 import { oldHomePaths } from "../../../src/migration/old-home/paths";
 import { applyStagedCopy } from "../../../src/migration/old-home/swap";
-import { OLD_INSTALL_HOME_DIR, OLD_INSTALL_LOGIN_LABEL } from "../../../src/other-installs";
+import { OLD_APP_BUNDLE_DIR, OLD_INSTALL_HOME_DIR, OLD_INSTALL_LOGIN_LABEL } from "../../../src/other-installs";
+import { darwinTest } from "../../helpers/darwin-only";
 import { buildOldHome, treeHash } from "./fixture";
 
 const dirs: string[] = [];
@@ -82,6 +83,7 @@ describe("the offer", () => {
     expect(lines[0]).toContain("Anthropic");
     expect(lines.join("\n")).toContain("Pocket (phone)");
     expect(lines).toContain(OFFER_TEXT.notice.plugins);
+    expect(lines).toContain(OFFER_TEXT.notice.kept);
     expect(notice.asked[0]!.options).toEqual([{ id: "ok", kind: "approve", label: OFFER_TEXT.notice.ok }]);
     const again = fakeBroker([]);
     expect(await runOldHomeOffer({ home, oldHome: old, broker: again, alive: async () => ({ alive: false }) })).toBe("already-chosen");
@@ -176,6 +178,8 @@ describe("where the old home is", () => {
     expect(oldHomeFor({ home: "/Users/fake-person/.moss", profile: "dev", env: {}, homedir: fakeHome, distBuild: false, testBuild: false }).path).toBeUndefined();
     expect(oldHomeFor({ home: "/Users/fake-person/.moss", profile: "dist", env: {}, homedir: fakeHome, distBuild: true, testBuild: true }).path).toBeUndefined();
     expect(oldHomeFor({ home: "/tmp/some-test-home", profile: "dist", env: {}, homedir: fakeHome, distBuild: false, testBuild: false }).path).toBeUndefined();
+    // A source run on the real profile's own default home: nothing, without the override.
+    expect(oldHomeFor({ home: "/Users/fake-person/.moss", profile: "dist", env: {}, homedir: fakeHome, distBuild: false, testBuild: false })).toEqual({ path: undefined, why: "an engine run from source reads no old home without the override" });
   });
   test("the override names a fixture in a source or test-marked build, and a release build ignores it", () => {
     const env = { [OLD_HOME_ENV]: "/tmp/fixture-old" };
@@ -262,19 +266,64 @@ describe("the old login item", () => {
     if (process.platform === "win32") return; // the stand-in program is a shell script
     const user = temp("moss-old-login-");
     const old = join(user, OLD_INSTALL_HOME_DIR);
-    mkdirSync(old);
-    const bin = join(user, "old-engine");
+    mkdirSync(join(old, "bin"), { recursive: true });
+    const bin = join(old, "bin", "old-engine");
     const out = join(user, "ran.txt");
     writeFileSync(bin, `#!/bin/sh\necho "$@ ${OLD_ENGINE_HOME_ENV}=$${OLD_ENGINE_HOME_ENV} MOSS_HOME=$MOSS_HOME" > "${out}"\n`);
     chmodSync(bin, 0o755);
+    const signed = { verify: () => true };
     process.env.MOSS_HOME_PROBE_SHOULD_NOT_PASS = "dummy123";
-    expect(await disableOldLoginItem({ bin, file: "x" }, old)).toEqual({ ok: true });
+    expect(await disableOldLoginItem({ bin, file: "x" }, old, signed)).toEqual({ ok: true });
     const { readFileSync } = await import("node:fs");
     expect(readFileSync(out, "utf8").trim()).toBe(`autostart disable ${OLD_ENGINE_HOME_ENV}=${old} MOSS_HOME=`);
     writeFileSync(bin, "#!/bin/sh\necho 'this build never registers a login item' >&2\nexit 1\n");
-    expect(await disableOldLoginItem({ bin, file: "x" }, old)).toEqual({ ok: false, why: "this build never registers a login item" });
+    expect(await disableOldLoginItem({ bin, file: "x" }, old, signed)).toEqual({ ok: false, why: "this build never registers a login item" });
     rmSync(bin);
-    expect((await disableOldLoginItem({ bin, file: "x" }, old)).ok).toBe(false);
+    expect((await disableOldLoginItem({ bin, file: "x" }, old, signed)).ok).toBe(false);
     delete process.env.MOSS_HOME_PROBE_SHOULD_NOT_PASS;
+  });
+  test("the press runs only the old engine's own binary: in its app or its folder's bin, and signed as its own", async () => {
+    if (process.platform === "win32") return; // the stand-in program is a shell script
+    const user = temp("moss-old-login-");
+    const old = join(user, OLD_INSTALL_HOME_DIR);
+    mkdirSync(join(old, "bin"), { recursive: true });
+    const ran: string[] = [];
+    const run = async (b: string) => { ran.push(b); return { code: 0, out: "" }; };
+    const elsewhere = join(user, "planted");
+    writeFileSync(elsewhere, "#!/bin/sh\n");
+    chmodSync(elsewhere, 0o755);
+    // A plist naming a program outside both places: refused, nothing runs.
+    const outside = await disableOldLoginItem({ bin: elsewhere, file: "x" }, old, { run, verify: () => true });
+    expect(outside.ok).toBe(false);
+    expect(outside.why).toContain("isn't");
+    // A link in the bin folder that leads out: its real path decides.
+    const { symlinkSync } = await import("node:fs");
+    symlinkSync(elsewhere, join(old, "bin", "linked"));
+    expect((await disableOldLoginItem({ bin: join(old, "bin", "linked"), file: "x" }, old, { run, verify: () => true })).ok).toBe(false);
+    // In the bin folder but not signed as the old engine's: refused.
+    const inBin = join(old, "bin", "old-engine");
+    writeFileSync(inBin, "#!/bin/sh\n");
+    chmodSync(inBin, 0o755);
+    expect(await disableOldLoginItem({ bin: inBin, file: "x" }, old, { run, verify: () => false })).toMatchObject({ ok: false });
+    expect(ran).toEqual([]);
+    // Signed and in place: it runs, by its real path.
+    expect(await disableOldLoginItem({ bin: inBin, file: "x" }, old, { run, verify: () => true })).toEqual({ ok: true });
+    expect(ran).toEqual([realpathSync(inBin)]);
+    // The places: the old home's bin folder, and on macOS the installed old app's Contents.
+    expect(oldBinaryPlaces(old, "linux")).toEqual([join(realpathSync(old), "bin")]);
+    expect(oldBinaryPlaces(old, "darwin")[1]).toBe(join(...OLD_APP_BUNDLE_DIR, "Contents"));
+    expect(oldEngineRequirement("ABCDE12345")).toBe('anchor apple generic and certificate leaf[subject.OU] = "ABCDE12345"');
+  });
+  darwinTest("macOS: an unsigned program in the old home's bin folder fails the real signature check", async () => {
+    const user = temp("moss-old-login-");
+    const old = join(user, OLD_INSTALL_HOME_DIR);
+    mkdirSync(join(old, "bin"), { recursive: true });
+    const inBin = join(old, "bin", "old-engine");
+    writeFileSync(inBin, "#!/bin/sh\n");
+    chmodSync(inBin, 0o755);
+    const ran: string[] = [];
+    const r = await disableOldLoginItem({ bin: inBin, file: "x" }, old, { platform: "darwin", run: async (b) => { ran.push(b); return { code: 0, out: "" }; } });
+    expect(r.ok).toBe(false);
+    expect(ran).toEqual([]);
   });
 });
