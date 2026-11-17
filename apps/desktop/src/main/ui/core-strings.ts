@@ -14,6 +14,7 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "moss.core.release.installing": "Installing MOSS Code {needs}. It opens again by itself.",
   "moss.core.release.offline": "MOSS Code has to update to release {needs} before it can connect, and it can't reach the update server. It tries again by itself; connect to the internet to go on.",
   "moss.core.release.cannot": "MOSS Code has to update to release {needs} before it can connect, and no such update was found. It keeps looking.",
+  "moss.core.release.cannot-reset": "MOSS Code has to be on release {needs} before it can connect, and it can't get there by updating. To start over with this app's own engine, quit MOSS Code, run this in a terminal, then open MOSS Code again: {command}",
   "moss.core.release.waiting": "A newer MOSS Code (release {incoming}) is waiting to start. It switches in when nothing is mid-work.",
   "moss.core.release.waiting-for": "A newer MOSS Code (release {incoming}) is waiting for work to finish: {turns} running, {agents} agents. It switches in when they are done.",
   "moss.core.release.switching": "Switching to release {incoming}…",

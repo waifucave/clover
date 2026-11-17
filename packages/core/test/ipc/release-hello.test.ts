@@ -122,3 +122,23 @@ test("a client ahead reaches the release door only: its status, its bring and th
   expect([...conn.areas]).toEqual(["release"]);
   c.close();
 });
+
+test("an app ahead of the engine is kept out of the surface door: it holds no host slot, doesn't draw the island, doesn't make the working copy leave", async () => {
+  const b = await boot();
+  const live = await Client.connect(b.socketPath);
+  expect((await live.hello("app", b.appToken, { release: "1.2.0", surface: "host" })).result.release.standing).toBe("same");
+  expect(b.moss.surfaces.door.live().map((l) => l.surface)).toEqual(["host"]);
+  const ahead = await Client.connect(b.socketPath);
+  // An ahead host: served the door, though a live host holds the one slot.
+  const r = await ahead.hello("app", b.appToken, { release: "1.3.0", surface: "host" });
+  expect(r.error).toBeUndefined();
+  expect(r.result.release).toEqual({ standing: "ahead", engine: "1.2.0" });
+  expect(b.moss.surfaces.door.live().map((l) => l.connId).length).toBe(1);
+  // The same-release copy was never told to quit for the newer one, and the inert one reports no presence.
+  expect((await ahead.request("presence.report", {})).error?.code).toBe(MOSS_ERR.ROLE_REFUSED);
+  // It doesn't hear the router's card events: only the `release` area is open to it.
+  const sub = await ahead.request("events.subscribe", { areas: ["surfaces", "approvals", "release"] });
+  expect(sub.error).toBeUndefined();
+  live.close();
+  ahead.close();
+});

@@ -318,7 +318,16 @@ const PARTS_STOP_WAIT_MS = 5_000;
 export const STOP_BUDGET_MS = 5_000;
 
 /** Stops the daemon, waiting at most `ms` for its asynchronous tail before the caller ends the process. */
-export async function stopWithin(daemon: Pick<RunningDaemon, "stop"> & Partial<Pick<RunningDaemon, "stopPending">>, ms = STOP_BUDGET_MS, o?: { keepApp?: boolean }): Promise<void> {
+const stopsStarted = new WeakMap<object, Promise<void>>();
+/** Stops a daemon within `ms`. Once per daemon: a second caller (a signal and a release restart together) waits for the first stop. */
+export function stopWithin(daemon: Pick<RunningDaemon, "stop"> & Partial<Pick<RunningDaemon, "stopPending">>, ms = STOP_BUDGET_MS, o?: { keepApp?: boolean }): Promise<void> {
+  const started = stopsStarted.get(daemon);
+  if (started !== undefined) return started;
+  const run = stopWithinOnce(daemon, ms, o);
+  stopsStarted.set(daemon, run);
+  return run;
+}
+async function stopWithinOnce(daemon: Pick<RunningDaemon, "stop"> & Partial<Pick<RunningDaemon, "stopPending">>, ms: number, o?: { keepApp?: boolean }): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const done = await Promise.race([
     Promise.resolve().then(() => daemon.stop(o)).then(() => true, () => true),
@@ -3589,6 +3598,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     platform: process.platform, profile: releaseProfile,
     developerId: process.platform === "darwin" && appPeerRequirement(releaseProfile).includes(DEVELOPER_ID_CLAUSES),
     records: () => releaseHome.apps(),
+    // A test build only (never a release build): the acceptance run's stand-in engine is unsigned, so it may stand in for the
+    // code requirement; the `--version` check still runs on it. `MOSS_TEST_ENGINE_COPY_CHECK=pass`.
+    ...(typeof __MOSS_TEST_BUILD__ === "string" && process.env.MOSS_TEST_ENGINE_COPY_CHECK === "pass" ? { check: () => true } : {}),
   };
   const releaseHome: EngineReleaseHome = new EngineReleaseHome({
     home: dirs.home, engine: engineRelease, clock: new SystemClock(), place: defaultPlace(dirs.home, releasePolicy), log: (line) => console.error(line),

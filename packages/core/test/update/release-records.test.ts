@@ -23,15 +23,37 @@ const app = (name: string): string => { const p = join(root, name); mkdirSync(p,
 const carries = { engine: true, host: true };
 
 describe("records", () => {
-  test("a record whose path vanished is dropped, and its file goes with it", () => {
-    const { home, h } = fresh();
+  test("a record whose path vanished is not listed, and its file goes only after it stayed missing past the grace", () => {
+    const { home, clock, h } = fresh();
     const code = app("code-app");
     h.record({ program: "code", bundlePath: code, release: "1.0.0", carries });
     expect(h.apps().map((a) => a.program)).toEqual(["code"]);
     rmSync(code, { recursive: true });
     expect(h.apps()).toEqual([]);
-    expect(existsSync(appRecordPath(home, "code"))).toBe(false);
     expect(h.hostSource()).toBeUndefined();
+    // Not deleted on the read that found it missing: an app being updated has no bundle for a moment.
+    expect(existsSync(appRecordPath(home, "code"))).toBe(true);
+    clock.advance(29_000);
+    expect(h.apps()).toEqual([]);
+    expect(existsSync(appRecordPath(home, "code"))).toBe(true);
+    clock.advance(2_000);
+    expect(h.apps()).toEqual([]);
+    expect(existsSync(appRecordPath(home, "code"))).toBe(false);
+  });
+
+  test("an app whose bundle comes back within the grace keeps its record, and the miss is forgotten", () => {
+    const { home, clock, h } = fresh();
+    const code = app("code-app2");
+    h.record({ program: "code", bundlePath: code, release: "1.0.0", carries });
+    rmSync(code, { recursive: true });
+    expect(h.apps()).toEqual([]);
+    clock.advance(20_000);
+    mkdirSync(code, { recursive: true });
+    expect(h.apps().map((a) => a.program)).toEqual(["code"]);
+    rmSync(code, { recursive: true });
+    clock.advance(20_000);
+    expect(h.apps()).toEqual([]);
+    expect(existsSync(appRecordPath(home, "code"))).toBe(true);
   });
 
   test("the host comes from the newest app that carries it; a tie goes to the later record", () => {

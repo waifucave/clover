@@ -277,6 +277,7 @@ export function selfUpdateFiles(mossHome: string, os: Os): string[] {
     p.join(mossHome, "bin", "daemon", "moss-core.old"),
     p.join(mossHome, "bin", "engine.json"),
     p.join(mossHome, "bin", ".install.lock"),
+    p.join(mossHome, "bin", ".restarted-into.json"),
     // The earlier layout's files (`<home>/bin/moss-core`), which a dev or test server still runs and a migration copies from.
     p.join(mossHome, "bin", "moss-core"),
     p.join(mossHome, "bin", "moss-core.new"),

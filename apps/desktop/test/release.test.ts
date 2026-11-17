@@ -182,15 +182,13 @@ describe("an app that is ahead", () => {
 describe("a test build's stand-ins", () => {
   test("the update outcome is read from the environment of a test build only", () => {
     expect(testUpdateOutcome(undefined)).toBeUndefined();
-    expect(testUpdateOutcome({})).toBeUndefined();
-    expect(testUpdateOutcome({ MOSS_TEST_UPDATE_OUTCOME: "offline" })).toEqual({ kind: "offline" });
-    expect(testUpdateOutcome({ MOSS_TEST_UPDATE_OUTCOME: "ready:2.0.0" })).toEqual({ kind: "ready", version: "2.0.0" });
+    expect(testUpdateOutcome("offline")).toEqual({ kind: "offline" });
+    expect(testUpdateOutcome("ready:2.0.0")).toEqual({ kind: "ready", version: "2.0.0" });
   });
   test("a release build's catch-up goes to its updater, and its notice is held for the window", async () => {
     const changed: (ReleaseNotice | undefined)[] = [];
     let installs = 0;
     const r = createRelease({
-      testEnv: undefined,
       updater: () => ({ checkNow: async () => ({ kind: "ready", version: "2.0.0" }), install: () => { installs++; return true; } }),
       bring: async () => ({ state: "waiting" }),
       changed: (n) => changed.push(n),
@@ -235,5 +233,25 @@ describe("the login item points at the home's engine", () => {
     const r = await adoptHomeEngine("dist", { install: placed(h), launcherFor: () => ({ status: async () => { throw new Error("boom"); }, enable: async () => ({ ok: false, code: 1, out: "" }), start: async () => ({ ok: false, code: 1, out: "" }) }), log: (l) => log.push(l) });
     expect(r?.reregistered).toBe(false);
     expect(log[0]).toContain("not re-registered");
+  });
+});
+
+describe("the way out", () => {
+  test("a catch-up that can't get there names the command that takes the home's engine out", async () => {
+    const notices: (ReleaseNotice | undefined)[] = [];
+    const c = new ReleaseCatchUp({ check: async () => ({ kind: "none" }), install: () => true, notice: (n) => notices.push(n), after: () => {}, resetCommand: () => '"/App/moss-core" engine reset', log: () => {} });
+    c.start("9.0.0");
+    await new Promise((r) => setTimeout(r, 5));
+    expect(notices.at(-1)).toEqual({ kind: "cannot", needs: "9.0.0", command: '"/App/moss-core" engine reset' });
+  });
+  test("a refused bring names it too", async () => {
+    const notices: (ReleaseNotice | undefined)[] = [];
+    const w = new BringWatch({ bring: async () => { throw new Error("loop"); }, notice: (n) => notices.push(n), resetCommand: () => "R", log: () => {} });
+    await w.start("2.0.0", "/x");
+    expect(notices.at(-1)).toEqual({ kind: "cannot", needs: "2.0.0", command: "R" });
+  });
+  test("an unsafe home copy is never taken", async () => {
+    const { parseEngineInstall } = await import("../src/main/pair/login");
+    expect(parseEngineInstall('{"installed":true,"binary":"/h/bin/daemon/moss-core","release":"1.0.0","unsafe":true}')).toMatchObject({ unsafe: true });
   });
 });

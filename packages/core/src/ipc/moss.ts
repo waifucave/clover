@@ -19,7 +19,7 @@ import {
   CardPlacement, PresenceReport, type Program, type Surface, PLUGIN_ROLES, dataKindOfSession, kindCapability, type DataKind,
 } from "@waifucave/moss-protocol";
 import type { ReleaseHome } from "../contracts/release-home";
-import { doorMessage, judgeHello, refusalMessage, type HelloVerdict } from "../update/release-door";
+import { doorMessage, inertAdmission, judgeHello, refusalMessage, type HelloVerdict } from "../update/release-door";
 import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type MossTokens } from "../auth/moss-tokens";
 import { proveDaemon } from "../platform/pair/run-files";
@@ -469,7 +469,8 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   const SURFACE_WHY = { "not-app": "surface is the app role's alone", "second-host": "a background host is already live for this home", "program-mismatch": "this connection's signature is another program's", "older-copy": "a newer copy of this program is running" } as const;
   const register = (connId: number, h: MossHelloParams, caller: Caller, write: (bytes: Uint8Array) => void, extra: Pick<MossConn, "hostProcess" | "bridgeConnection">, signed?: Program, verdict: HelloVerdict = { kind: "unjudged" }): { conn: MossConn; result: MossHelloResult } => {
     if (conns.has(connId)) throw new MossRpcError(ERR.INVALID_REQUEST, "that connection already said hello");
-    const admitted = door.admit({ connId, role: h.role, ...(h.surface !== undefined ? { surface: h.surface } : {}), ...(signed !== undefined ? { signed } : {}), ...(h.release !== undefined ? { release: h.release } : {}) });
+    // An app AHEAD of the engine holds the release door only and is kept out of the surface door's live set (release-door.ts `inertAdmission`).
+    const admitted = verdict.kind === "door" ? inertAdmission({ role: h.role, surface: h.surface, signed }) : door.admit({ connId, role: h.role, ...(h.surface !== undefined ? { surface: h.surface } : {}), ...(signed !== undefined ? { signed } : {}), ...(h.release !== undefined ? { release: h.release } : {}) });
     if (!admitted.ok) throw new MossRpcError(MOSS_ERR.SURFACE_REFUSED, SURFACE_WHY[admitted.refusal.reason], admitted.refusal);
     const surface = admitted.surface;
     const conn: MossConn = {
@@ -654,7 +655,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       if (end) ends.set(connId, end);
       // The pair (`pair.*`, the heartbeat and the kill of a hung app) is today's one app, MOSS Code's window: a `moss` or
       // `host` connection is never taken for it (lanes RT, then HS and RL, retire the pair).
-      if (r.conn.surface === "code") { deps.pair?.appConnected(String(connId), r.conn.features); startBeat(r.conn, peer.pid, peer.handle); }
+      if (r.conn.surface === "code" && r.conn.releaseDoor === undefined) { deps.pair?.appConnected(String(connId), r.conn.features); startBeat(r.conn, peer.pid, peer.handle); }
       return r;
     },
 
@@ -721,7 +722,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       const b = bridged.get(conn.connId);
       if (b) { bridged.delete(conn.connId); deps.bridge?.gate.release(b.sessionId, b.connection); }
       if (relayed.delete(conn.connId)) deps.codeAgent?.close(conn.connId);
-      if (conn.surface === "code") deps.pair?.appDisconnected(String(conn.connId));
+      if (conn.surface === "code" && conn.releaseDoor === undefined) deps.pair?.appDisconnected(String(conn.connId));
       // Its presence goes at once, and the door lets its surface go (the island with it, if it drew one).
       router.dropped(conn.connId);
       door.closed(conn.connId);

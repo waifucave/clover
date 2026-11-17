@@ -5,7 +5,7 @@ import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serve
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveMossHome, isDefaultMossHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, stopWithin, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveMossProfile, splitTag, sdkLocalMcpServers, installMossProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, mossCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testBuildStartRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles, runEngineInstall, ENGINE_INSTALL_USAGE } from "@waifucave/moss-core";
+import { resolveMossHome, isDefaultMossHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, stopWithin, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveMossProfile, splitTag, sdkLocalMcpServers, installMossProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, mossCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testBuildStartRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles, runEngineInstall, runEngineReset, ENGINE_INSTALL_USAGE, ENGINE_RESET_USAGE } from "@waifucave/moss-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/moss-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/moss-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -2402,7 +2402,9 @@ if (import.meta.main) {
   }
   case "engine": {
     // `moss-core engine install --app <bundle>`: an app puts its own engine under the home before it starts anything (RL).
-    if (sub !== "install") { console.error(ENGINE_INSTALL_USAGE); process.exit(2); }
+    // `moss-core engine reset`: the person's way out when the home's engine is newer than the app can update to (RL).
+    if (sub === "reset") process.exit(await runEngineReset({ home: resolveMossHome(), out: (l) => console.log(l), err: (l) => console.error(l) }));
+    if (sub !== "install") { console.error(`${ENGINE_INSTALL_USAGE}\n${ENGINE_RESET_USAGE}`); process.exit(2); }
     process.exit(await runEngineInstall(process.argv.slice(4), { home: resolveMossHome(), out: (l) => console.log(l), err: (l) => console.error(l) }));
     break;
   }

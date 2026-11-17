@@ -17,7 +17,7 @@ import { AppInstallRecord, MOSS_ERR, SemverVersion, type Program } from "@waifuc
 export type ReleaseNotice =
   | { kind: "updating"; phase: "checking" | "downloading" | "installing"; needs: string }
   | { kind: "offline"; needs: string }
-  | { kind: "cannot"; needs: string }
+  | { kind: "cannot"; needs: string; command?: string }
   | { kind: "waiting"; incoming: string; turns: number; agents: number }
   | { kind: "switching"; incoming: string };
 
@@ -29,7 +29,7 @@ export type UpdateOutcome =
   | { kind: "failed"; why: string }
   | { kind: "unavailable" };
 
-/** The app's release: its version, or a test build's stamp (`MOSS_TEST_APP_RELEASE`, read only by a test-marked build). */
+/** The app's release: its version, or a test build's stamp (read by index.ts under the test-build define). */
 export function appRelease(version: string, testStamp: string | undefined): string {
   return testStamp !== undefined && SemverVersion.safeParse(testStamp).success ? testStamp : version;
 }
@@ -86,6 +86,8 @@ export interface CatchUpDeps {
   after(ms: number, fn: () => void): void;
   /** How long before the next check when the last found nothing, was offline, or failed. */
   retryMs?: number;
+  /** The command that takes the home's engine out so this app installs its own (`moss-core engine reset`): the way out the notice names. */
+  resetCommand?(): string | undefined;
   log(line: string): void;
 }
 
@@ -98,6 +100,11 @@ export class ReleaseCatchUp {
   constructor(private readonly d: CatchUpDeps) {}
 
   get active(): boolean { return this.#running; }
+
+  #way(): { command?: string } {
+    const c = this.d.resetCommand?.();
+    return c === undefined ? {} : { command: c };
+  }
 
   /** Starts (or, if one runs for an older `needs`, follows) the catch-up. Idempotent. */
   start(needs: string): void {
@@ -120,7 +127,7 @@ export class ReleaseCatchUp {
       } else {
         this.d.log(`release: looking for release ${needs}: ${r.kind}${r.kind === "failed" ? ` (${r.why.slice(0, 160)})` : ""}`);
         // Offline: says so plainly and does not connect. Anything else: this build can't reach it.
-        this.d.notice(r.kind === "offline" ? { kind: "offline", needs } : { kind: "cannot", needs });
+        this.d.notice(r.kind === "offline" ? { kind: "offline", needs } : { kind: "cannot", needs, ...this.#way() });
       }
       await new Promise<void>((resolve) => this.d.after(this.d.retryMs ?? CATCH_UP_RETRY_MS, resolve));
     }
@@ -131,6 +138,7 @@ export interface BringDeps {
   /** `release.bring` on the door connection. */
   bring(p: { release: string; bundlePath: string; now?: boolean }): Promise<{ state: "waiting" | "switching" }>;
   notice(n: ReleaseNotice | undefined): void;
+  resetCommand?(): string | undefined;
   log(line: string): void;
 }
 
@@ -159,7 +167,7 @@ export class BringWatch {
       if (r.state === "switching") this.d.notice({ kind: "switching", incoming: i.release });
     } catch (err) {
       this.d.log(`release: the engine did not take release.bring: ${err instanceof Error ? err.message : String(err)}`);
-      this.d.notice({ kind: "cannot", needs: i.release });
+      this.d.notice({ kind: "cannot", needs: i.release, ...(this.d.resetCommand?.() !== undefined ? { command: this.d.resetCommand() } : {}) });
     }
   }
 
@@ -168,7 +176,7 @@ export class BringWatch {
     if (this.#incoming === undefined) return;
     if (e.state === "waiting") this.d.notice({ kind: "waiting", incoming: this.#incoming.release, turns: e.waitingFor?.turns ?? 0, agents: e.waitingFor?.agents ?? 0 });
     else if (e.state === "switching") this.d.notice({ kind: "switching", incoming: this.#incoming.release });
-    else if (e.state === "current") this.d.notice({ kind: "cannot", needs: this.#incoming.release });
+    else if (e.state === "current") this.d.notice({ kind: "cannot", needs: this.#incoming.release, ...(this.d.resetCommand?.() !== undefined ? { command: this.d.resetCommand() } : {}) });
   }
 
   /** The engine is the app's release now (the connection came back served): nothing waits. */
@@ -178,19 +186,21 @@ export class BringWatch {
   }
 }
 
-/** A test build's stand-in for the update server (`MOSS_TEST_UPDATE_OUTCOME`: offline, none, failed, ready:<version>): no real
+/** A test build's stand-in for the update server (read by index.ts under the test-build define: offline, none, failed, ready:<version>): no real
  *  update is ever fetched. Read only by a test-marked build (the caller passes `env` only then). */
-export function testUpdateOutcome(env: NodeJS.ProcessEnv | undefined): UpdateOutcome | undefined {
-  const v = env?.MOSS_TEST_UPDATE_OUTCOME;
+export function testUpdateOutcome(v: string | undefined): UpdateOutcome | undefined {
   if (v === undefined) return undefined;
   if (v.startsWith("ready:")) return { kind: "ready", version: v.slice(6) };
   return v === "offline" || v === "none" ? { kind: v } : { kind: "failed", why: "a test's stand-in" };
 }
 
 export interface ReleaseDeps {
-  /** The environment a TEST BUILD reads its stamps from; undefined in a release build. */
-  testEnv: NodeJS.ProcessEnv | undefined;
+  /** A test build's stand-ins (index.ts reads them under the test-build define, so a release build holds none): the update
+   *  server's outcome and the wait between looks. Undefined in a release build. */
+  stand?: { outcome?: string | undefined; retryMs?: string | undefined };
   updater(): { checkNow(): Promise<UpdateOutcome>; install(now: boolean): boolean } | undefined;
+  /** The command that takes the home's engine out so this app installs its own (`moss-core engine reset`). */
+  resetCommand?(): string | undefined;
   /** `release.bring` on the pair's connection. */
   bring(p: { release: string; bundlePath: string; now?: boolean }): Promise<{ state: "waiting" | "switching" }>;
   /** The notice changed: the window and the tray say it. */
@@ -206,8 +216,8 @@ export function createRelease(d: ReleaseDeps): { catchUp: ReleaseCatchUp; bringW
     d.log(`release: ${n === undefined ? "no notice" : `notice ${n.kind}${"phase" in n ? ` (${n.phase})` : ""}`}`);
     d.changed(n);
   };
-  const stand = testUpdateOutcome(d.testEnv);
-  const retry = Number(d.testEnv?.MOSS_TEST_RELEASE_RETRY_MS);
+  const stand = testUpdateOutcome(d.stand?.outcome);
+  const retry = Number(d.stand?.retryMs);
   const catchUp = new ReleaseCatchUp({
     check: async () => stand ?? (await d.updater()?.checkNow()) ?? { kind: "unavailable" },
     install: () => {
@@ -216,8 +226,9 @@ export function createRelease(d: ReleaseDeps): { catchUp: ReleaseCatchUp; bringW
     },
     notice,
     after: (ms, fn) => { setTimeout(fn, retry > 0 ? retry : ms); },
+    ...(d.resetCommand ? { resetCommand: d.resetCommand } : {}),
     log: d.log,
   });
-  const bringWatch = new BringWatch({ bring: d.bring, notice, log: d.log });
+  const bringWatch = new BringWatch({ bring: d.bring, notice, ...(d.resetCommand ? { resetCommand: d.resetCommand } : {}), log: d.log });
   return { catchUp, bringWatch, notice: () => current };
 }

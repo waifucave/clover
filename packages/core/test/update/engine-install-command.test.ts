@@ -4,7 +4,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runEngineInstall } from "../../src/update/engine-install-command";
+import { runEngineInstall, runEngineReset } from "../../src/update/engine-install-command";
+import { appRecordPath } from "../../src/update/release-home";
 import { engineBinaryPath } from "../../src/update/engine-copy";
 
 const root = mkdtempSync(join(tmpdir(), "moss-rl-eic-"));
@@ -23,9 +24,9 @@ function app(release: string): { exec: string; bundle: string } {
   writeFileSync(join(resources, "plugins", "p", "f"), release);
   return { exec, bundle };
 }
-async function run(home: string, a: { exec: string; bundle: string }, release: string, extra: string[] = []) {
+async function run(home: string, a: { exec: string; bundle: string }, release: string, extra: string[] = [], over: { platform?: NodeJS.Platform; check?: (p: string, r: string) => boolean } = {}) {
   const out: string[] = [], err: string[] = [];
-  const code = await runEngineInstall(["--app", a.bundle, ...extra], { home, execPath: a.exec, release, platform: "linux", engineRunning: async () => running, out: (l) => out.push(l), err: (l) => err.push(l) });
+  const code = await runEngineInstall(["--app", a.bundle, ...extra], { home, execPath: a.exec, release, platform: over.platform ?? "linux", ...(over.check ? { check: over.check } : {}), engineRunning: async () => running, out: (l) => out.push(l), err: (l) => err.push(l) });
   return { code, out: out.map((l) => JSON.parse(l)), err };
 }
 
@@ -78,5 +79,53 @@ describe("engine install", () => {
     const out: string[] = [], err: string[] = [];
     expect(await runEngineInstall(["--app", "relative"], { home, out: (l) => out.push(l), err: (l) => err.push(l) })).toBe(2);
     expect(await runEngineInstall([], { home, out: (l) => out.push(l), err: (l) => err.push(l) })).toBe(2);
+  });
+});
+
+describe("the home's engine is checked before the app starts it, and engine reset", () => {
+  test("macOS: a home copy that doesn't meet the engine's code requirement is reported unsafe (the app starts its own), on a placement and on a deferred install", async () => {
+    const asked: string[] = [];
+    const home = join(root, "h6");
+    const r = await run(home, app("1.0.0"), "1.0.0", [], { platform: "darwin", check: (p, req) => { asked.push(`${p}|${req}`); return false; } });
+    // The staged check (before the swap) refused the unsigned copy, so nothing was placed at all.
+    expect(r.code).toBe(1);
+    // A copy that passes at staging but fails when the app is about to start it.
+    const home2 = join(root, "h7");
+    let call = 0;
+    const r2 = await run(home2, app("1.0.0"), "1.0.0", [], { platform: "darwin", check: () => ++call === 1 });
+    expect(r2.out[0]).toMatchObject({ installed: true, unsafe: true });
+    running = true;
+    try {
+      const r3 = await run(home2, app("2.0.0"), "2.0.0", [], { platform: "darwin", check: () => false });
+      expect(r3.out[0]).toMatchObject({ deferred: true, unsafe: true });
+    } finally { running = false; }
+    const r4 = await run(join(root, "h8"), app("1.0.0"), "1.0.0", [], { platform: "darwin", check: () => true });
+    expect(r4.out[0].unsafe).toBeUndefined();
+    expect(asked[0]).toContain("identifier");
+  });
+
+  test("engine reset takes out the engine, tree, marker and records, refuses while an engine answers, and touches nothing else", async () => {
+    const home = join(root, "h9");
+    await run(home, app("1.0.0"), "1.0.0");
+    mkdirSync(join(home, "apps"), { recursive: true });
+    writeFileSync(appRecordPath(home, "code"), "{}");
+    mkdirSync(join(home, "conversations"), { recursive: true });
+    writeFileSync(join(home, "conversations", "keep.txt"), "mine");
+    mkdirSync(join(home, "bin", "daemon"), { recursive: true });
+    writeFileSync(join(home, "bin", "daemon", "moss-plugin-bun"), "bun");
+    const out: string[] = [], err: string[] = [];
+    expect(await runEngineReset({ home, platform: "linux", engineRunning: async () => true, out: (l) => out.push(l), err: (l) => err.push(l) })).toBe(1);
+    expect(existsSync(engineBinaryPath(home))).toBe(true);
+    expect(err[0]).toContain("MOSS is running");
+    expect(await runEngineReset({ home, platform: "linux", engineRunning: async () => false, out: (l) => out.push(l), err: (l) => err.push(l) })).toBe(0);
+    expect(existsSync(engineBinaryPath(home))).toBe(false);
+    expect(existsSync(join(home, "bin", "plugins"))).toBe(false);
+    expect(existsSync(join(home, "bin", "engine.json"))).toBe(false);
+    expect(existsSync(appRecordPath(home, "code"))).toBe(false);
+    expect(readFileSync(join(home, "conversations", "keep.txt"), "utf8")).toBe("mine");
+    expect(readFileSync(join(home, "bin", "daemon", "moss-plugin-bun"), "utf8")).toBe("bun");
+    expect(JSON.parse(out[0]!).reset).toBe(true);
+    // The next app start installs its own.
+    expect((await run(home, app("1.0.0"), "1.0.0")).out[0]).toMatchObject({ installed: true });
   });
 });

@@ -68,7 +68,7 @@ describe("release.bring", () => {
     const t = setup();
     const dir = t.app("1.1.0");
     t.setBusy(1, 0);
-    expect(t.service.bring("code", { release: "1.1.0", bundlePath: dir })).toEqual({ state: "waiting" });
+    expect(await t.service.bring("code", { release: "1.1.0", bundlePath: dir })).toEqual({ state: "waiting" });
     await until(() => t.events.some((e) => e.waitingFor?.turns === 1));
     expect(t.events[0]).toMatchObject({ state: "waiting", engine: "1.0.0", incoming: "1.1.0" });
     expect(t.calls).toEqual([]);
@@ -86,10 +86,10 @@ describe("release.bring", () => {
     const t = setup();
     const dir = t.app("1.1.0");
     t.setBusy(0, 2);
-    t.service.bring("code", { release: "1.1.0", bundlePath: dir });
+    await t.service.bring("code", { release: "1.1.0", bundlePath: dir });
     await until(() => t.events.some((e) => e.waitingFor?.agents === 2));
     expect(t.calls).toEqual([]);
-    expect(t.service.bring("code", { release: "1.1.0", bundlePath: dir, now: true })).toEqual({ state: "waiting" });
+    expect(await t.service.bring("code", { release: "1.1.0", bundlePath: dir, now: true })).toEqual({ state: "waiting" });
     await until(() => t.calls.includes("restart"));
     expect(t.calls[0]).toBe("host.stop:update");
   });
@@ -97,52 +97,70 @@ describe("release.bring", () => {
   test("idle at once: no wait", async () => {
     const t = setup();
     const dir = t.app("1.1.0");
-    t.service.bring("code", { release: "1.1.0", bundlePath: dir });
+    await t.service.bring("code", { release: "1.1.0", bundlePath: dir });
     await until(() => t.calls.includes("restart"));
     expect(t.events.at(-1)).toMatchObject({ state: "switching", incoming: "1.1.0" });
   });
 
-  test("refuses what isn't newer, what the app didn't record for itself, and a path no app recorded", () => {
+  test("refuses what isn't newer, what the app didn't record for itself, and a path no app recorded", async () => {
     const t = setup();
     const dir = t.app("1.1.0");
-    expect(() => t.service.bring("code", { release: "1.0.0", bundlePath: dir })).toThrow(ReleaseRefused);
-    expect(() => t.service.bring("code", { release: "1.2.0", bundlePath: dir })).toThrow("record doesn't name");
-    expect(() => t.service.bring("moss", { release: "1.1.0", bundlePath: dir })).toThrow("record doesn't name");
-    expect(() => t.service.bring(undefined, { release: "1.1.0", bundlePath: dir })).toThrow("only an app");
+    await expect(t.service.bring("code", { release: "1.0.0", bundlePath: dir })).rejects.toThrow(ReleaseRefused);
+    await expect(t.service.bring("code", { release: "1.2.0", bundlePath: dir })).rejects.toThrow("record doesn't name");
+    await expect(t.service.bring("moss", { release: "1.1.0", bundlePath: dir })).rejects.toThrow("record doesn't name");
+    await expect(t.service.bring(undefined, { release: "1.1.0", bundlePath: dir })).rejects.toThrow("only an app");
     const other = bundle("1.1.0");
-    expect(() => t.service.bring("code", { release: "1.1.0", bundlePath: other })).toThrow("record doesn't name");
+    await expect(t.service.bring("code", { release: "1.1.0", bundlePath: other })).rejects.toThrow("record doesn't name");
     expect(t.service.state).toBe("current");
     expect(t.calls).toEqual([]);
   });
 
-  test("a copy that doesn't say it is the release named is never placed (the bytes checked are the staged ones)", async () => {
+  test("a copy that doesn't say it is the release named is refused AT bring: nothing waited for, nothing stopped, nothing placed", async () => {
     const t = setup();
     const dir = t.app("1.1.0");
+    t.setBusy(1, 0);
     // The app claims 1.2.0 but carries an engine that says 1.1.0.
     t.home_.record({ program: "code", bundlePath: dir, release: "1.2.0", build: "9", carries: { engine: true, host: true } });
-    t.service.bring("code", { release: "1.2.0", bundlePath: dir });
-    await until(() => t.service.state === "current");
+    await expect(t.service.bring("code", { release: "1.2.0", bundlePath: dir })).rejects.toMatchObject({ code: "not-acceptable" });
+    expect(t.service.state).toBe("current");
     expect(existsSync(engineBinaryPath(t.home))).toBe(false);
-    expect(existsSync(`${engineBinaryPath(t.home)}.new`)).toBe(false);
-    expect(t.calls).toEqual(["host.stop:update", "host.boot"]);
+    expect(t.calls).toEqual([]);
+    expect(t.events).toEqual([]);
     expect(t.gate.closed).toBe(false);
-    expect(t.calls).not.toContain("restart");
+    // The scratch the check used is gone.
+    expect(existsSync(join(t.home, "bin", `.verify-${process.pid}`))).toBe(false);
   });
 
-  test("macOS: a copy whose signature isn't the product's is refused at the staged file", async () => {
+  test("macOS: a copy whose signature isn't the product's is refused at bring, before the wait", async () => {
     const t = setup({ platform: "darwin", check: () => false });
     const dir = t.app("1.1.0");
-    t.service.bring("code", { release: "1.1.0", bundlePath: dir });
-    await until(() => t.service.state === "current");
+    t.setBusy(2, 0);
+    await expect(t.service.bring("code", { release: "1.1.0", bundlePath: dir })).rejects.toThrow("code signature");
     expect(existsSync(engineBinaryPath(t.home, "darwin"))).toBe(false);
-    expect(t.calls).toEqual(["host.stop:update", "host.boot"]);
+    expect(t.calls).toEqual([]);
+    expect(t.events).toEqual([]);
+  });
+
+  test("a restart loop: a second bring for a release already restarted into, with the engine still below it, is refused plainly", async () => {
+    const t = setup();
+    const dir = t.app("1.1.0");
+    await t.service.bring("code", { release: "1.1.0", bundlePath: dir });
+    await until(() => t.calls.includes("restart"));
+    // The engine came back on 1.0.0 (supervise started the same binary): the app asks again.
+    // Same home, a fresh service on the old release.
+    const svc = new ReleaseService({ home: t.home_, engine: { release: "1.0.0", path: "/engine" }, gate: new UpdateGate(), host: { stop: () => {} }, policy: { platform: "linux", profile: "dist", developerId: true, records: () => t.home_.apps() }, homeDir: t.home, emit: () => {}, restart: () => {} });
+    await expect(svc.bring("code", { release: "1.1.0", bundlePath: dir })).rejects.toMatchObject({ code: "loop" });
+    // Once the engine is on it, the file is stale and a later release is free to go.
+    const later = new ReleaseService({ home: t.home_, engine: { release: "1.1.0", path: "/engine" }, gate: new UpdateGate(), host: { stop: () => {} }, policy: { platform: "linux", profile: "dist", developerId: true, records: () => t.home_.apps() }, homeDir: t.home, emit: () => {}, restart: () => {} });
+    const dir2 = t.app("1.2.0");
+    expect(await later.bring("code", { release: "1.2.0", bundlePath: dir2 })).toEqual({ state: "waiting" });
   });
 
   test("macOS: the requirement asked is the engine's identifier, the team and Developer ID", async () => {
     const asked: string[] = [];
     const t = setup({ platform: "darwin", check: (_p, r) => { asked.push(r); return true; } });
     const dir = t.app("1.1.0");
-    t.service.bring("code", { release: "1.1.0", bundlePath: dir });
+    await t.service.bring("code", { release: "1.1.0", bundlePath: dir });
     await until(() => t.calls.includes("restart"));
     expect(asked[0]).toContain('identifier "com.waifucave.moss.core"');
     expect(asked[0]).toContain("anchor apple generic");
@@ -153,7 +171,7 @@ describe("release.bring", () => {
   test("a failed placement reopens the gate and boots the host again", async () => {
     const t = setup({ failPlace: true });
     const dir = t.app("1.1.0");
-    t.service.bring("code", { release: "1.1.0", bundlePath: dir });
+    await t.service.bring("code", { release: "1.1.0", bundlePath: dir });
     await until(() => t.service.state === "current");
     expect(t.calls).toEqual(["host.stop:update", "host.boot"]);
     expect(t.gate.closed).toBe(false);

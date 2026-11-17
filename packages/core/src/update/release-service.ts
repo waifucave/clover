@@ -18,13 +18,15 @@ import type { HostExitReason } from "@waifucave/moss-protocol";
 import type { Surface } from "@waifucave/moss-protocol";
 import type { ReleaseHome } from "../contracts/release-home";
 import type { UpdateGate } from "./gate";
-import { copyAcceptable, locateEngineIn, placeEngine, verifyStagedEngine, type CopyPolicy } from "./engine-copy";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { copyAcceptable, locateEngineIn, placeEngine, verifyBundleEngine, verifyStagedEngine, type CopyPolicy } from "./engine-copy";
 
 /** How long the gate stays closed for a swap before it would reopen by itself (a swap that never finishes). */
 export const SWAP_MS = 5 * 60_000;
 
 export class ReleaseRefused extends Error {
-  constructor(message: string, readonly code: "not-newer" | "not-recorded" | "not-acceptable" | "not-an-app" | "busy") { super(message); }
+  constructor(message: string, readonly code: "not-newer" | "not-recorded" | "not-acceptable" | "not-an-app" | "busy" | "loop") { super(message); }
 }
 
 export interface ReleaseEventBody {
@@ -48,6 +50,8 @@ export interface ReleaseServiceDeps {
   readonly policy: CopyPolicy;
   /** Places the copy `from` names: the engine and tree of an app bundle. Default: `placeEngine` from `locateEngineIn`. */
   place?(copy: { release: string; build?: string; from: string }): void;
+  /** Stages and checks the copy `from` names, throwing the refusal (default: `verifyBundleEngine`). Run at `bring`, before any wait. */
+  verify?(copy: { release: string; from: string }): void;
   readonly homeDir: string;
   /** How often the wait asks the gate (ms). */
   pollMs?: number;
@@ -69,6 +73,8 @@ export class ReleaseService {
   #incoming: { release: string; bundlePath: string; build?: string } | undefined;
   #now = false;
   #lastWaiting = "";
+  /** A `bring` is being checked (its copy staged and verified): another one meanwhile only waits. */
+  #checking = false;
 
   constructor(private readonly d: ReleaseServiceDeps) {}
 
@@ -91,9 +97,10 @@ export class ReleaseService {
   }
 
   /** `release.bring` from a connected `app` whose hello was `ahead`. Returns at once with the state it is in. */
-  bring(surface: Surface | undefined, p: { release: string; bundlePath: string; now?: boolean }): { state: "waiting" | "switching" } {
+  async bring(surface: Surface | undefined, p: { release: string; bundlePath: string; now?: boolean }): Promise<{ state: "waiting" | "switching" }> {
     if (surface === undefined) throw new ReleaseRefused("only an app brings an engine", "not-an-app");
     if (this.#state === "switching") return { state: "switching" };
+    if (this.#checking) return { state: "waiting" };
     if (this.#incoming !== undefined) {
       // One already waits. The person's "switch now" moves it on; another app's own request doesn't replace it.
       if (p.now === true && this.#incoming.bundlePath === p.bundlePath) this.#now = true;
@@ -104,6 +111,22 @@ export class ReleaseService {
     if (mine === undefined || mine.bundlePath !== p.bundlePath || mine.release !== p.release) throw new ReleaseRefused("the app's own record doesn't name that path and release", "not-recorded");
     const ok = copyAcceptable(p.bundlePath, "engine", this.d.policy);
     if (!ok.ok) throw new ReleaseRefused(`the engine copy isn't taken: ${ok.reason}`, "not-acceptable");
+    // One restart per release: if the engine already restarted into this release and is still below it, the installed copy is not
+    // what `supervise` starts (it would restart for ever); say so instead of restarting again.
+    if (this.#restartedInto() === p.release) {
+      throw new ReleaseRefused(`the engine already restarted to switch to release ${p.release} and is still on ${this.d.engine.release}: the installed copy isn't the one that starts`, "loop");
+    }
+    // Stage and check the copy NOW, before anything waits or stops: a copy that would be refused is refused at once, never after
+    // the person waited for idle or pressed "Switch now" and the work was interrupted.
+    this.#checking = true;
+    try {
+      await (this.d.verify ?? ((c) => verifyBundleEngine(this.d.homeDir, c.from, c.release, this.d.policy)))({ release: p.release, from: p.bundlePath });
+    } catch (err) {
+      throw new ReleaseRefused(`the engine copy isn't taken: ${err instanceof Error ? err.message : String(err)}`, "not-acceptable");
+    } finally {
+      this.#checking = false;
+    }
+    if (this.#incoming !== undefined) return { state: (this.#state as ReleaseState) === "switching" ? "switching" : "waiting" };
     this.#incoming = { release: p.release, bundlePath: p.bundlePath, ...(mine.build !== undefined ? { build: mine.build } : {}) };
     this.#now = p.now === true;
     this.#set("waiting");
@@ -146,10 +169,33 @@ export class ReleaseService {
     const copy = { release: incoming.release, from: incoming.bundlePath, ...(incoming.build !== undefined ? { build: incoming.build } : {}) };
     const r = await this.d.home.install(copy);
     if (!r.installed && compareReleases(r.current.release, incoming.release) < 0) throw new Error("the engine wasn't installed");
+    // Nothing newer than this running engine is in place (another app's copy of the same release, or none): a restart would start the
+    // same engine again.
+    if (compareReleases(r.current.release, this.d.engine.release) <= 0) throw new Error(`the installed engine (release ${r.current.release}) isn't newer than the running one`);
+    this.#markRestart(incoming.release);
     this.d.log?.(`release: engine ${incoming.release} is in place; restarting into it`);
     // Committed only now that the copy is in place: a failure before this leaves the gate to reopen.
     this.d.gate.commit();
     await this.d.restart();
+  }
+
+  /** The release this engine already restarted for (one-shot per incoming release), kept in a file so the next process sees it. */
+  #restartFile(): string { return join(this.d.homeDir, "bin", ".restarted-into.json"); }
+  #restartedInto(): string | undefined {
+    try {
+      const r = JSON.parse(readFileSync(this.#restartFile(), "utf8")) as { release?: unknown };
+      // Stale once the engine has reached it.
+      return typeof r.release === "string" && compareReleases(this.d.engine.release, r.release) < 0 ? r.release : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  #markRestart(release: string): void {
+    const f = this.#restartFile();
+    mkdirSync(join(this.d.homeDir, "bin"), { recursive: true });
+    const tmp = `${f}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify({ release })}\n`, { mode: 0o600 });
+    renameSync(tmp, f);
   }
 
   #fail(err: unknown): void {
@@ -183,7 +229,7 @@ export function releaseHandlers(service: ReleaseService, rpc: { error(code: numb
   };
   return {
     "release.status": () => service.status(),
-    "release.bring": (conn, p) => wrap(() => service.bring(conn.program, p as { release: string; bundlePath: string; now?: boolean })),
+    "release.bring": async (conn, p) => { try { return await service.bring(conn.program, p as { release: string; bundlePath: string; now?: boolean }); } catch (err) { if (err instanceof ReleaseRefused) throw rpc.error(-32600, err.message); throw err; } },
     "release.record": (conn, p) => wrap(() => { service.record(conn.program, p as Parameters<ReleaseService["record"]>[1]); return { ok: true }; }),
   };
 }

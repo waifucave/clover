@@ -184,11 +184,15 @@ let updater: Updater | undefined;
 // One release for everything (spec §3.1; release.ts). This app's release, its bundle (what its record names), and the two
 // things it can be told: it is behind the engine (it updates itself before it connects), or ahead of it (it asks for its
 // engine to be brought in and says it waits for work to finish).
-const ownRelease = appRelease(app.getVersion(), typeof __MOSS_TEST_BUILD__ === "string" ? process.env.MOSS_TEST_APP_RELEASE : undefined);
-const ownBundle = bundlePathOf(app.getPath("exe"), process.platform, process.env);
+// The release stand-ins below are read by a test build and the acceptance build only (a release build folds them out).
+const ownRelease = appRelease(app.getVersion(), (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") ? process.env.MOSS_TEST_APP_RELEASE : undefined);
+// A test build may name the bundle its record carries (the acceptance run's stand-in app folder); a release build never reads it.
+const ownBundle = ((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") ? process.env.MOSS_TEST_APP_BUNDLE : undefined) ?? bundlePathOf(app.getPath("exe"), process.platform, process.env);
 const { catchUp, bringWatch, notice: releaseNotice } = createRelease({
-  testEnv: typeof __MOSS_TEST_BUILD__ === "string" ? process.env : undefined,
+  ...((typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") ? { stand: { outcome: process.env.MOSS_TEST_UPDATE_OUTCOME, retryMs: process.env.MOSS_TEST_RELEASE_RETRY_MS } } : {}),
   updater: () => updater,
+  // The way out for an app that can never connect: the engine of its own bundle takes the home's engine out (`engine reset`), and the next start installs its own.
+  resetCommand: () => { const b = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath }); return b === undefined ? undefined : `"${b}" engine reset`; },
   bring: async (p) => await pair.client!.request<{ state: "waiting" | "switching" }>("release.bring", p, 10_000),
   changed: (n) => {
     if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });

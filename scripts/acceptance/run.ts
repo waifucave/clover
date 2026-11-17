@@ -5019,9 +5019,17 @@ async function releaseSteps(app: { exe: string; args: string[] }): Promise<void>
   }
 
   try {
-    // AHEAD: the engine on 1.0.0 with a turn still running, the app on 9.0.0.
+    // AHEAD: the engine on 1.0.0 with a turn still running, the app on 9.0.0. The app's bundle is a folder the run makes in its temp
+    // home, carrying a stand-in engine that says it is release 9.0.0 (both layouts, so any OS finds it); the test core takes the
+    // stand-in for the code requirement (MOSS_TEST_ENGINE_COPY_CHECK), and checks its `--version` as always.
+    const standIn = join(root, "release-app-bundle");
+    for (const res of [join(standIn, "Contents", "Resources"), join(standIn, "resources")]) {
+      mkdirSync(join(res, "daemon"), { recursive: true });
+      mkdirSync(join(res, "plugins"), { recursive: true });
+      writeFileSync(join(res, "daemon", "moss-core"), `#!/bin/sh\necho "moss ${APP_NEWER}"\n`, { mode: 0o755 });
+    }
     await stopDaemon();
-    await startDaemonProc({ MOSS_TEST_ENGINE_RELEASE: ENGINE_OLDER });
+    await startDaemonProc({ MOSS_TEST_ENGINE_RELEASE: ENGINE_OLDER, MOSS_TEST_ENGINE_COPY_CHECK: "pass" });
     const c = (await appDriver()).client;
     let a: { proc: { proc: ChildProcess; log: string }; cdp: Cdp } | undefined;
     try {
@@ -5032,7 +5040,7 @@ async function releaseSteps(app: { exe: string; args: string[] }): Promise<void>
       await c.request("session.send", { id: session, message: { text: `${tag} keep going`, clientMessageId: randomUUID() } }, 30_000);
       await until("the turn to be running (the fake asked)", 60_000, () => (fake!.requests.slice(asked).some((r) => r.lastUserText.includes(tag)) ? true : undefined), 200);
       const logFrom = readLog(appLog).length;
-      a = await openApp("release-ahead", { MOSS_TEST_APP_RELEASE: APP_NEWER });
+      a = await openApp("release-ahead", { MOSS_TEST_APP_RELEASE: APP_NEWER, MOSS_TEST_APP_BUNDLE: standIn });
       const text = await until(`the window to say it waits for work to finish`, 90_000, async () => { const t = await windowText(a!.cdp); return t.includes(RELEASE_WORDS.waiting) && t.includes(RELEASE_WORDS.switchNow) ? t : undefined; }, 500);
       if (!/1 running/.test(text)) fail(`the window doesn't say one turn is running: ${text.slice(0, 200)}`);
       // The person's "Switch now", pressed in the window.

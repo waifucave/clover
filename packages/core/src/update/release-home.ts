@@ -40,6 +40,8 @@ export interface EngineReleaseHomeOptions {
   /** How long an install waits for another process's lock, and how often it asks (on the clock). */
   lockWaitMs?: number;
   lockPollMs?: number;
+  /** How long a record's bundle may be missing before the record is deleted (default 30 s): an app being updated has no bundle for a moment. */
+  missGraceMs?: number;
   /** Test seam: the lock itself (default: the OS lock on `ENGINE_INSTALL_LOCK`). */
   lock?(path: string): { release(): void } | undefined;
   log?(line: string): void;
@@ -87,6 +89,7 @@ export class EngineReleaseHome implements ReleaseHome {
   readonly engine: string;
   readonly #o: EngineReleaseHomeOptions;
   #queue: Promise<unknown> = Promise.resolve();
+  readonly #missing = new Map<Program, number>();
 
   constructor(o: EngineReleaseHomeOptions) {
     this.#o = o;
@@ -121,10 +124,18 @@ export class EngineReleaseHome implements ReleaseHome {
       const r = readRecordFile(this.#o.home, program);
       if (r === undefined) continue;
       if (!exists(r.bundlePath)) {
-        // The app is gone from disk: its record goes with it.
-        try { rmSync(appRecordPath(this.#o.home, program), { force: true }); } catch { /* raced */ }
+        // Not listed while its bundle is missing, but deleted only once it has stayed missing past the grace: during an app's own
+        // update its bundle is briefly absent, and the host's source (`hostSource`) must not vanish for good with it.
+        const now = this.#o.clock.now();
+        const first = this.#missing.get(program) ?? now;
+        this.#missing.set(program, first);
+        if (now - first >= (this.#o.missGraceMs ?? 30_000)) {
+          this.#missing.delete(program);
+          try { rmSync(appRecordPath(this.#o.home, program), { force: true }); } catch { /* raced */ }
+        }
         continue;
       }
+      this.#missing.delete(program);
       out.push(r);
     }
     return out;

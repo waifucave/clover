@@ -52,7 +52,7 @@ export {
   type PoolLockGuard, type LeaseStore, type LeasesDirSecurity,
 } from "./fence/win-sandbox";
 export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";
-export { runEngineInstall, ENGINE_INSTALL_USAGE } from "./update/engine-install-command";
+export { runEngineInstall, runEngineReset, ENGINE_INSTALL_USAGE, ENGINE_RESET_USAGE } from "./update/engine-install-command";
 export { acquireLock, tryFileLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveMossProfile, keychainService, profileDisplayName, cliCommandName, type MossProfile } from "./profile";
 export {

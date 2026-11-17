@@ -69,7 +69,7 @@ describe("the records and the install lock are not the runners' to write", () =>
     const written: string[] = [];
     const walk = (d: string): void => { for (const e of readdirSync(d, { withFileTypes: true })) { const f = join(d, e.name); written.push(f.slice(h2.length + 1)); if (e.isDirectory()) walk(f); } };
     walk(join(h2, "bin"));
-    const names = new Set([...written, join("bin", "daemon", "moss-core.new"), join("bin", "plugins.new"), join("bin", ".install.lock")]);
+    const names = new Set([...written, join("bin", "daemon", "moss-core.new"), join("bin", "plugins.new"), join("bin", ".install.lock"), join("bin", ".restarted-into.json")]);
     expect([...names].some((n) => n.endsWith("moss-core.old"))).toBe(true);
     for (const [who, caller] of callers) {
       const f = fence.forCaller(caller);
@@ -81,7 +81,7 @@ describe("the records and the install lock are not the runners' to write", () =>
     }
     // They are also named by the fence's own self-update kind (read-only for every caller, the user included), not left to the default-deny alone.
     const kind = new Set(fence.fencedSet().filter((i) => i.kind === ("self-update" as never)).map((i) => i.path));
-    for (const rel of ["bin/daemon/moss-core", "bin/daemon/moss-core.new", "bin/daemon/moss-core.old", "bin/engine.json", "bin/.install.lock", "bin/plugins", "bin/plugins.new", "bin/plugins.old"]) expect(kind.has(join(moss, rel))).toBe(true);
+    for (const rel of ["bin/daemon/moss-core", "bin/daemon/moss-core.new", "bin/daemon/moss-core.old", "bin/engine.json", "bin/.install.lock", "bin/.restarted-into.json", "bin/plugins", "bin/plugins.new", "bin/plugins.old"]) expect(kind.has(join(moss, rel))).toBe(true);
   });
 
   test("the app itself (the user) writes its record, which is who may", () => {

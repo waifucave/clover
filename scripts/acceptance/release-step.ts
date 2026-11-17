@@ -6,8 +6,9 @@
 //     plainly that it cannot reach the update server, and the engine hears from it once and never again.
 //   * AHEAD: an app newer than the engine, with a turn still running: its window says a newer MOSS Code waits for work to finish
 //     (one running), and "Switch now" is in the window; pressed, the engine is asked to switch at once (`release.bring` with
-//     `now`), which the app logs as it switching. The swap itself is not asserted: a test core is unsigned and the app's
-//     bundle holds no engine to place (the unit tests place a stand-in engine in a temp home).
+//     `now`), which the app logs as it switching. The app's bundle is a stand-in folder the run makes (the test core takes it for
+//     the code requirement and still checks its `--version`), so the engine is placed in the run's temp home; what is NOT proven
+//     here is the signature check on a real signed build: that is the signed build's packaged run, on the Mac.
 export const RELEASE_BEHIND_STEP = "release: an app older than the engine updates itself before it connects: its window says it is installing the update, and offline says plainly it can't reach the update server and doesn't connect";
 export const RELEASE_AHEAD_STEP = "release: a newer app waits for the engine's work to finish and says so in its window, and Switch now asks the engine to switch at once";
 

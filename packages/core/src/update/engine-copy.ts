@@ -191,3 +191,28 @@ export function engineVersionOf(binary: string): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * Stages the engine a bundle carries in a scratch folder under the home's `bin/` and runs the staged-copy check on it (the
+ * code requirement on macOS, `--version` saying the release), then removes the scratch. `release.bring` runs it BEFORE it waits
+ * for idle or stops anything, so a copy that would be refused is refused at once, not after the person has waited or pressed
+ * "Switch now". The swap checks the bytes again at `placeEngine` (the bytes that run are the ones checked last). Throws the refusal.
+ */
+export function verifyBundleEngine(home: string, bundlePath: string, release: string, policy: CopyPolicy): void {
+  const src = locateEngineIn(bundlePath, policy.platform);
+  if (src === undefined) throw new Error("no engine to find in that bundle");
+  const scratch = join(home, "bin", `.verify-${process.pid}`);
+  rmSync(scratch, { recursive: true, force: true });
+  mkdirSync(scratch, { recursive: true });
+  try {
+    const real = realpathSync(src.binary), root = realpathSync(bundlePath);
+    if (real !== root && !real.startsWith(root + sep)) throw new Error("the engine leads outside its bundle");
+    if (!lstatSync(real).isFile()) throw new Error("the bundle's engine is not a file");
+    const staged = join(scratch, engineBinaryName(policy.platform));
+    cpSync(real, staged);
+    chmodSync(staged, 0o755);
+    verifyStagedEngine(staged, release, policy);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}

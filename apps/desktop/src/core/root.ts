@@ -55,9 +55,10 @@ function note(lines: string[], action?: { label: string; run: () => void }): voi
 }
 
 /** What the app says of its release (the main process's `ReleaseNotice`, release.ts): the words, and "Switch now" while a newer app waits. */
-interface ReleaseNoticeView { kind: string; phase?: string; needs?: string; incoming?: string; turns?: number; agents?: number }
+interface ReleaseNoticeView { kind: string; phase?: string; needs?: string; incoming?: string; turns?: number; agents?: number; command?: string }
 function releaseWords(n: ReleaseNoticeView): { text: string; action?: { label: string; run: () => void } } {
-  const p = { needs: n.needs ?? "", incoming: n.incoming ?? "", turns: n.turns ?? 0, agents: n.agents ?? 0 };
+  const p = { needs: n.needs ?? "", incoming: n.incoming ?? "", turns: n.turns ?? 0, agents: n.agents ?? 0, command: n.command ?? "" };
+  if (n.kind === "cannot" && n.command !== undefined) return { text: t("release.cannot-reset", p) };
   if (n.kind === "updating") return { text: t(`release.${n.phase ?? "checking"}`, p) };
   if (n.kind === "waiting") {
     return { text: t(p.turns + p.agents > 0 ? "release.waiting-for" : "release.waiting", p), action: { label: t("release.switch-now"), run: () => void root.call("release.switchNow") } };

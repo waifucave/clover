@@ -119,13 +119,13 @@ export function copyOutOfAppImage(bundled: string, env: NodeJS.ProcessEnv, userH
 }
 
 /** What `moss-core engine install` printed: the binary every start goes through, whichever app's copy won the lock. */
-export function parseEngineInstall(out: string): { installed: boolean; binary: string; release: string; build?: string } | undefined {
+export function parseEngineInstall(out: string): { installed: boolean; binary: string; release: string; build?: string; unsafe?: true } | undefined {
   const line = out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("{")).pop();
   if (line === undefined) return undefined;
   try {
-    const p = JSON.parse(line) as { installed?: unknown; binary?: unknown; release?: unknown; build?: unknown };
+    const p = JSON.parse(line) as { installed?: unknown; binary?: unknown; release?: unknown; build?: unknown; unsafe?: unknown };
     if (typeof p.installed !== "boolean" || typeof p.binary !== "string" || p.binary === "" || typeof p.release !== "string") return undefined;
-    return { installed: p.installed, binary: p.binary, release: p.release, ...(typeof p.build === "string" ? { build: p.build } : {}) };
+    return { installed: p.installed, binary: p.binary, release: p.release, ...(typeof p.build === "string" ? { build: p.build } : {}), ...(p.unsafe === true ? { unsafe: true as const } : {}) };
   } catch {
     return undefined;
   }
@@ -141,7 +141,8 @@ export async function installEngineCopy(cfg: LauncherConfig & { bundlePath: stri
   const r = await run(cfg, ["engine", "install", "--app", cfg.bundlePath, ...(cfg.build !== undefined ? ["--build", cfg.build] : [])]);
   const placed = r.ok ? parseEngineInstall(r.out) : undefined;
   // An engine already running from an app's own copy defers the install (nothing is placed under it): no home copy yet, none to start from.
-  return placed !== undefined && existsSync(placed.binary) ? placed : undefined;
+  // A copy the engine's own check says doesn't meet its code requirement (macOS) is never started: the app keeps its bundled engine.
+  return placed !== undefined && placed.unsafe !== true && existsSync(placed.binary) ? placed : undefined;
 }
 
 export interface AdoptDeps {

@@ -7,7 +7,8 @@
 //     (the CLI and a test client are not apps).
 //   * same: served as today, and the result says so. behind: refused with `ReleaseRefusal` (what it needs). ahead: served
 //     the release door only (`RELEASE_DOOR_METHODS`) until its engine is in.
-import { MOSS_ERR, type HelloRelease, type MossRole, type ReleaseRefusal } from "@waifucave/moss-protocol";
+import { DEFAULT_SURFACE, MOSS_ERR, SURFACE_MOUNTS, type HelloRelease, type MossRole, type Program, type ReleaseRefusal } from "@waifucave/moss-protocol";
+import type { SurfaceAdmission } from "../contracts/surface-door";
 import type { ReleaseHome } from "../contracts/release-home";
 
 /** What an app that names no release is taken to run: older than any release. */
@@ -28,9 +29,26 @@ export function judgeHello(home: ReleaseHome, hello: { role: MossRole; release?:
   return { kind: "served", release: { standing: "same", engine: home.engine } };
 }
 
-/** The refusal a behind client is given. */
+/** The refusal a behind client is given. An app that named no release is "an older app", never the placeholder. */
 export function refusalMessage(r: ReleaseRefusal): string {
-  return `this MOSS is on release ${r.engine} and the app is on ${r.client}: update the app to ${r.needs}`;
+  return `this MOSS is on release ${r.engine} and ${r.client === NO_RELEASE ? "an older app" : `the app is on ${r.client}`}: update the app to ${r.needs}`;
+}
+
+/**
+ * The admission of a connection that holds the release door only (an app AHEAD of the engine). It is NOT put in the surface
+ * door's live set: an inert app must not hold the one host slot, count as the island's drawer (the router would place cards on
+ * a window that can't draw them), be compared with the live copies of its program (it would make the working older copy
+ * quit before the engine is switched), or report presence. The program is still the signed identity where there is one, and a
+ * surface that isn't it is still refused, so `release.bring` and `release.record` key on a program the OS vouched for.
+ */
+export function inertAdmission(client: { role: MossRole; surface?: string | undefined; signed?: Program | undefined }): SurfaceAdmission | { ok: true; surface: undefined } {
+  if (client.role !== "app") {
+    if (client.surface !== undefined) return { ok: false, refusal: { reason: "not-app", surface: client.surface as never } };
+    return { ok: true, surface: undefined };
+  }
+  const surface = (client.surface ?? DEFAULT_SURFACE) as Program;
+  if (client.signed !== undefined && client.signed !== surface) return { ok: false, refusal: { reason: "program-mismatch", surface } };
+  return { ok: true, surface, program: client.signed ?? surface, mount: SURFACE_MOUNTS[surface], stop: [] };
 }
 
 /** A call on a connection that has the release door only. */
