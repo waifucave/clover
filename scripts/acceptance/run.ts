@@ -95,7 +95,7 @@ import { BUILDER_EXAMPLES_STEP, builderExamplesStep } from "./builder-examples-s
 import { WORKSHOP_POINTS_STEP, workshopPointsStep } from "./workshop-points-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { BOT_RECORDS_ENV, BOT_RECORDS_STEP, botRecordsWrong } from "./bot-records-step";
-import { MOSS_ENV, MOSS_STEPS, mossUnit } from "./moss-step";
+import { MOSS_ENV, MOSS_STEPS, mossUnit, seedLongConversation } from "./moss-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
@@ -3238,6 +3238,8 @@ async function mossRun(fresh: boolean): Promise<void> {
   try {
     if (!fresh && lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
     stoppingDaemon = false;
+    // The owner's real bot as the upgrade's copy brings it: a long conversation already in the home.
+    await seedLongConversation(home);
     daemon = await startDaemonProc({ ...MOSS_ENV });
     // The run's own connections say MOSS's surface: no MOSS Code hello reaches a home where only MOSS runs.
     const c = (await mossDriver()).client;

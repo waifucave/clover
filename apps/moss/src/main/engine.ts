@@ -48,6 +48,11 @@ export function messageOf(e: Record<string, unknown>): Message | undefined {
   if (e.type === "agent_error" && typeof e.message === "string") return { id, from: "note", text: e.message.slice(0, 500), at };
   // A turn that ended in an error: the conversation's note, with Try again while it is the last thing there.
   if (e.type === "turn_completed" && e.stopReason === "error") return { id: `${id}:failed`, from: "note", text: "The turn ended with an error.", at, failed: true };
+  // A routine's run posts its short result into the bot's conversation (§7): a note naming the routine.
+  if (e.type === "routine_result" && typeof e.text === "string") {
+    const name = typeof e.name === "string" ? e.name.slice(0, 200) : "A routine";
+    return { id, from: "note", text: `${e.failed === true ? `Routine "${name}" failed` : `Routine "${name}"`}: ${e.text.slice(0, 2_000)}`, at };
+  }
   return undefined;
 }
 

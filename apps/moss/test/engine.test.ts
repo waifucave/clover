@@ -99,6 +99,9 @@ describe("the conversation", () => {
 
   test("a turn that ended in an error is the conversation's failed note; one that ended well is no message", () => {
     expect(messageOf({ type: "turn_completed", seq: 7, sessionId: "s", ts: 1, stopReason: "error" })).toMatchObject({ from: "note", failed: true });
+    // A routine's result in the conversation: a note naming it, its failure said.
+    expect(messageOf({ type: "routine_result", seq: 8, sessionId: "s", ts: 1, routine: "r_x", name: "Brief", sideThread: "t_1", text: "Done: 3 mails.", failed: false })).toMatchObject({ from: "note", text: 'Routine "Brief": Done: 3 mails.' });
+    expect(messageOf({ type: "routine_result", seq: 9, sessionId: "s", ts: 1, routine: "r_x", name: "Brief", sideThread: "t_1", text: "No inbox.", failed: true })?.text).toBe('Routine "Brief" failed: No inbox.');
     expect(messageOf({ type: "turn_completed", seq: 8, sessionId: "s", ts: 1, stopReason: "end_turn" })).toBeUndefined();
   });
 
