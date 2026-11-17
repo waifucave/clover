@@ -37,4 +37,9 @@ test("a host the engine gave up on: the window takes back all but the island (ca
   const plan = mountPlan("code", undefined, "absent", true);
   expect(plan).toMatchObject({ mainWindow: true, surfaces: false, background: true, browser: true, drawsCards: true });
   expect(mountPlan("code", undefined, "absent", false).surfaces).toBe(true);
+  // The fourth argument decides it (the reviewer's point 3): ignored, the gave-up plan would be today's whole list.
+  expect(mountPlan("code", undefined, "absent", true)).not.toEqual(mountPlan("code", undefined, "absent"));
+  expect(mountPlan("code", undefined, "absent")).toEqual(mountPlan("code", undefined));
+  // The engine names no island then either (its door's `noIsland`): the window keeps everything else, its tray included.
+  expect(mountPlan("code", undefined, "absent", true)).toEqual({ ...mountPlan("code", undefined), surfaces: false });
 });
