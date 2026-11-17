@@ -138,7 +138,7 @@ function ToolsPage({ tools, onSet, onSetAvailability, onTakeBack, item }: { tool
               </Row>
             )}
             {p.tools.map((t) => (
-              <Row key={t.name} label={t.title ?? t.name} detail={t.isNew ? S.toolsNew : undefined}>
+              <Row key={t.name} label={t.title ?? t.name} detail={t.isNew ? S.toolsNew : t.availability === "on-demand" ? S.toolOnDemandRunning : undefined}>
                 {t.availability !== undefined && (
                   <Availability label={S.toolOfferedFor(t.name)} value={t.availability} fallback={declaredAvailability(t.declared)} {...(onSetAvailability ? { onPick: (v: ToolAvailability) => onSetAvailability(p.server, t.name, v) } : {})} />
                 )}

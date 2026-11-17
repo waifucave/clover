@@ -104,6 +104,8 @@ export const S = {
   toolOffered: "Offered to bots and agents",
   toolOff: "Off",
   toolOnDemand: "On demand",
+  /** Under a tool set to on demand: what it does for a conversation that already has the tool (the engine cannot know when each one starts over, so it says no more). */
+  toolOnDemandRunning: "A conversation already running may keep it loaded until it starts over.",
   toolAlways: "Always on",
   toolDefaultMark: "What the plugin declares",
   toolDefaultSuffix: " (default)",
