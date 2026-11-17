@@ -1481,7 +1481,7 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
 async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"), which: "approve" | "always" = "approve"): Promise<string> {
   await appGotCard(card, appLog);
   // lane HS: the island's Always allow too, for a run whose cards are answered only where they are drawn (a host's island).
-  const BUTTON = which === "always" ? ".seal-button[data-kind=approve][data-remember]" : PLAIN_APPROVE;
+  const BUTTON = which === "always" ? ".seal-button[data-kind=approve].quiet, .seal-button[data-kind=approve][data-remember]" : PLAIN_APPROVE;
   const from = readLog(appLog).length;
   const cardUrl = `moss-sealed://card/${encodeURIComponent(card.id)}/`;
   const island = () => [...cdp.frames.values()].find((f) => f.type === "page" && f.url.startsWith("moss-core://app/?surface=island"));
