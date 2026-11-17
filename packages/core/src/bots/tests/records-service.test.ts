@@ -309,3 +309,29 @@ describe("a plugin's bot-scoped settings, per bot", () => {
     await b.shutdown();
   });
 });
+
+describe("the instructions file is the bot's to write, so the core reads it as untrusted", () => {
+  test("a link or a hard link planted at instructions.md is read as empty, never followed; a file past the cap isn't read", async () => {
+    const { linkSync, rmSync, symlinkSync, mkdirSync } = await import("node:fs");
+    const home = tempDir();
+    const b = await recordsBoot(home);
+    await b.bots.createBot({ name: "Nova", instructions: "mine" }, { kind: "user" });
+    const file = instructionsFile(home, "nova");
+    mkdirSync(join(home, "credentials"), { recursive: true });
+    const secret = join(home, "credentials", "index.json");
+    writeFileSync(secret, "PROBE_SECRET=dummy123");
+    rmSync(file);
+    symlinkSync(secret, file);
+    const read1 = b.bots.records!.instructions("nova");
+    rmSync(file);
+    linkSync(secret, file);
+    const read2 = b.bots.records!.instructions("nova");
+    rmSync(file);
+    writeFileSync(file, "x".repeat(900_000));
+    const read3 = b.bots.records!.instructions("nova");
+    // Only whether the dummy value was visible.
+    expect([read1.includes("dummy123"), read2.includes("dummy123"), read3.length]).toEqual([false, false, 0]);
+    expect(b.warnings.filter((w) => w.includes("instructions file wasn't read")).length).toBe(3);
+    await b.shutdown();
+  });
+});
