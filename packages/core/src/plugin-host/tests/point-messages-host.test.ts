@@ -46,10 +46,6 @@ describe("point messages between host halves", () => {
       `export async function beat() { for (let i = 0; i < 3; i++) await api.points.send(${JSON.stringify(POINT)}, { n: ++n }); return { sent: 3 }; }`,
       "export function heard() { return back; }",
     ]);
-    plugin(home, "dancer", { contributes: { [POINT]: [{ id: "waltz" }] } }, [
-      `export function start(a) { globalThis.__got = []; a.points.onMessage(${JSON.stringify(POINT)}, (m) => { globalThis.__got.push(m); if (m.from === "metronome") void a.points.send(${JSON.stringify(POINT)}, { echo: m.value.n }).catch((e) => console.log("send failed " + e.message)); }); }`,
-      "export function got() { return globalThis.__got; }",
-    ]);
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     const opened = await openPluginRegistry({ mossHome: home, os: "linux", broker, secrets, settleMs: 50 });
@@ -57,26 +53,31 @@ describe("point messages between host halves", () => {
     const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, log: (l) => lines.push(l) });
     const logOf = (id: string) => { try { return readFileSync(join(home, "logs", "plugins", `${id}.log`), "utf8"); } catch { return ""; } };
     try {
-      for (const id of ["metronome", "dancer"]) {
+      const approve = async (id: string): Promise<string> => {
         const { card } = await opened.registry.installed(id, "app");
         const shown = broker.cards().find((c) => c.id === card)!;
         await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      }
-      await until(() => opened.registry.get("metronome")?.state === "running" && opened.registry.get("dancer")?.state === "running")
-        .catch((e: Error) => { throw new Error(`${e.message}: ${opened.registry.get("metronome")?.state} ${opened.registry.get("dancer")?.state} ${JSON.stringify(opened.registry.get("dancer")?.issues)}`); });
-      // A host half starts on its first call: the dancer's runs (and opens its listener) once it is called. A card that asks
-      // again (the dancer's OK now carries the metronome's line, once the metronome runs) is answered yes as well.
-      let woke: unknown;
-      await until(async () => {
-        // The folders were written just before the registry opened: its watch may find one again a moment later, to be
-        // installed again (as a person would, with its card answered).
-        for (const id of ["metronome", "dancer"]) if (opened.registry.get(id)?.state === "found") await opened.registry.installed(id, "app").catch(() => undefined);
-        for (const c of broker.cards()) await broker.answer(c.id, { optionId: "approve", hash: c.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(c.id)!, input: "click", at: Date.now() } }, { role: "app" }).catch(() => undefined);
-        woke = await ph.host.invoke({ pluginId: "dancer", handler: "got", args: null, caller: USER }).catch((e: Error) => e.message);
-        return Array.isArray(woke);
-      }, 20_000)
-        .catch((e: Error) => { const d = opened.registry.get("dancer"); throw new Error(`${e.message}: the dancer's half answered ${JSON.stringify(woke)} (state ${d?.state}, on ${d?.enabled}, host ${JSON.stringify(d?.manifest?.host)}, cards ${broker.cards().length}, issues ${JSON.stringify(d?.issues)})`); });
-      await Bun.sleep(100);
+        return JSON.stringify(shown);
+      };
+      // The metronome first, its point active, then the dancer, as a person installs a filler of a point that is there.
+      // (The flake this replaced: with both folders read at the registry's first scan, the dancer's OK was taken on the
+      // snapshot of that scan, before the metronome's point was active; the re-read that follows (folders.ts
+      // `#fillsMoved`, `fillsAdded`) found the metronome's line missing from that OK and asked again, putting the dancer
+      // back to `found` and its host half away mid-test, though the card shown had carried the line.)
+      await approve("metronome");
+      await until(() => opened.registry.get("metronome")?.state === "running" && opened.registry.points().some((p) => p.name === POINT && p.active));
+      // The dancer arrives after (a person installs a filler of a point that is there): copied in and read as an install.
+      plugin(home, "dancer", { contributes: { [POINT]: [{ id: "waltz" }] } }, [
+        `export function start(a) { globalThis.__got = []; a.points.onMessage(${JSON.stringify(POINT)}, (m) => { globalThis.__got.push(m); if (m.from === "metronome") void a.points.send(${JSON.stringify(POINT)}, { echo: m.value.n }).catch((e) => console.log("send failed " + e.message)); }); }`,
+        "export function got() { return globalThis.__got; }",
+      ]);
+      await opened.folders.installed("dancer", "user-app");
+      const dancerCard = await approve("dancer");
+      expect(dancerCard).toContain("it hears the beats");
+      await until(() => opened.registry.get("dancer")?.state === "running")
+        .catch((e: Error) => { throw new Error(`${e.message}: ${opened.registry.get("dancer")?.state} ${JSON.stringify(opened.registry.get("dancer")?.issues)}`); });
+      // A host half starts on its first call, and its `start` (which opens the listener) runs before that call is answered.
+      expect(await ph.host.invoke({ pluginId: "dancer", handler: "got", args: null, caller: USER })).toEqual([]);
       expect(await ph.host.invoke({ pluginId: "metronome", handler: "beat", args: null, caller: USER })).toEqual({ sent: 3 });
       let heard: unknown;
       await until(async () => { heard = await ph.host.invoke({ pluginId: "metronome", handler: "heard", args: null, caller: USER }); return Array.isArray(heard) && heard.length >= 3; }, 10_000)
