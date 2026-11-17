@@ -27,7 +27,7 @@ import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost 
 import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
 import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
-import { isOurProgram, loadWindowList, pressCover, windowIdOfMediaSource, type WindowList } from "./overlap";
+import { coverAdvice, coverName, isOurProgram, loadWindowList, pressCoverRead, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
 import { adoptHomeEngine, cliLauncher, installEngineCopy, locateDaemonBinary, startEngineThroughOs } from "./pair/login";
@@ -546,8 +546,8 @@ async function ready(): Promise<void> {
       // R12 (lane RT): no window of any app lies over the button, read from the OS's own window list (overlap.ts).
       const cover = osCoverOf(from);
       if (cover !== undefined) {
-        log(`sealed: answer refused (a window lies over the button: ${cover})`);
-        return { accepted: false, covered: true, reason: "another MOSS window lies over the button: move it away and press again" };
+        log(`sealed: answer refused (a window lies over the button: ${cover.advice})`);
+        return { accepted: false, covered: cover.name, reason: cover.advice };
       }
       const key = answerKeyValue;
       if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
@@ -2219,7 +2219,7 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
 let windowList: WindowList | undefined | null = null;
 let overlapUnread = false;
 let overlapRead = false;
-function osCoverOf(windowId: number | undefined): string | undefined {
+function osCoverOf(windowId: number | undefined): { name: ReturnType<typeof coverName>; advice: string } | undefined {
   if (windowId === undefined) return undefined;
   if (windowList === null) windowList = loadWindowList(join(here, "native", "screen.node"), log);
   const win = BrowserWindow.fromId(windowId);
@@ -2238,13 +2238,21 @@ function osCoverOf(windowId: number | undefined): string | undefined {
     const b = s.win.getContentBounds();
     if (sid !== undefined) own.set(sid, { origin: { x: b.x, y: b.y }, regions: s.regions });
   }
-  const above = list.above(id);
   const ours = (pid: number): boolean => pid === process.pid || (!headless && isOurProgram(list.bundleOf(pid)));
-  const hit = pressCover({ point: down === undefined ? undefined : { x: content.x + down.x, y: content.y + down.y }, above, ours, own });
+  // A read that throws fails open (the press goes on to the page's own fresh reading), said once.
+  const r = pressCoverRead({ point: down === undefined ? undefined : { x: content.x + down.x, y: content.y + down.y }, read: () => list.above(id), ours, own });
+  if (r.failed !== undefined) {
+    if (!overlapUnread) { overlapUnread = true; log(`overlap: the OS window list couldn't be read for a press (${r.failed}); the in-page check stands alone`); }
+    return undefined;
+  }
+  const above = r.above ?? [];
   // Said once (counts only): the OS's list was read for a press.
   if (!overlapRead) { overlapRead = true; log(`overlap: the OS window list read for a press (${above.length} above, ${above.filter((w) => w.pid === process.pid).length} of this program's own${headless ? "; headless: its own only" : ""}${down === undefined ? "; no point: a keyboard press" : ""})`); }
-  if (hit === undefined) return undefined;
-  return hit.pid === process.pid ? `one of this program's own windows (layer ${hit.layer})` : `another MOSS program's window (layer ${hit.layer})`;
+  if (r.cover === undefined) return undefined;
+  let bundle: string | undefined;
+  try { bundle = r.cover.pid === process.pid ? undefined : list.bundleOf(r.cover.pid); } catch { bundle = undefined; }
+  const name = coverName(r.cover, process.pid, bundle);
+  return { name, advice: coverAdvice(name) };
 }
 
 /** The screen add-on (macOS), for the camera housing; undefined where there is none. */

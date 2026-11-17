@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { PROGRAM_IDENTIFIERS } from "@waifucave/moss-protocol";
-import { coverAt, isOurProgram, loadWindowList, PRESS_BOX_HALF, pressCover, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
+import { coverAdvice, coverAt, coverName, isOurProgram, loadWindowList, PRESS_BOX_HALF, pressCover, pressCoverRead, windowIdOfMediaSource, type OsWindow } from "../src/main/overlap";
 
 const OURS = 4242;
 const OTHER_APP = 777;
@@ -56,6 +56,24 @@ describe("what lies over a sealed button", () => {
   test("a keyboard press has no point: unchanged, not checked here", () => {
     expect(pressCover({ point: undefined, above: [win({})], ours })).toBeUndefined();
     expect(pressCover({ point: { x: 50, y: 50 }, above: [win({})], ours })?.id).toBe(7);
+  });
+
+  test("a native read that throws fails OPEN: the press goes on to the page's own fresh reading", () => {
+    const point = { x: 50, y: 50 };
+    expect(pressCoverRead({ point, read: () => { throw new Error("CGWindowList refused"); }, ours })).toEqual({ failed: "CGWindowList refused" });
+    expect(pressCoverRead({ point, read: () => [win({ pid: OTHER_APP })], ours: () => { throw new Error("no bundle"); } })).toEqual({ failed: "no bundle" });
+    expect(pressCoverRead({ point, read: () => [win({})], ours }).cover?.id).toBe(7);
+    expect(pressCoverRead({ point: undefined, read: () => [win({})], ours }).cover).toBeUndefined();
+  });
+
+  test("the refusal names what covers the button and says what works", () => {
+    expect(coverName(win({ pid: 1 }), 1, undefined)).toBe("this");
+    expect(coverName(win({ pid: 2 }), 1, PROGRAM_IDENTIFIERS.moss.dev)).toBe("moss");
+    expect(coverName(win({ pid: 2 }), 1, PROGRAM_IDENTIFIERS.host.dist)).toBe("host");
+    expect(coverName(win({ pid: 2 }), 1, undefined)).toBe("ours");
+    for (const n of ["this", "moss", "code", "host", "ours"] as const) expect(coverAdvice(n)).toMatch(/press again/);
+    expect(coverAdvice("this")).toMatch(/answer or close/);
+    expect(coverAdvice("moss")).toMatch(/minimise/);
   });
 
   test("a headless run counts its own windows only", () => {

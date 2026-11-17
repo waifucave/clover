@@ -19,10 +19,17 @@
 //            pid's /proc/<pid>/exe matched to our programs; Wayland gives no client the global stacking order, so there the
 //            spec's own rule stands (plugin overlays hide while a card is pending).
 //
-// What counts as over the button: one of our programs' windows above ours whose area meets the 24 by 24 box around the press
-// point (the smallest button) and that draws something (alpha above zero). One of our surfaces (the island, the pill:
-// transparent, click-through windows) covers only the regions it draws, which the app knows. A press made from the keyboard
-// has no point and is not checked here (the page's fresh reading still is).
+// What this check stops: a window of ANOTHER of our programs (MOSS, MOSS Code, the background host) over the button, and a
+// window of THIS process that is not a surface (another card window, the window's strip) over it; each counts by its whole
+// rectangle where its area meets the 24 by 24 box around the press point (the smallest button) and it draws something (alpha
+// above zero). This process's own surfaces (the island, the pill, a plugin's on-screen part: transparent, click-through
+// windows) count only by the click regions their plugin declared (`regions`, often none), which say where the surface takes
+// clicks, not where it paints: a surface that paints over a sealed button and declares its click region elsewhere is not
+// counted here, and counting every surface by its whole rectangle would let a full-screen transparent part refuse every press.
+// The defence against a plugin's on-screen part painted over a sealed button is the other rule of R12: while any card is
+// pending, every plugin's on-screen part but the bundled tree's is hidden. A press made from the keyboard has no point and
+// is not checked here (the page's fresh reading still is). A read the OS refuses or that throws fails open, as a missing
+// window list does: the press goes on to the page's own fresh reading.
 import { createRequire } from "node:module";
 import { PROGRAM_IDENTIFIERS } from "@waifucave/moss-protocol";
 import type { Rect } from "./ui/brokers";
@@ -126,4 +133,34 @@ export function coverAt(point: { x: number; y: number }, above: readonly OsWindo
 export function pressCover(press: { point: { x: number; y: number } | undefined; above: readonly OsWindow[]; ours: (pid: number) => boolean; own?: ReadonlyMap<number, { origin: { x: number; y: number }; regions?: readonly Rect[] }> }): OsWindow | undefined {
   if (press.point === undefined) return undefined;
   return coverAt(press.point, press.above, { ours: press.ours, ...(press.own !== undefined ? { own: press.own } : {}) });
+}
+
+/** The same check with the OS's reads made inside it: a read that throws (the window list, a bundle identifier) fails OPEN,
+ *  with the reason, and the press goes on to the page's own fresh reading. */
+export function pressCoverRead(press: { point: { x: number; y: number } | undefined; read: () => readonly OsWindow[]; ours: (pid: number) => boolean; own?: ReadonlyMap<number, { origin: { x: number; y: number }; regions?: readonly Rect[] }> }): { cover?: OsWindow; above?: readonly OsWindow[]; failed?: string } {
+  try {
+    const above = press.read();
+    const cover = pressCover({ point: press.point, above, ours: press.ours, ...(press.own !== undefined ? { own: press.own } : {}) });
+    return { above, ...(cover !== undefined ? { cover } : {}) };
+  } catch (err) {
+    return { failed: err instanceof Error ? err.message.split("\n")[0]!.slice(0, 120) : "the read failed" };
+  }
+}
+
+/** Which of our programs a covering window is, for the refusal's words: this one, or another by its bundle identifier. */
+export function coverName(cover: OsWindow, selfPid: number, bundle: string | undefined): "this" | "moss" | "code" | "host" | "ours" {
+  if (cover.pid === selfPid) return "this";
+  for (const [p, ids] of Object.entries(PROGRAM_IDENTIFIERS)) if (ids.dist === bundle || ids.dev === bundle) return p as "moss" | "code" | "host";
+  return "ours";
+}
+
+/** What the refusal says to do, by what covers the button (each one a thing the person can do). */
+export function coverAdvice(name: ReturnType<typeof coverName>): string {
+  switch (name) {
+    case "this": return "another MOSS Code window (a card or the window's strip) lies over the button: answer or close that one, then press again";
+    case "moss": return "MOSS's window lies over the button: move it aside or minimise it, then press again";
+    case "code": return "MOSS Code's window lies over the button: move it aside or minimise it, then press again";
+    case "host": return "a plugin's on-screen part lies over the button: it steps aside while a card waits, so press again in a moment";
+    default: return "another MOSS window lies over the button: move it aside or close it, then press again";
+  }
 }
