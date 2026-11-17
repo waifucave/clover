@@ -68,7 +68,7 @@ const VIEW_CLIENT = [
   `    const no = ${REFUSED};`,
   "    window.__accView = {",
   "      target: null,",
-  "      list: () => b.tabs({ owner: { kind: \"bot\", bot: \"alpha\" } }).then((t) => \"ok \" + JSON.stringify(t.map((x) => ({ id: x.id, place: x.place, url: x.url }))), no),",
+  "      list: (owner) => b.tabs({ owner }).then((t) => \"ok \" + JSON.stringify(t.map((x) => ({ id: x.id, place: x.place, url: x.url }))), no),",
   "      show: (id) => b.show(id, \"browser\", { width: 800, height: 600 }).then((t) => \"ok \" + t.place, no),",
   "      hide: (id) => b.hide(id).then((t) => \"ok \" + t.place, no),",
   "      navigate: (id, url) => b.navigate(id, url).then((t) => \"ok \" + t.url, no),",

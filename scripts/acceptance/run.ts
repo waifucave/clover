@@ -3955,7 +3955,7 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
     [TAB_FLASH_STEP, () => tabFlashStep(ctx, session, launch, tabFlashAlone ? TAB_FLASH_SLEEP_MS : undefined)],
     // The bots' Browser tool, on the real path, against the run's own fixture site.
-    [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, bot, browserFixture, panelOpener(ctx.rpc), session) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
+    [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, session, browserFixture, panelOpener(ctx.rpc), session) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
     // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3, 3.26).

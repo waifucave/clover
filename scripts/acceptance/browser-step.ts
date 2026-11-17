@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { callTurn, SIDEBAR_ITEMS, sleep, until, type ExampleCtx } from "./example-steps";
+import { callTurn, sleep, toSessionTab, until, type ExampleCtx } from "./example-steps";
 import { F5_IDS, f5Wrong, SURF_TOOL, writeF5, type F5Seen } from "./f5-step";
 import { islandCardHolds, islandDrawsOkCard, islandShooter, islandStripLine, islandStripLineShown, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 import { scaled } from "./time-scale";
@@ -75,6 +75,9 @@ export interface PanelLink {
 }
 
 export async function browserStep(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openLayer?: (pluginId: string) => Promise<PanelLink>, codeSession: string = session): Promise<string> {
+  // The tabs' owner: the session's own (a code session's tab is its session's; a bot's session's, its bot's).
+  const bot = (await ctx.rpc.request<{ session: { kind?: string; bot?: string } }>("session.get", { id: session })).session;
+  const tabOwner: Record<string, string> = bot.kind === "bot" && bot.bot !== undefined ? { kind: "bot", bot: bot.bot } : { kind: "session", session };
   const lines: string[] = [];
   // 1. Open the fixture page in the bot's own tab.
   const opened = await browse(ctx, session, { verb: "open", url: fixture.url });
@@ -145,7 +148,7 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     const panel = await openLayer("moss/browser-view");
     try {
       await panel.request("events.subscribe", { areas: ["browser", "plugins"] });
-      const listed = (await panel.request("browser.tabs", { owner: { kind: "bot", bot: "alpha" } })) as { tabs: { id: string; place: string }[] };
+      const listed = (await panel.request("browser.tabs", { owner: tabOwner })) as { tabs: { id: string; place: string }[] };
       if (listed.tabs.length !== 1 || listed.tabs[0]!.place !== "headless") fail(`the panel saw ${JSON.stringify(listed.tabs).slice(0, 300)}, not the bot's one tab out of sight`);
       const id = listed.tabs[0]!.id;
       const shown = (await panel.request("browser.show", { id, view: "browser", viewport: { width: 800, height: 600 } })) as { tab: { place: string } };
@@ -179,14 +182,17 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     const usage = await openLayer("moss/usage");
     try {
       const deadline = Date.now() + scaled(20_000);
-      let alpha: { key: string; inputTokens: number; outputTokens: number } | undefined;
-      while (alpha === undefined && Date.now() < deadline) {
-        const r = (await usage.request("usage.summary", { from: Date.now() - 24 * 3_600_000, to: Date.now() + 3_600_000, groupBy: "bot" })) as { groups: { key: string; inputTokens: number; outputTokens: number }[] };
-        alpha = r.groups.find((g) => g.key === "alpha" && g.inputTokens + g.outputTokens > 0);
-        if (alpha === undefined) await new Promise((r2) => setTimeout(r2, 1000));
+      // Grouped by bot for a bot's session, by session for a code session.
+      const groupBy = tabOwner.kind === "bot" ? "bot" : "session";
+      const key = tabOwner.kind === "bot" ? tabOwner.bot! : session;
+      let counted: { key: string; inputTokens: number; outputTokens: number } | undefined;
+      while (counted === undefined && Date.now() < deadline) {
+        const r = (await usage.request("usage.summary", { from: Date.now() - 24 * 3_600_000, to: Date.now() + 3_600_000, groupBy })) as { groups: { key: string; inputTokens: number; outputTokens: number }[] };
+        counted = r.groups.find((g) => g.key === key && g.inputTokens + g.outputTokens > 0);
+        if (counted === undefined) await new Promise((r2) => setTimeout(r2, 1000));
       }
-      if (alpha === undefined) fail("the usage plugin's layer found no tokens for alpha after the turns (usage.summary grouped by bot)");
-      lines.push(`usage: the usage plugin's layer reads ${alpha!.inputTokens} in / ${alpha!.outputTokens} out for alpha`);
+      if (counted === undefined) fail(`the usage plugin's layer found no tokens for ${key} after the turns (usage.summary grouped by ${groupBy})`);
+      lines.push(`usage: the usage plugin's layer reads ${counted!.inputTokens} in / ${counted!.outputTokens} out for ${key}`);
     } finally {
       usage.close();
     }
@@ -279,11 +285,15 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       writeFileSync(join(ctx.home, "outputs", coding, "summary.md"), "# What changed\n");
       const outs = (await column.request("session.outputs", { id: coding, limit: 4 })) as { items: { id: string; name: string; kind: string }[]; more: number };
       if (JSON.stringify(outs) !== JSON.stringify({ items: [{ id: "summary.md", name: "summary.md", kind: "page" }], more: 0 })) fail(`the column's session.outputs gave ${JSON.stringify(outs).slice(0, 300)}`);
-      const ctxUse = (await column.request("session.context", { id: codeSession })) as { used: number; tokens: number; window: number } | null;
-      if (ctxUse === null || !(ctxUse.used > 0 && ctxUse.used <= 1) || !(ctxUse.tokens > 0) || !(ctxUse.window > 0)) fail(`the column's session.context for the code session gave ${JSON.stringify(ctxUse)}`);
+      // A code session's context is what its agent reports; MOSS's own agent reports none today, which the read says
+      // (`{ reported: false }`), never nothing.
+      const ctxUse = (await column.request("session.context", { id: codeSession })) as { used: number; tokens: number; window: number } | { reported: false } | null;
+      const measured = ctxUse !== null && "used" in ctxUse && ctxUse.used > 0 && ctxUse.used <= 1 && ctxUse.tokens > 0 && ctxUse.window > 0;
+      const unreported = ctxUse !== null && "reported" in ctxUse && ctxUse.reported === false && Object.keys(ctxUse).length === 1;
+      if (!measured && !unreported) fail(`the column's session.context for the code session gave ${JSON.stringify(ctxUse)}`);
       const conns = (await column.request("session.connectors", { id: coding })) as { total: number; needSignIn: number };
       if (!Number.isInteger(conns.total) || !Number.isInteger(conns.needSignIn) || conns.needSignIn > conns.total) fail(`the column's session.connectors gave ${JSON.stringify(conns)}`);
-      lines.push(`column: session.outputs lists summary.md (a page); session.context reads the code session's last turn at ${ctxUse!.tokens} of ${ctxUse!.window} tokens; session.connectors counts ${conns.total} servers for the coding session, ${conns.needSignIn} waiting for a sign-in`);
+      lines.push(`column: session.outputs lists summary.md (a page); session.context ${ctxUse !== null && "used" in ctxUse ? `reads the code session's last turn at ${ctxUse.tokens} of ${ctxUse.window} tokens` : "says the code session's agent reported none"}; session.connectors counts ${conns.total} servers for the coding session, ${conns.needSignIn} waiting for a sign-in`);
     } finally {
       column.close();
     }
@@ -376,13 +386,13 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   // 11. F5: `browser.*` and the terminal by capability, never by a plugin's id (f5-step.ts). Three folder plugins: a Browser
   // tool of its own (`browserTools`), a live view and a terminal.
   if (openLayer === undefined) fail("F5: this run has no layer token door");
-  else lines.push(`F5: ${await f5Clause(ctx, session, fixture, openLayer)}`);
+  else lines.push(`F5: ${await f5Clause(ctx, session, fixture, openLayer, tabOwner)}`);
   // Closed again, so no later step meets the tab.
   await browse(ctx, session, { verb: "tabs" }).catch(() => undefined);
   return lines.join("; ");
 }
 
-async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openLayer: (pluginId: string) => Promise<PanelLink>): Promise<string> {
+async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixture, openLayer: (pluginId: string) => Promise<PanelLink>, tabOwner: Record<string, string>): Promise<string> {
   const folders = writeF5(join(ctx.root, "f5-plugins"));
   const installed: string[] = [];
   const install = async (id: string, folder: string): Promise<string> => {
@@ -415,27 +425,21 @@ async function f5Clause(ctx: ExampleCtx, session: string, fixture: BrowserFixtur
       }
       return undefined;
     };
-    // Alpha's conversation in front, so her composer (and the part in it) is drawn.
+    // A conversation in front, so its composer (and the part in it) is drawn: a code session's tab (MOSS Code's window has
+    // no bots), or the bot's own when the step runs in a bot's session.
     const treeDocs = async () => (await ctx.cdp.documents()).filter((d) => d.url.startsWith("moss-plugin://moss/"));
     const composerShown = async () => {
       for (const d of await treeDocs()) if ((await ctx.cdp.evaluate(d.session, "!!document.querySelector('.cl-composer textarea')").catch(() => false)) === true) return true;
       return undefined;
     };
     if ((await composerShown()) === undefined) {
-      const alpha = await until("Alpha in the sidebar", 20_000, async () => {
-        for (const d of await treeDocs()) {
-          const c = await ctx.cdp.centerOf(d.session, SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
-          if (c !== undefined) return { session: d.session, c };
-        }
-        return undefined;
-      });
-      await ctx.cdp.click(alpha.session, alpha.c.x, alpha.c.y);
-      await until("Alpha's composer drawn", 20_000, composerShown);
+      await toSessionTab(ctx);
+      await until("a session's composer drawn", 20_000, composerShown);
     }
-    const viewSession = await until("acc-view's part drawn in Alpha's composer", 60_000, viewDoc, async () => `documents: ${(await ctx.cdp.documents()).map((d) => d.url.slice(0, 50)).join(" | ")}`);
+    const viewSession = await until("acc-view's part drawn in the session's composer", 60_000, viewDoc, async () => `documents: ${(await ctx.cdp.documents()).map((d) => d.url.slice(0, 50)).join(" | ")}`);
     const inView = async (expr: string) => String(await ctx.cdp.evaluate(viewSession, expr).catch((e: unknown) => `refused ${(e as Error).message}`));
-    const list = await inView("window.__accView.list()");
-    const tabId = /"id":"(tab_[^"]+)"/.exec(list)?.[1] ?? fail(`F5: acc-view listed no tab of Alpha's (${list.slice(0, 200)})`);
+    const list = await inView(`window.__accView.list(${JSON.stringify(tabOwner)})`);
+    const tabId = /"id":"(tab_[^"]+)"/.exec(list)?.[1] ?? fail(`F5: acc-view listed no tab of the session's (${list.slice(0, 200)})`);
     const show = await inView(`window.__accView.show(${JSON.stringify(tabId)})`);
     const hide = await inView(`window.__accView.hide(${JSON.stringify(tabId)})`);
     const navNoPress = await inView(`window.__accView.navigate(${JSON.stringify(tabId)}, ${JSON.stringify(fixture.otherUrl)})`);
