@@ -18,7 +18,8 @@ import { engineHome, MAIN_WINDOW_ID, mossIdentity, parseLaunchArgs, resolveProfi
 import { fileVault, memoryVault, ProgramAnswerKey, safeStorageVault, vaultChoice } from "./answer-key";
 import { refusedLaunchSwitches } from "./debug-guard";
 import { PresenceReporter } from "./presence";
-import { answerPress, cardHeight, PressRecord, refusalWords } from "./press";
+import { answerPress, cardHeight, PressRecord, refusalWords, windowPointOf } from "./press";
+import { buttonAt, inWindow, MISS_BOUND_MS, MissWatch, type Box } from "./sealed-miss";
 import { coverOfPress, loadWindowList, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { OWN_ELEMENT, SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
@@ -272,7 +273,15 @@ async function openWindow(): Promise<BrowserWindow> {
   });
   // The press record: what MOSS's main process saw come to its window (§5.5), never a page's word.
   win.webContents.on("before-mouse-event", (_event, mouse) => {
-    if (mouse.type === "mouseDown") record.mouseDown(id, { x: mouse.x, y: mouse.y });
+    if (mouse.type !== "mouseDown") return;
+    // A window point (press.ts windowPointOf): the screen point less the window's content origin.
+    const point = windowPointOf(mouse, win.getContentBounds());
+    record.mouseDown(id, point);
+    // A press over a sealed button that no sealed page hears is told to press again (sealed-miss.ts); only while a card waits.
+    if (sealed.anyPending()) {
+      missWatch.down(id, point);
+      setTimeout(() => void noticeMissedPress(win, id), MISS_BOUND_MS + 30).unref?.();
+    }
   });
   win.webContents.on("before-input-event", (_event, input) => {
     if (isTalkKey(input) || (talk.holding && input.type === "keyUp" && input.code === "Space")) {
@@ -637,6 +646,46 @@ const cardHeights = new Map<string, number>();
 let windowList: WindowList | undefined | null = null;
 let overlapUnread = false;
 const overlapSaid = { read: false, failed: false };
+/** A press over a sealed button that no sealed page heard (sealed-miss.ts, MOSS Code's copy): Chromium handed the mouse-down
+ *  over a drawn, visible button to the document that embeds it, or to none. The button's page is told to say "press
+ *  again"; nothing is answered. The buttons' places: each pending sealed frame of the window that reported itself visible
+ *  measures its own buttons, and each document above it says where its iframe sits, measured with no user gesture (a
+ *  plugin's document lying about it can only move where MOSS looks). */
+const missWatch = new MissWatch();
+async function noticeMissedPress(win: BrowserWindow, windowId: number): Promise<void> {
+  const point = missWatch.missed(windowId);
+  if (point === undefined || win.isDestroyed()) return;
+  const within = <T,>(p: Promise<T>): Promise<T | null> => Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 500))]);
+  const buttons: { frame: WebFrameMain; token: string; option: string | undefined; box: Box }[] = [];
+  for (const f of win.webContents.mainFrame.framesInSubtree) {
+    let token: string | null = null;
+    try { const u = new URL(f.url); token = u.protocol === `${SEALED_SCHEME}:` && u.host === "card" ? u.searchParams.get("token") : null; } catch { token = null; }
+    if (token === null || !sealed.isTokenVisible(token)) continue;
+    const cardId = sealed.cardOf(token);
+    if (cardId === undefined || !sealed.isPending(cardId)) continue;
+    // The page's own buttons, in its own viewport (a page of ours).
+    const own = await within(f.executeJavaScript(`[...document.querySelectorAll(".seal-button")].map((b) => { const r = b.getBoundingClientRect(); return { option: b.dataset.option ?? null, x: r.x, y: r.y, width: r.width, height: r.height }; })`, true) as Promise<unknown>);
+    if (!Array.isArray(own)) continue;
+    // Each document above it: where its iframe sits (found by its own address, which carries its token); no user gesture.
+    const offsets: { x: number; y: number }[] = [];
+    let ok = true;
+    for (let child = f, parent = f.parent; parent !== null; child = parent, parent = parent.parent) {
+      const at = await within(parent.executeJavaScript(`(() => { const f = [...document.querySelectorAll("iframe")].find((x) => x.src === ${JSON.stringify(child.url)}); if (!f) return null; const r = f.getBoundingClientRect(); return { x: r.x + f.clientLeft, y: r.y + f.clientTop }; })()`, false) as Promise<unknown>);
+      if (at === null || typeof at !== "object" || typeof (at as { x?: unknown }).x !== "number" || typeof (at as { y?: unknown }).y !== "number") { ok = false; break; }
+      offsets.push(at as { x: number; y: number });
+    }
+    if (!ok) continue;
+    for (const b of own as { option?: unknown; x?: unknown; y?: unknown; width?: unknown; height?: unknown }[]) {
+      if (typeof b.x !== "number" || typeof b.y !== "number" || typeof b.width !== "number" || typeof b.height !== "number") continue;
+      buttons.push({ frame: f, token, option: typeof b.option === "string" ? b.option : undefined, box: inWindow({ x: b.x, y: b.y, width: b.width, height: b.height }, offsets) });
+    }
+  }
+  const hit = buttonAt(point, buttons);
+  if (hit === undefined) return;
+  log(`sealed: a press over ${sealed.cardOf(hit.token) ?? "?"} ${sealed.elementOf(hit.token) ?? "?"} reached no sealed page; it says press again`);
+  await within(hit.frame.executeJavaScript(`window.__mossNotReady?.(${JSON.stringify(hit.option ?? null)})`, true) as Promise<unknown>);
+}
+
 function osCoverOf(windowId: number, point: { x: number; y: number } | undefined): string | undefined {
   try {
     if (windowList === null) windowList = loadWindowList(join(here, "native", "screen.node"), log);
@@ -700,7 +749,10 @@ function wireSealed(): void {
   });
   ipcMain.on("moss:sealed-press", (event, a: { token?: unknown; what?: unknown }) => {
     const s = sealedSender(event, a?.token);
-    if (s !== undefined && typeof a.what === "string") log(`sealed: press on ${sealed.cardOf(s.token) ?? "?"}: ${a.what.slice(0, 20)}`);
+    if (s === undefined || typeof a.what !== "string") return;
+    // A sealed page heard the press: it isn't a missed one (sealed-miss.ts).
+    missWatch.heard(s.windowId);
+    log(`sealed: press on ${sealed.cardOf(s.token) ?? "?"}: ${a.what.slice(0, 20)}`);
   });
   ipcMain.on("moss:sealed-size", (event, a: { token?: unknown; height?: unknown }) => {
     const s = sealedSender(event, a?.token);

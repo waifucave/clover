@@ -42,7 +42,9 @@ const FRESH_SCRIPT = `
       try { b.fresh?.(seen, Math.round(performance.now() - t0)); } catch (e) { /* going */ }
       resolve(seen);
     };
-    timer = setTimeout(() => finish(false), ${FRESH_LIMIT_MS});
+    // No reading within the limit: the page was too busy to read the button (a renderer starved, layers loading again around the
+    // press), which is "not ready", never "covered": it resolves null, and the press is said as "late".
+    timer = setTimeout(() => { if (done) return; done = true; try { if (o !== null) o.disconnect(); } catch (e) { /* going */ } try { b.fresh?.(false, Math.round(performance.now() - t0)); } catch (e) { /* going */ } resolve(null); }, ${FRESH_LIMIT_MS});
     if (typeof freshWaiter !== "undefined") {
       // The page's own observer reads the button again (observed afresh: its first report is a new reading), so no second observer
       // watches the same button: the report that follows is this page's next one.
@@ -61,7 +63,21 @@ const FRESH_SCRIPT = `
     o.observe(btn);
   });`;
 
-export const SEALED_PRESS_WORDS: readonly string[] = ["received", "untrusted", "answering", "not-visible", "opening", "settling", "no-pointer", "covered"];
+/** The app's notice for a press this page never got (sealed-miss.ts): main saw a mouse-down over this page's button and no
+ *  word from the page, so it asks the page to say "press again" on that button. It only shows words; it answers nothing and
+ *  spends nothing (a page script calling it shows the same words on its own card, no more). */
+const notReadyScript = (): string => `window.__mossNotReady = (option) => {
+    const all = [...document.querySelectorAll(".seal-button")];
+    const btn = all.find((x) => x instanceof HTMLElement && x.dataset.option === option) ?? all[0];
+    if (!(btn instanceof HTMLElement)) return false;
+    const st = document.querySelector(".state");
+    btn.dataset.again = "yes"; btn.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+    if (st !== null) st.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
+    setTimeout(() => { delete btn.dataset.again; btn.removeAttribute("title"); if (st !== null && st.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) st.textContent = ""; }, 1800);
+    return true;
+  };`;
+
+export const SEALED_PRESS_WORDS: readonly string[] = ["received", "untrusted", "answering", "not-visible", "opening", "settling", "no-pointer", "covered", "late"];
 
 /** The card's own tokens as the page's custom properties: `card.*` alone (§5.5 "sealed frames take only these"), and
  *  only values of the kinds the catalog lets a card take. Anything else — tags, `/*` comments, `url(`/`var(`, values
@@ -252,6 +268,7 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
   const script = `(() => {
   const b = window.mossSealed;
   if (b === undefined) return;
+  ${notReadyScript()}
   let answering = false;
   // The whole button, uncovered (IOv2), since enough time to have been seen (S4).
   let visible = false;
@@ -345,11 +362,11 @@ export function buttonPage(input: { cardId: string; token: string; option: strin
     // Nothing on the page changes before the fresh reading (a status line growing could move the button, and a button that moved is not
     // read as showing): the "…" and the answering mark come after it.
     // A refused answer says so on the card and the button answers again: never a "…" that stays.
-    const refused = (r) => { answering = false; document.body.dataset.answered = "no"; delete document.body.dataset.answering; const said = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; if (state !== null) state.textContent = said; closest.title = said; };
+    const refused = (r) => { answering = false; document.body.dataset.answered = "no"; delete document.body.dataset.answering; const said = r !== null && typeof r === "object" && typeof r.covered === "string" ? (${JSON.stringify(WINDOW_OVER_TEXTS)}[r.covered] ?? ${JSON.stringify(WINDOW_OVER_TEXTS.ours)}) : r !== null && typeof r === "object" && r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)} : r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; if (state !== null) state.textContent = said; closest.title = said; };
     // The press counts only if the report that follows it says the button shows uncovered: asked for now, not read from the last one.
     askFresh(closest).then((ok) => {
       if (!ok) {
-        say("covered");
+        say(ok === null ? "late" : "covered");
         answering = false;
         closest.dataset.again = "yes"; closest.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
         if (state !== null) state.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
@@ -447,6 +464,7 @@ export function ownCardPage(input: {
   const script = `(() => {
   const b = window.mossSealed;
   if (b === undefined) return;
+  ${notReadyScript()}
   // About a second after the page is shown (showInactive): the 1 s wait restarts when the window is shown or moved,
   // never on mouse movement, and the pointer must have entered the window after it showed, so a timed "click here"
   // prompt can't land on Approve (S3, check 3). The page is placed before it is shown, so shown is load time here.
@@ -490,11 +508,11 @@ export function ownCardPage(input: {
     const state = document.querySelector(".state");
     if (state !== null) state.textContent = "…";
     // A refused answer says so on the card, and its buttons answer again.
-    const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
+    const refused = (r) => { document.body.dataset.answered = "no"; if (state !== null) state.textContent = r !== null && typeof r === "object" && typeof r.covered === "string" ? (${JSON.stringify(WINDOW_OVER_TEXTS)}[r.covered] ?? ${JSON.stringify(WINDOW_OVER_TEXTS.ours)}) : r !== null && typeof r === "object" && r.again === true ? ${JSON.stringify(PRESS_AGAIN_TEXT)} : r !== null && typeof r === "object" && r.key === "changed" ? ${JSON.stringify(KEY_CHANGED_TEXT)} : r !== null && typeof r === "object" && r.key === "fault" ? ${JSON.stringify(KEY_FAULT_TEXT)} : ${JSON.stringify(REFUSED_TEXT)}; };
     // The same rule as a part's button: the press counts only if the report that follows it says the button shows uncovered.
     void askFresh(b2).then((ok) => {
       if (!ok) {
-        say("covered");
+        say(ok === null ? "late" : "covered");
         b2.dataset.again = "yes"; b2.title = ${JSON.stringify(PRESS_AGAIN_TEXT)};
         if (state !== null) state.textContent = ${JSON.stringify(PRESS_AGAIN_TEXT)};
         setTimeout(() => { delete b2.dataset.again; b2.removeAttribute("title"); if (state !== null && state.textContent === ${JSON.stringify(PRESS_AGAIN_TEXT)}) state.textContent = ""; }, 1800);
@@ -564,6 +582,19 @@ const SHIELD = `<svg class="shield" viewBox="0 0 16 16" width="18" height="18" a
  *  registered yet): the card stays, and its buttons answer again. */
 /** Said on a card when a real press came before the page was ready to take it (shown a beat, then cleared). */
 export const PRESS_AGAIN_TEXT = "Not ready yet — press again.";
+/** Why main didn't take a press whose fresh reading said the button wasn't whole and uncovered (most often it was only just
+ *  drawn), or that came with no reading: the press didn't count, and pressing again will. The page shows PRESS_AGAIN_TEXT. */
+export const NOT_SHOWN_REASON = "the button wasn't fully showing yet: press it again";
+export const NOT_CHECKED_REASON = "the press wasn't checked just now: press it again";
+/** What the card says when a window of one of MOSS's programs lay over the button at the press (R12, the OS's own window list),
+ *  by what covers it, each a thing the person can do (main says which: `covered`). */
+export const WINDOW_OVER_TEXTS: Readonly<Record<"this" | "moss" | "code" | "host" | "ours", string>> = {
+  this: "Another MOSS Code window is over this button — answer or close it, then press again.",
+  moss: "MOSS's window is over this button — move it aside or minimise it, then press again.",
+  code: "MOSS Code's window is over this button — move it aside or minimise it, then press again.",
+  host: "A plugin's on-screen part is over this button — it steps aside while a card waits, so press again in a moment.",
+  ours: "Another MOSS window is over this button — move it aside or close it, then press again.",
+};
 /** The Review on a plugin's OK or update card (the owner's ruling, 2026-11-13). */
 export const REVIEW_BUTTON_TEXT = "Review";
 export const REVIEW_NOTE_TEXT = "Review sends this plugin's files to a model. It's advice: it doesn't answer this card.";

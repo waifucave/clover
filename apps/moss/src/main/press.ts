@@ -198,3 +198,10 @@ export function cardHeight(now: number | undefined, reported: number): number | 
   if (now !== undefined && want <= now + CARD_GROW_SLACK) return undefined;
   return want;
 }
+
+/** Where a mouse-down was in the window: its screen point less the window's content origin. Electron's own `x`/`y` are in
+ *  the coordinates of the frame's widget the press went to (an out-of-process frame's own), which made the overlap check
+ *  test the wrong point; without a screen point, they are what there is. */
+export function windowPointOf(mouse: { x: number; y: number; globalX?: number; globalY?: number }, content: { x: number; y: number }): { x: number; y: number } {
+  return typeof mouse.globalX === "number" && typeof mouse.globalY === "number" ? { x: mouse.globalX - content.x, y: mouse.globalY - content.y } : { x: mouse.x, y: mouse.y };
+}

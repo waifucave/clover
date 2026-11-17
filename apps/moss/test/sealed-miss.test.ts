@@ -1,0 +1,68 @@
+// MOSS's copy of MOSS Code's test. A press over a sealed button that no sealed page heard (sealed-miss.ts, lane RT round 5): the app tells the button's page to say
+// "press again"; a press nowhere near a button, or one a sealed page heard, is nothing.
+import { describe, expect, test } from "bun:test";
+import { buttonAt, inWindow, MISS_BOUND_MS, MissWatch } from "../src/main/sealed-miss";
+
+describe("a press no sealed page heard", () => {
+  const button = { token: "t1", box: inWindow({ x: 10, y: 5, width: 66, height: 34 }, [{ x: 200, y: 60 }, { x: 24, y: 0 }]) };
+
+  test("the button's box in the window is its own box moved by each frame above it", () => {
+    expect(button.box).toEqual({ x: 234, y: 65, width: 66, height: 34 });
+  });
+
+  test("delivered to the embedding document at the button's spot: after the bound it is a missed press over that button, once", () => {
+    let t = 0;
+    const w = new MissWatch(() => t);
+    w.down(1, { x: 260, y: 80 });
+    expect(w.missed(1)).toBeUndefined(); // not yet: the page has the bound to say it got it
+    t += MISS_BOUND_MS;
+    const p = w.missed(1)!;
+    expect(buttonAt(p, [button])?.token).toBe("t1");
+    expect(w.missed(1)).toBeUndefined(); // told once
+    // The next press, which the page hears: nothing.
+    w.down(1, { x: 260, y: 80 });
+    w.heard(1);
+    t += MISS_BOUND_MS;
+    expect(w.missed(1)).toBeUndefined();
+  });
+
+  test("a press nowhere near a button is no notice; a press the sealed page heard is none; another window's word doesn't count", () => {
+    let t = 0;
+    const w = new MissWatch(() => t);
+    w.down(1, { x: 10, y: 10 });
+    t += MISS_BOUND_MS;
+    expect(buttonAt(w.missed(1)!, [button])).toBeUndefined();
+    w.down(1, { x: 260, y: 80 });
+    w.heard(2);
+    t += MISS_BOUND_MS;
+    expect(w.missed(1)).toBeDefined();
+  });
+
+  test("a button with no size is never hit; the edges count", () => {
+    expect(buttonAt({ x: 234, y: 65 }, [button])?.token).toBe("t1");
+    expect(buttonAt({ x: 300, y: 99 }, [button])?.token).toBe("t1");
+    expect(buttonAt({ x: 301, y: 99 }, [button])).toBeUndefined();
+    expect(buttonAt({ x: 0, y: 0 }, [{ token: "t0", box: { x: 0, y: 0, width: 0, height: 0 } }])).toBeUndefined();
+  });
+});
+
+describe("MOSS's side of a missed press (index.ts wires these)", () => {
+  test("a press point is a window point: the screen point less the window's content origin, not the frame widget's own x/y", async () => {
+    const { windowPointOf } = await import("../src/main/press");
+    // A press inside an out-of-process card frame: Electron's x/y are that frame's own (12, 9); the screen point is the truth.
+    expect(windowPointOf({ x: 12, y: 9, globalX: 1340, globalY: 512 }, { x: 1100, y: 420 })).toEqual({ x: 240, y: 92 });
+    expect(windowPointOf({ x: 12, y: 9 }, { x: 1100, y: 420 })).toEqual({ x: 12, y: 9 });
+  });
+
+  test("MOSS's own card page and button page carry the notice hook, which only shows words (never answers)", async () => {
+    const { ownCardPage, buttonPage, PRESS_AGAIN_TEXT } = await import("../src/main/sealed-pages");
+    const own = ownCardPage({ cardId: "card_x", token: "se_x", origin: "user", issuedAt: 1, expiresAt: null, computer: null, fields: { title: { type: "text", text: "Write a file?" } }, options: [{ id: "allow_once", kind: "approve", label: "Approve" }] });
+    const button = buttonPage({ cardId: "card_x", token: "se_y", option: "allow_once", label: "Approve", kind: "approve" });
+    for (const html of [own, button]) {
+      expect(html).toContain("window.__mossNotReady = (option) =>");
+      const hook = html.slice(html.indexOf("window.__mossNotReady"), html.indexOf("return true;\n  };", html.indexOf("window.__mossNotReady")));
+      expect(hook).toContain(JSON.stringify(PRESS_AGAIN_TEXT));
+      expect(hook).not.toMatch(/answer|sealedAnswer|press\(/);
+    }
+  });
+});
