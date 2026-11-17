@@ -9,9 +9,9 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { bridge } from "../bridge";
 import { Face } from "../faces/Face";
-import { makeBot, PALETTE, SHAPES, type Shape } from "../faces/living-bots";
-import type { BotEdit, BotRecordRow, BotRow, BotSetting, ModelRow, SettingsView } from "../../shared/view";
-import type { BotFace, Level } from "@waifucave/moss-protocol";
+import { EYES, makeBot, PALETTE, SHAPES, TEMPERS, type Eyes, type Shape, type Temper } from "../faces/living-bots";
+import type { BotEdit, BotFace, BotRecordRow, BotRow, BotSetting, ModelRow, SettingsView } from "../../shared/view";
+import type { Level } from "@waifucave/moss-protocol";
 
 export const LEVELS: readonly { value: Level; label: string }[] = [
   { value: "read-only", label: "Read only" },
@@ -256,17 +256,16 @@ function NameField(props: { name: string; onSave: (name: string) => Promise<bool
   );
 }
 
-/** The instructions file's text is not served by the engine yet (only its size), so the box starts empty and saving
- *  replaces the file; it never sends an empty box. */
+/** The instructions file's text is not served by the engine yet (only its size): until the person's own client can read it
+ *  (`bot.instructions.get`, lane BT), the editor stays shut, so nothing ever overwrites a file the person can't see. */
 function Instructions(props: { name: string; bytes: number; onSave: (text: string) => Promise<boolean> }) {
-  const [v, setV] = useState("");
-  const save = async (): Promise<void> => { if (v.trim() !== "" && await props.onSave(v)) setV(""); };
   return (
     <>
-      <p className="muted small" data-instructions-size>{props.bytes === 0 ? `${props.name} has no instructions yet.` : `${props.name}'s instructions file holds ${sizeWords(props.bytes)}. What you write here replaces it.`}</p>
-      <textarea className="ma2-field ma2-instructions" rows={5} value={v} onChange={(e) => setV(e.target.value)} placeholder={`Who ${props.name} is, how ${props.name} talks…`} aria-label={`${props.name}'s instructions`} />
+      <p className="muted small" data-instructions-size>{props.bytes === 0 ? `${props.name} has no instructions yet.` : `${props.name}'s instructions file holds ${sizeWords(props.bytes)}.`}</p>
+      <textarea className="ma2-field ma2-instructions" rows={5} value="" disabled readOnly placeholder={`Who ${props.name} is, how ${props.name} talks…`} aria-label={`${props.name}'s instructions`} />
+      <p className="muted small" data-instructions-why>Editing comes once MOSS can show you what the file says now, so nothing is replaced unseen.</p>
       <div className="ma2-inline ma2-inline--end">
-        <button type="button" className="text-button text-button--solid" disabled={v.trim() === ""} onClick={() => void save()}>{props.bytes === 0 ? "Save instructions" : "Replace instructions"}</button>
+        <button type="button" className="text-button text-button--solid" disabled>Save instructions</button>
       </div>
     </>
   );
@@ -278,15 +277,23 @@ export function sizeWords(bytes: number): string {
 
 const SHAPE_WORDS: Record<Shape, string> = { ball: "Ball", drop: "Drop", dome: "Dome", bowl: "Bowl", pill: "Pill", loaf: "Loaf", tile: "Tile", peak: "Peak", gem: "Gem", cup: "Cup" };
 
-/** The face: the kit's shapes and colours to pin, and "from the name" to clear a pin. The eyes and the temper come from
- *  the name (a bot's record pins only shape and colour, §6.9). */
+const EYES_WORDS: Record<Eyes, string> = { round: "Round", tall: "Tall", dot: "Dots", calm: "Calm" };
+const TEMPER_WORDS: Record<Temper, string> = { steady: "Steady", restless: "Restless", slow: "Slow", bright: "Bright" };
+
+/** The face: its four traits to pin (shape, colour, eyes, temper, §6.9, the controller's ruling of 2026-11-17), each with
+ *  "from the name" to clear its pin. */
 function FacePicker(props: { name: string; face?: BotFace; onPick: (face: BotFace | null, said: string) => void }) {
-  const pinned = props.face ?? {};
-  const made = makeBot(props.name, { ...(pinned.shape !== undefined ? { shape: pinned.shape as Shape } : {}), ...(pinned.color !== undefined ? { color: pinned.color } : {}) });
-  const pick = (shape: string | undefined, color: string | undefined): void => {
-    const next: BotFace = { ...(shape !== undefined ? { shape } : {}), ...(color !== undefined ? { color } : {}) };
-    props.onPick(shape === undefined && color === undefined ? null : next, "Face saved.");
+  const pinned: BotFace = props.face ?? {};
+  const made = makeBot(props.name, {
+    ...(pinned.shape !== undefined ? { shape: pinned.shape as Shape } : {}), ...(pinned.color !== undefined ? { color: pinned.color } : {}),
+    ...(pinned.eyes !== undefined ? { eyes: pinned.eyes as Eyes } : {}), ...(pinned.temper !== undefined ? { temper: pinned.temper as Temper } : {}),
+  });
+  const set = (change: Partial<Record<keyof BotFace, string | undefined>>): void => {
+    const all = { ...pinned, ...change };
+    const next: BotFace = Object.fromEntries(Object.entries(all).filter(([, v]) => v !== undefined)) as BotFace;
+    props.onPick(Object.keys(next).length === 0 ? null : next, "Face saved.");
   };
+  const pick = (shape: string | undefined, color: string | undefined): void => set({ shape, color });
   return (
     <div className="ma2-face">
       <p className="ma2-face__label">Shape</p>
@@ -307,7 +314,23 @@ function FacePicker(props: { name: string; face?: BotFace; onPick: (face: BotFac
           </button>
         ))}
       </div>
-      <p className="muted small" data-face-traits>Eyes {made.eye.kind}, temper {made.temper}: both from the name.</p>
+      <p className="ma2-face__label">Eyes</p>
+      <div className="ma2-swatches" role="radiogroup" aria-label="Eyes">
+        <button type="button" role="radio" aria-checked={pinned.eyes === undefined} className={`ma2-swatch ma2-swatch--name${pinned.eyes === undefined ? " is-on" : ""}`} onClick={() => set({ eyes: undefined })} title="Made from the name">From the name</button>
+        {EYES.map((x) => (
+          <button key={x} type="button" role="radio" aria-checked={pinned.eyes === x} className={`ma2-swatch ma2-swatch--shape${pinned.eyes === x ? " is-on" : ""}`} onClick={() => set({ eyes: x })} title={EYES_WORDS[x]} aria-label={EYES_WORDS[x]} data-eyes={x}>
+            <Face name={props.name} face={{ ...pinned, eyes: x }} mood="idle" size={34} surface="page" />
+          </button>
+        ))}
+      </div>
+      <p className="ma2-face__label">Temper</p>
+      <div className="ma2-swatches" role="radiogroup" aria-label="Temper">
+        <button type="button" role="radio" aria-checked={pinned.temper === undefined} className={`ma2-swatch ma2-swatch--name${pinned.temper === undefined ? " is-on" : ""}`} onClick={() => set({ temper: undefined })} title="Made from the name">From the name</button>
+        {TEMPERS.map((x) => (
+          <button key={x} type="button" role="radio" aria-checked={pinned.temper === x} className={`ma2-swatch ma2-swatch--name${pinned.temper === x ? " is-on" : ""}`} onClick={() => set({ temper: x })} data-temper={x}>{TEMPER_WORDS[x]}</button>
+        ))}
+      </div>
+      <p className="muted small" data-face-traits>Now: {made.shape}, {made.colorName}, {EYES_WORDS[made.eye.kind]} eyes, {TEMPER_WORDS[made.temper].toLowerCase()}.</p>
     </div>
   );
 }

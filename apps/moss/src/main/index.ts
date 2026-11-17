@@ -491,8 +491,12 @@ function wireBridge(): void {
     for (const k of ["model", "effort"] as const) if (p[k] === null || typeof p[k] === "string") patch[k] = p[k] === null ? null : String(p[k]).slice(0, 200);
     if (p.face === null) patch.face = null;
     else if (p.face !== null && typeof p.face === "object") {
-      const f = p.face as { shape?: unknown; color?: unknown };
-      patch.face = { ...(typeof f.shape === "string" ? { shape: f.shape.slice(0, 32) } : {}), ...(typeof f.color === "string" ? { color: f.color.slice(0, 32) } : {}) };
+      const f = p.face as { shape?: unknown; color?: unknown; eyes?: unknown; temper?: unknown };
+      const pin = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9#-]{1,32}$/.test(v) ? v : undefined);
+      patch.face = {
+        ...(pin(f.shape) !== undefined ? { shape: pin(f.shape)! } : {}), ...(pin(f.color) !== undefined ? { color: pin(f.color)! } : {}),
+        ...(pin(f.eyes) !== undefined ? { eyes: pin(f.eyes)! } : {}), ...(pin(f.temper) !== undefined ? { temper: pin(f.temper)! } : {}),
+      };
     }
     return engine.editBot(id, patch);
   });

@@ -36,6 +36,16 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
   useLayoutEffect(() => {
     end.current?.scrollIntoView({ block: "end" });
   }, [messages.length, props.cards.length]);
+  // A card in this conversation grows to its own height once its frame has drawn: keep the end, with the card's
+  // buttons, in view.
+  const cardIds = props.cards.map((c) => c.id).join(",");
+  useEffect(() => {
+    if (cardIds === "") return;
+    return bridge().onCardHeight((id) => {
+      if (!cardIds.split(",").includes(id)) return;
+      requestAnimationFrame(() => end.current?.scrollIntoView({ block: "end" }));
+    });
+  }, [cardIds]);
   return (
     <main className="conversation" data-col="conversation" aria-label={`${props.bot.name}'s conversation`}>
       <header className="conversation__head">

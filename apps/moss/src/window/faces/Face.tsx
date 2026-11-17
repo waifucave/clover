@@ -5,7 +5,7 @@
 import { useEffect, useRef } from "react";
 import { COLORS, mount, type Handle, type Mood } from "./living-bots";
 import { MOOD_WORDS } from "../../shared/view";
-import type { BotFace } from "@waifucave/moss-protocol";
+import type { BotFace } from "../../shared/view";
 
 /** Whether faces hold still (the renders; the system's reduced-motion setting is the kit's own default otherwise). */
 export const faceMotion = { calm: undefined as boolean | undefined };
@@ -17,8 +17,12 @@ function dark(): boolean {
 export function Face(props: { name: string; face?: BotFace; mood: Mood; size: number; surface?: "list" | "page" | "header" }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const handle = useRef<Handle | null>(null);
-  const traits = { ...(props.face?.shape !== undefined ? { shape: props.face.shape as never } : {}), ...(props.face?.color !== undefined ? { color: props.face.color } : {}) };
-  const key = `${props.name}|${traits.shape ?? ""}|${traits.color ?? ""}`;
+  const f = props.face;
+  const traits = {
+    ...(f?.shape !== undefined ? { shape: f.shape as never } : {}), ...(f?.color !== undefined ? { color: f.color } : {}),
+    ...(f?.eyes !== undefined ? { eyes: f.eyes as never } : {}), ...(f?.temper !== undefined ? { temper: f.temper as never } : {}),
+  };
+  const key = `${props.name}|${f?.shape ?? ""}|${f?.color ?? ""}|${f?.eyes ?? ""}|${f?.temper ?? ""}`;
   useEffect(() => {
     const c = canvas.current;
     if (c === null) return;

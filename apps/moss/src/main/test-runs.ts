@@ -75,11 +75,9 @@ export interface Scene {
 
 /** The scenes for the owner's renders (the brief's list). */
 export const SCENES: readonly Scene[] = [
-  { name: "conversation", go: { bot: "juniper", panel: false } },
-  { name: "panel", go: { bot: "juniper", panel: true } },
+  // The conversation with its file and its own card whole (the strip has a scene of its own).
+  { name: "conversation", go: { bot: "juniper", panel: false, strip: false } },
   { name: "strip", go: { bot: "kite", panel: false } },
-  { name: "plugins", go: { page: "plugins" } },
-  { name: "settings", go: { page: "settings" } },
   // Lane MA2's pages (the side panel, Plugins, Settings), written as `ma2-<scene>-<theme>-<size>.png`.
   { name: "ma2-panel", go: { bot: "juniper", panel: true } },
   { name: "ma2-plugins", go: { page: "plugins", strip: false } },

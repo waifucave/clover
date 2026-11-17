@@ -261,21 +261,29 @@ describe("Settings", () => {
     const model = page.querySelector("[data-model-picker]") as HTMLSelectElement;
     expect(model.value).toBe("anthropic/claude-sonnet");
     expect([...model.options].map((o) => o.textContent)).toContain("GPT-5.4 mini · OpenAI (not signed in)");
-    expect(page.querySelector("[data-instructions-size]")?.textContent).toContain("replaces it");
-    expect((page.querySelector("textarea") as HTMLTextAreaElement).value).toBe("");
+    // Until the engine serves the instructions' text, the editor is shut: nothing replaces a file the person can't see.
+    expect(page.querySelector("[data-instructions-size]")?.textContent).toContain("holds");
+    expect((page.querySelector("textarea") as HTMLTextAreaElement).disabled).toBe(true);
+    expect(page.querySelector("[data-instructions-why]")?.textContent).toContain("nothing is replaced unseen");
     expect(page.querySelectorAll("[data-shape]").length).toBe(10);
     expect(page.querySelectorAll("[data-color]").length).toBe(10);
-    expect(page.querySelector("[data-face-traits]")?.textContent).toMatch(/^Eyes \w+, temper \w+: both from the name\.$/);
+    expect(page.querySelectorAll("[data-eyes]").length).toBe(4);
+    expect(page.querySelectorAll("[data-temper]").length).toBe(4);
+    expect(page.querySelector("[data-face-traits]")?.textContent).toMatch(/^Now: \w+, \w+, \w+ eyes, \w+\.$/);
 
     await act(async () => { fireEvent.click(page.querySelector("[data-shape=gem]")!); });
     await until(() => callsOf(e, "bot.edit").length === 1);
     expect(callsOf(e, "bot.edit")[0]).toEqual({ id: "juniper", patch: { face: { shape: "gem" } } });
+    await settle();
+    await act(async () => { fireEvent.click(r.container.querySelector("[data-bot-page=juniper] [data-temper=bright]")!); });
+    await until(() => callsOf(e, "bot.edit").length === 2);
+    expect(callsOf(e, "bot.edit")[1]).toEqual({ id: "juniper", patch: { face: { shape: "gem", temper: "bright" } } });
     await act(async () => { fireEvent.change(r.container.querySelector("[data-model-picker]")!, { target: { value: "" } }); });
     await settle();
-    expect(callsOf(e, "bot.edit").length).toBe(1);
+    expect(callsOf(e, "bot.edit").length).toBe(2);
     await act(async () => { fireEvent.click([...r.container.querySelectorAll("[data-settings=model] button")].find((b) => b.textContent === "Save")!); });
-    await until(() => callsOf(e, "bot.edit").length === 2);
-    expect(callsOf(e, "bot.edit")[1]).toEqual({ id: "juniper", patch: { model: null } });
+    await until(() => callsOf(e, "bot.edit").length === 3);
+    expect(callsOf(e, "bot.edit")[2]).toEqual({ id: "juniper", patch: { model: null } });
     // An empty instructions box is never sent.
     const save = [...r.container.querySelectorAll("[data-settings=instructions] button")][0] as HTMLButtonElement;
     expect(save.disabled).toBe(true);
