@@ -257,3 +257,22 @@ describe("a bot as engine data", () => {
     await b.shutdown();
   });
 });
+
+describe("a bot builds a bot as a record, never as a plugin", () => {
+  test("with records as the source, PluginInstall refuses a folder that brings a bot (or a child that does) and names MakeBot", async () => {
+    const { refuseBotPlugins } = await import("../wiring");
+    const { writePlugin, botManifest } = await import("./fixtures");
+    const root = tempDir();
+    const botty = writePlugin(root, "botty", { "moss.json": botManifest("botty", "Botty"), "bot/instructions.md": "x" });
+    const packy = writePlugin(root, "packy", { "moss.json": { manifest: 1, id: "packy", name: "P" }, "plugins/kid/moss.json": botManifest(undefined, "Kid") });
+    const tool = writePlugin(root, "tooly", { "moss.json": { manifest: 1, id: "tooly", name: "T" } });
+    const ran: unknown[] = [];
+    const install = refuseBotPlugins({ name: "PluginInstall", description: "", inputSchema: {}, run: async (i) => { ran.push(i); return { text: "installed", isError: false }; } },
+      { resolveFolder: (_c, f) => join(root, f) }, { bot: "alpha", sessionId: "b_alpha" });
+    expect(await install.run({ folder: "botty" })).toMatchObject({ isError: true, text: expect.stringContaining(MAKE_BOT_TOOL) });
+    expect(await install.run({ folder: "packy" })).toMatchObject({ isError: true });
+    expect(await install.run({ folder: "tooly" })).toEqual({ text: "installed", isError: false });
+    expect(ran).toEqual([{ folder: "tooly" }]);
+    void botty; void packy; void tool;
+  });
+});

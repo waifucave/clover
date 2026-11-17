@@ -33,6 +33,10 @@ import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks
 import { readUiSettings } from "../plugin-host/ui-settings";
 import { workshopToolDefs, type PluginWorkshop } from "../registry/workshop";
 import { appScreenshotToolDef, type AppScreenshotDeps } from "./app-screenshot";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { MAKE_BOT_TOOL } from "@waifucave/moss-protocol";
+import { OLD_PLUGIN_MANIFEST } from "../old-names";
 import { pendingPluginBots } from "./move";
 import { BotRecordStore, type BotPluginSettingsPort } from "./records";
 import { botRecordMethods } from "./records-rpc";
@@ -137,6 +141,44 @@ export interface BotSide {
   start(): Promise<void>;
   /** Detaches everything, leaving it dormant on disk (a shutdown). */
   close(): Promise<void>;
+}
+
+/** `PluginInstall` with records as the bots' source: a folder whose manifest brings a bot (`contributes.bot`, in it or in
+ *  a child) is refused, and the bot is told to use `MakeBot`. Anything it can't read goes to the tool as it is. */
+export function refuseBotPlugins(tool: CoreToolDef, workshop: Pick<PluginWorkshop, "resolveFolder">, caller: { bot: string; sessionId: string }): CoreToolDef {
+  return {
+    ...tool,
+    run: async (input) => {
+      const folder = (input as { folder?: unknown } | null)?.folder;
+      if (typeof folder === "string") {
+        let real: string | undefined;
+        try { real = workshop.resolveFolder(caller, folder); } catch { real = undefined; }
+        if (real !== undefined && bringsBot(real)) {
+          return { text: `PluginInstall was refused: that plugin brings a bot, and bots aren't plugins any more. Make a bot with ${MAKE_BOT_TOOL} instead (its name, instructions and face), behind the person's card.`, isError: true };
+        }
+      }
+      return tool.run(input);
+    },
+  };
+}
+
+/** Whether a plugin folder's manifest (or a child's, one level of `plugins/`) contributes a bot. */
+function bringsBot(folder: string): boolean {
+  const has = (dir: string) => {
+    for (const name of ["moss.json", OLD_PLUGIN_MANIFEST]) {
+      try {
+        const m = JSON.parse(readFileSync(join(dir, name), "utf8")) as { contributes?: { bot?: unknown } };
+        if (m?.contributes?.bot !== undefined) return true;
+      } catch { /* not this one */ }
+    }
+    return false;
+  };
+  if (has(folder)) return true;
+  try {
+    return readdirSync(join(folder, "plugins"), { withFileTypes: true }).some((d) => d.isDirectory() && has(join(folder, "plugins", d.name)));
+  } catch {
+    return false;
+  }
 }
 
 /** The plugins with an active `triggers` entry of a type (an entry is keyed by its `type`). */
@@ -267,7 +309,12 @@ export function createBotSide(o: BotSideOptions): BotSide {
       const bot = host.callerOf(sessionId).bot;
       if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
       // The plugin workshop's tools: a bot's own sessions (its conversation and side threads), never an agent's.
-      if (o.workshop !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(...workshopToolDefs(o.workshop, { bot, sessionId }));
+      if (o.workshop !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") {
+        const shop = workshopToolDefs(o.workshop, { bot, sessionId });
+        // Bots as engine data (lane BT, R5): a bot builds a bot with MakeBot, never as a plugin; a plugin folder that
+        // brings a bot isn't installed.
+        defs.push(...(records === undefined ? shop : shop.map((t) => (t.name !== "PluginInstall" ? t : refuseBotPlugins(t, o.workshop!, { bot, sessionId })))));
+      }
       // A look at this computer's app, for the same sessions (the bot builds and fixes what the user sees).
       if (o.appScreenshot !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(appScreenshotToolDef(o.appScreenshot, { bot }));
       // Bots as engine data (lane BT): `MakeBot` and `EditBotInstructions` in a record bot's own sessions.
