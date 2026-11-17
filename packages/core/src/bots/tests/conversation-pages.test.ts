@@ -11,12 +11,14 @@ afterEach(removeTemps);
 const USER: Caller = { kind: "user", client: "app" };
 
 describe("bot.conversation's pages", () => {
-  test("before the first event's seq, page after page, reaches the start: every event once, in order, and then no more", async () => {
+  test("before the first event's seq, page after page, reaches the start: every event once, in order, and then no more", { timeout: 30_000 }, async () => {
     const b = await boot({ home: tempDir(), clock: new FakeClock(), plugins: [], botSource: "records", modelOffer: () => "offered" });
     const all = b.side.methods({ localDevice: "studio0000000000000" });
     const call = (params: unknown) => all["bot.conversation"]!(params, { caller: USER } as never) as Promise<{ events: { seq: number; type: string; text?: string }[]; hasMore: boolean }>;
     await all["bot.create"]!({ name: "Chronicle" }, { caller: USER } as never);
-    const n = 6_000;
+    // 2,000 events, 20 pages (each record is written durably, about a millisecond apiece on a busy machine, so the
+    // setup is kept small; the 20,000-event walk is the acceptance row's, MOSS_LONG_STEP).
+    const n = 2_000;
     for (let i = 1; i <= n; i++) b.host.recordCore("b_chronicle", { type: "assistant_message", threadId: "b_chronicle", text: `m${i}` });
     const seen: number[] = [];
     const texts: string[] = [];
