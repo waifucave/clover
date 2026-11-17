@@ -28,7 +28,7 @@ export function fakeApi(o: { settings?: Record<string, unknown>; scenes?: { plug
   return { api, store, sent, writes };
 }
 
-/** A fake `api.avatar`: the cues it was given, the catalogue it answers, and what it says to a cue. */
+/** A fake of the figure calls her store is handed (`figure`): the cues it was given, the catalogue it answers, and what it says to a cue. */
 export function fakeAvatar(o: { catalogue?: AvatarCatalogue; answer?: (cue: AvatarCue) => AvatarCueResult } = {}) {
   const cues: AvatarCue[] = [];
   const state = { catalogue: o.catalogue as AvatarCatalogue | undefined };

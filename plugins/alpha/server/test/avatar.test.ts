@@ -1,4 +1,4 @@
-// Her stage tools reach her figure through the public avatar calls (`api.avatar`), never through a message of their
+// Her stage tools reach her figure through the figure calls handed to her store (`figure`), never through a message of their
 // own: a name is checked against the catalogue the renderer published, a cue the renderer won't play is the tool's
 // refusal (and the stage keeps what it had), and the figure's own names are what stage_status lists.
 import { expect, test } from "bun:test";
@@ -11,7 +11,7 @@ const setup = (o: Parameters<typeof fakeAvatar>[0] = { catalogue: MODEL }) => {
   const f = fakeApi();
   const a = fakeAvatar(o);
   let t = 0;
-  const s = new StageStore({ ...f.api, avatar: a.avatar }, { now: () => (t += 200) });
+  const s = new StageStore({ ...f.api, figure: a.avatar }, { now: () => (t += 200) });
   return { f, a, s, run: (name: string, args: unknown = {}) => runStageTool(name, args, s, f.api.settings.get) };
 };
 
