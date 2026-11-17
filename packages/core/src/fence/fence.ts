@@ -202,6 +202,10 @@ export class MossFence implements Fence {
     // partitions (always both shipped and dev profiles from the OS app-data folder, so neither app build can read
     // the other's sign-ins, plus an explicitly passed userData and a headless sessionData when given), and the
     // OK'd agent installs.
+    // The other installs' run folders, secret files and the old app's browser partitions: read-denied as each install's
+    // own fence held them (their homes are write-denied whole through the run-later list). Listed before that list, so a refusal inside
+    // one names its own kind, not the home's.
+    if (this.#layout["browser-profiles"] === undefined) for (const { kind, path } of otherInstallReadDenied(this.os, this.#home)) add(kind, path);
     for (const p of this.#layout["login-start"] ?? loginStartPaths(this.#home, this.#mossHome, this.os)) add("login-start", p);
     // Python's user site folders (one `site-packages` per `python*` folder read on this disk).
     if (this.#layout["login-start"] === undefined) {
@@ -224,9 +228,6 @@ export class MossFence implements Fence {
       ...(this.#sessionData === undefined ? [] : [joinHome(this.#sessionData, this.os, "Partitions")]),
     ];
     for (const p of [...new Set(browserProfiles)]) add("browser-profiles", p);
-    // The other installs' run folders, secret files and the old app's browser partitions: read-denied as each install's
-    // own fence held them (their homes are write-denied whole through the run-later list).
-    if (this.#layout["browser-profiles"] === undefined) for (const { kind, path } of otherInstallReadDenied(this.os, this.#home)) add(kind, path);
     for (const p of this.#layout["agent-installs"] ?? [...this.#agentInstalls, ...agentConfigPaths(this.os, this.#home)]) add("agent-installs", p);
     // Each bot's memory, `<home>/bots/<bot>/memory/` (deny `caller`: `judge` binds it by pattern to the bot whose id
     // folds equal). The known bots by id, plus the folders on the disk, so an unlisted leftover is still named.
