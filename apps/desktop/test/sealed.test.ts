@@ -277,3 +277,26 @@ describe("lane RT, S1: what today's app signs", () => {
     expect(seen).toEqual([cardAnswerSigningInput({ id: CARD.id, hash: CARD.hash, option: "allow_once", at: 1234, children: [] })]);
   });
 });
+
+describe("a fresh reading that never came in time is 'late', not 'covered' (lane HS's host run: layers loading again around a press)", () => {
+  test("late, covered and ok are told apart; a late one is spent like any other", () => {
+    let t = 0;
+    const store = new SealedFrames(() => t);
+    store.noteFresh("tok_late", false, true);
+    store.noteFresh("tok_covered", false, false);
+    store.noteFresh("tok_ok", true, true);
+    expect(store.takeFresh("tok_late")).toBe("late");
+    expect(store.takeFresh("tok_late")).toBe("none");
+    expect(store.takeFresh("tok_covered")).toBe("covered");
+    expect(store.takeFresh("tok_ok")).toBe("ok");
+    t += FRESH_MAX_AGE_MS + 1;
+  });
+
+  test("the page reads a reading that didn't come within the limit as 'late' and shows 'press again', never a cover", async () => {
+    const { buttonPage, PRESS_AGAIN_TEXT } = await import("../src/main/sealed-pages");
+    const b = buttonPage({ cardId: "card_x", token: "t".repeat(43), option: "allow_once", label: "Allow", kind: "approve" });
+    expect(b).toContain('say(ok === null ? "late" : "covered")');
+    expect(b).toContain("resolve(null); }, 400)");
+    expect(b).toContain(JSON.stringify(PRESS_AGAIN_TEXT));
+  });
+});

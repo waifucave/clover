@@ -121,7 +121,7 @@ export class SealedFrames {
   /** The frame tokens whose page has reported itself visible (IOv2), for the fallback rule (§5.5: only show the
    *  fallback when no plugin has both buttons visible within 2 s). */
   private readonly visible = new Set<string>();
-  private readonly fresh = new Map<string, { seen: boolean; at: number }>();
+  private readonly fresh = new Map<string, { seen: boolean; at: number; late?: true }>();
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -236,18 +236,18 @@ export class SealedFrames {
 
   /** The report a press asked for (a new observer the page made at the press): whether the button showed whole and uncovered
    *  right then. One per press: `takeFresh` spends it, and one older than FRESH_MAX_AGE_MS counts for nothing. */
-  noteFresh(token: string, seen: boolean): void {
+  noteFresh(token: string, seen: boolean, late = false): void {
     if (this.fresh.size > 256) this.fresh.delete(this.fresh.keys().next().value!);
-    this.fresh.set(token, { seen, at: this.now() });
+    this.fresh.set(token, { seen, at: this.now(), ...(late && !seen ? { late: true } : {}) });
   }
 
   /** Spends the press's fresh report: "ok" if it said the button showed uncovered, "covered" if it said otherwise (or the
    *  page's limit ran out), "none" if no report came with the press or it is stale. */
-  takeFresh(token: string): "ok" | "covered" | "none" {
+  takeFresh(token: string): "ok" | "covered" | "late" | "none" {
     const f = this.fresh.get(token);
     this.fresh.delete(token);
     if (f === undefined || this.now() - f.at > FRESH_MAX_AGE_MS) return "none";
-    return f.seen ? "ok" : "covered";
+    return f.seen ? "ok" : f.late === true ? "late" : "covered";
   }
 
   /** Whether a frame's page has reported itself visible (its IOv2 verdict): what the smoke run waits for before it
