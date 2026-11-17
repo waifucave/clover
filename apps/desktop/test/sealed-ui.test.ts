@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CardAnswerProof } from "@waifucave/moss-protocol";
-import { readCalls, startFakeDaemon, type FakeDaemon } from "./fake-core/fake-daemon";
+import { FAKE_CODE_SESSION, readCalls, startFakeDaemon, type FakeDaemon } from "./fake-core/fake-daemon";
 import { mossViews, alphaView, folderView, FIXTURES } from "./fake-core/registry";
 
 const root = join(import.meta.dir, "..");
@@ -88,7 +88,9 @@ const CARD = {
   id: CARD_ID,
   kind: "tool",
   computer: null,
-  bot: "fixture-card", // the fixture plugin places only its own bot's cards
+  // The fake's code session, which MOSS Code's window shows (no bots in it): a card with no bot, which the fixture places
+  // with `approvals.all`.
+  session: FAKE_CODE_SESSION.id,
   origin: "user",
   issuedAt: 1700000000000,
   expiresAt: null,
@@ -99,6 +101,10 @@ const CARD = {
     { id: "deny", kind: "deny", label: "Deny" },
   ],
 };
+// The fallback window's card: one no window draws (the base's card, for a bot MOSS Code's window doesn't show), so the
+// fallback window is what shows it.
+const { session: _shown, ...CARD_UNDRAWN_BASE } = CARD;
+const CARD_UNDRAWN = { ...CARD_UNDRAWN_BASE, bot: "fixture-card" };
 // A card whose approve option's label carries markup: the page must render it as text, not HTML (blocking 2).
 const CARD_MARKUP = {
   ...CARD,
@@ -109,12 +115,12 @@ const CARD_MARKUP = {
 };
 
 function cardRegistry(path: string, withFixture = true, alpha = false): string {
-  // The bot's tab hosts the fixture's page. Alpha's own theme floats the sidebar over the page, so a plugin page's frame is
+  // The code session's tab is the fixture's page (it fills `main` keyed `agent`, the whole tab). Alpha's own theme floats the sidebar over the page, so a plugin page's frame is
   // partly covered and a sealed button inside it is never "ready" (IntersectionObserver v2, which treats a nested
   // frame as hidden while its element is partly covered): the fixture's page is tested with Alpha's bot and no theme
   // (the default chrome), and Alpha's own theme has its own test (`alpha: true`).
   const plugins = [...mossViews(), alpha ? alphaView() : { ...alphaView(), themes: [] }];
-  if (withFixture) plugins.push(folderView(join(FIXTURES, "fixture-card")));
+  if (withFixture) plugins.push(folderView(join(FIXTURES, "fixture-session-card")));
   writeFileSync(path, JSON.stringify({ plugins }));
   return path;
 }
@@ -157,7 +163,7 @@ async function runApp(opts: {
   const card = opts.card ?? CARD;
   // Lane B's event envelope carries the shared-clock time the event happened: the app ignores a `core.event`
   // without it (E-M3's own local finding).
-  const fake = await startFakeDaemon({ home: h, ui: registry.plugins, cards: [{ card }], prove: app.pid, events: [{ jsonrpc: "2.0", method: "core.event", params: { type: "card_pending", ts: Date.now(), card: CARD } }], ...(opts.acting !== undefined ? { acting: opts.acting } : {}) });
+  const fake = await startFakeDaemon({ home: h, ui: registry.plugins, cards: [{ card }], prove: app.pid, events: [{ jsonrpc: "2.0", method: "core.event", params: { type: "card_pending", ts: Date.now(), card } }], ...(opts.acting !== undefined ? { acting: opts.acting } : {}) });
   fakes.push(fake);
   const until = async (check: () => boolean, ms: number, what: string) => {
     const end = Date.now() + ms;
@@ -352,7 +358,7 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
   }, 120_000);
 
   test("the fallback card's answer lands", async () => {
-    const r = await runApp({ fallback: true, withFixture: false, card: CARD });
+    const r = await runApp({ fallback: true, withFixture: false, card: CARD_UNDRAWN });
     expect(r.output).toContain("window: shown invisible while headless");
     expect(r.output).not.toContain("window: shown while headless");
     expect(r.output).toContain("sealed-click: fallback frame found");
