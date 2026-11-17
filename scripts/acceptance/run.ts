@@ -3215,6 +3215,16 @@ function mossApp(): { exe: string; args: string[] } {
   return { exe: join(pkgDir, "dist", readFileSync(join(pkgDir, "path.txt"), "utf8").trim()), args: [MOSS_APP] };
 }
 
+/** A connection in the `app` role (from source, the daemon's test seam lets the run in), with these hello fields; the
+ *  run closes it at its end. */
+async function helloApp(name: string, extra: Record<string, unknown>): Promise<{ client: MossClient; result: Record<string, unknown> }> {
+  const d = await hello(join(home, "run", "core.sock"), "app", readFileSync(join(home, "run", "app.token"), "utf8").trim(), name, MOSS_PROTOCOL_VERSION, extra);
+  clients.push(d.client);
+  return d;
+}
+/** The moss unit's own connection: MOSS's surface, so nothing of MOSS Code's says hello on its home. */
+const mossDriver = () => helloApp("moss-acceptance", { surface: "moss" });
+
 /** The `moss` unit: a daemon with the records as the bots' source (`fresh`: the home is new, so this is its first
  *  daemon; otherwise the one before is ended first and the home's bots move), the dummy key, then MOSS over it and its
  *  rows (moss-step.ts). Source target only. */
@@ -3228,13 +3238,10 @@ async function mossRun(fresh: boolean): Promise<void> {
     if (!fresh && lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
     stoppingDaemon = false;
     daemon = await startDaemonProc({ ...MOSS_ENV });
-    const c = (await appDriver()).client;
-    try {
-      await signInKey(c);
-      await keyedSession(c).catch(() => undefined);
-    } finally {
-      c.close();
-    }
+    // The run's own connections say MOSS's surface: no MOSS Code hello reaches a home where only MOSS runs.
+    const c = (await mossDriver()).client;
+    await signInKey(c);
+    await keyedSession(c).catch(() => undefined);
   } catch (err) {
     MOSS_STEPS.forEach((name, i) => record(stepNumber(FULL_STEPS, name), i === 0 ? statusOf(err) : "BLOCKED", i === 0 ? `the moss unit's setup: ${why(err)}` : "setup failed"));
     return;
@@ -3242,12 +3249,8 @@ async function mossRun(fresh: boolean): Promise<void> {
   await mossUnit({
     root, home, userHome, logs, fake: fake!,
     env: baseEnv, startChild, endChild: (p) => endChild(p), alive, until, fail, readLog,
-    driver: appDriver,
-    helloAs: async (extra) => {
-      const d = await hello(join(home, "run", "core.sock"), "app", readFileSync(join(home, "run", "app.token"), "utf8").trim(), "moss-acceptance-other", MOSS_PROTOCOL_VERSION, extra);
-      clients.push(d.client);
-      return d;
-    },
+    driver: mossDriver,
+    helloAs: (extra) => helloApp("moss-acceptance-other", extra),
     freePort, mossApp,
     record: (name, status, detail) => record(stepNumber(FULL_STEPS, name), status, detail),
     statusOf, why,

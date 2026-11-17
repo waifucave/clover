@@ -12,28 +12,30 @@
 // placed off MOSS while it isn't in front, the side panel's live picture and routines, the Plugins page's tool setting,
 // a bot's instructions edited in Settings, making bots (the person's and a bot's MakeBot), and archive and bring back.
 // Kept apart from run.ts: run.ts gives it the run's helpers (`MossUnitCtx`) and records its rows.
-import { createPrivateKey, createPublicKey, randomBytes, randomUUID, sign } from "node:crypto";
+import { createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign } from "node:crypto";
 import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { instructionsEditRule, programCardAnswerSigningInput } from "../../packages/protocol/src/index";
+import { answerKeyStatement } from "../../packages/core/src/devices/registry";
 import { Cdp } from "./cdp";
 import type { MossClient } from "./client";
 import type { FakeProvider } from "./fake-anthropic";
 import type { Status } from "./steps";
 
-export const MOSS_LIST_STEP = "MOSS (the bots app) on a fresh home with the bots as engine data: its list shows Alpha, offered by default (the move's record), with her face and her mood in words, and only the engine's bots";
+export const MOSS_LIST_STEP = "MOSS (the bots app) on a fresh home where only MOSS has run (no MOSS Code, no single answer key) and the bots are engine data: its list shows Alpha, offered by default (the move's record), with her face and her mood in words, and only the engine's bots";
 export const MOSS_MESSAGE_STEP = "MOSS: a message typed and sent in Alpha's conversation reaches her one conversation (the record's main session), and her reply is drawn there as text; markup in a message stays text";
-export const MOSS_CARD_STEP = "MOSS: an approval card from Alpha's turn is drawn in her conversation in MOSS's window by the router; an answer with no press of the person's is refused by MOSS, one signed as MOSS Code is refused by the engine, and a real press on its sealed Approve is taken, signed with MOSS's own registered key (program moss)";
+export const MOSS_CARD_STEP = "MOSS: an approval card from Alpha's turn is drawn in her conversation in MOSS's window by the router; an answer with no press of the person's is refused by MOSS, one signed as MOSS Code with MOSS's key is refused by the engine, and a real press on its sealed Approve is taken, signed with MOSS's own registered key (program moss) on a computer with no other answer key";
 export const MOSS_AWAY_STEP = "MOSS not in front: the router places Alpha's next card off MOSS's window (the engine's card.placement) and MOSS draws none; in front again, the card comes back into her conversation and a press there answers it";
 export const MOSS_PANEL_STEP = "MOSS's side panel: Alpha's live picture from her tool, watch only (a click on it reaches nothing), with the publisher's name, and her routines; the plugin that publishes it added behind its OK card, pressed in MOSS's strip";
 export const MOSS_TOOLS_STEP = "MOSS's Plugins page: a plugin's tool set off there is off in the engine's tool.permissions, and Alpha's next turn isn't offered it (it was before)";
 export const MOSS_INSTRUCTIONS_STEP = "MOSS's Settings: Alpha's instructions shown as they are now, edited in place and saved by the person with no card (instructionsEditRule: the person's own edit is free); her next turn is given them";
 export const MOSS_MAKE_STEP = "MOSS: a bot made from the list's + (the person's bot.create) opens on its own conversation and answers; that bot's MakeBot raises the person's OK card in MOSS naming the maker, and once pressed the new bot is listed, made by it";
 export const MOSS_ARCHIVE_STEP = "MOSS's Settings: a bot archived leaves the list and is listed under Archived bots; brought back, it is in the list again with its conversation whole";
+export const MOSS_BOTH_KEYS_STEP = "MOSS beside MOSS Code on one computer: with MOSS Code's own answer key registered too, MOSS still answers its card with its own key (program moss), and MOSS Code's connection can't answer a card MOSS draws, even signed with MOSS Code's own key";
 
 /** The unit's rows, in the order it runs them. */
-export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_ARCHIVE_STEP];
+export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_ARCHIVE_STEP, MOSS_BOTH_KEYS_STEP];
 
 /** The unit's daemon: the bots as engine data (lane MC1 makes it the default; until then the unit sets it). */
 export const MOSS_ENV: Readonly<Record<string, string>> = { MOSS_BOT_SOURCE: "records" };
@@ -57,9 +59,11 @@ export interface MossUnitCtx {
   until<T>(what: string, timeoutMs: number, probe: () => Promise<T | undefined> | T | undefined, everyMs?: number): Promise<T>;
   fail(detail: string): never;
   readLog(path: string): string;
-  /** The run's own connection (the `app` role; its surface MOSS Code's, the default). */
+  /** The run's own connection: the `app` role with MOSS's surface, so the home sees no MOSS Code hello (a home where only
+   *  MOSS has run); it reports no presence and draws nothing. */
   driver(): Promise<{ client: MossClient; result: Record<string, unknown> }>;
-  /** A new connection in the `app` role with these hello fields. */
+  /** A new connection in the `app` role with these hello fields; the run closes it at its end (not before: today's engine
+   *  stops when the newest app connection goes, the pair's rule until the background host's lane). */
   helloAs(extra: Record<string, unknown>): Promise<{ client: MossClient; result: Record<string, unknown> }>;
   freePort(): number;
   /** MOSS built from this checkout (a test build): its Electron and the app folder. */
@@ -83,12 +87,15 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
   const front = join(x.root, "moss-front");
   const keyFile = join(x.root, "moss-answer-key");
   const done = new Set<string>();
+  let shown: MossWindow | undefined;
   const row = async (name: string, run: () => Promise<string>): Promise<void> => {
     done.add(name);
     try {
       x.record(name, "PASS", await run());
     } catch (err) {
-      x.record(name, x.statusOf(err), x.why(err));
+      // What MOSS's window showed at the failure, in words, for the table.
+      const seen = shown === undefined ? "" : await shown.eval<string>("(document.querySelector('.middle')?.innerText ?? document.body.innerText).replace(/\\s+/g, ' ').slice(0, 240)").catch(() => "");
+      x.record(name, x.statusOf(err), `${x.why(err)}${seen !== "" ? ` [MOSS showed: ${seen}]` : ""}`);
     }
   };
   try {
@@ -113,6 +120,7 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
     }, 500);
     const w = new MossWindow(x, cdp!, app.log);
     await w.main();
+    shown = w;
     const s: UnitState = { x, c, w, device, front, keyFile, appLog: app.log };
     await row(MOSS_LIST_STEP, () => listRow(s));
     await row(MOSS_MESSAGE_STEP, () => messageRow(s));
@@ -123,6 +131,8 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
     await row(MOSS_INSTRUCTIONS_STEP, () => instructionsRow(s));
     await row(MOSS_MAKE_STEP, () => makeRow(s));
     await row(MOSS_ARCHIVE_STEP, () => archiveRow(s));
+    // Last: it registers MOSS Code's key, so the home is no longer one where only MOSS has run.
+    await row(MOSS_BOTH_KEYS_STEP, () => bothKeysRow(s));
   } catch (err) {
     const why = `MOSS couldn't be started and driven: ${x.why(err)}`;
     for (const name of MOSS_STEPS) if (!done.has(name)) x.record(name, x.statusOf(err), why);
@@ -341,22 +351,14 @@ async function cardRow(s: UnitState): Promise<string> {
   if (!/no press/.test(refusedLine)) s.x.fail(`MOSS refused the scripted answer, but not for want of a press: ${refusedLine}`);
   if (!(await cardIds(s.c)).has(card.id)) s.x.fail("the card was answered by the scripted answer");
 
-  // 2. Signed as MOSS Code: MOSS's own key over MOSS Code's signing input. From MOSS Code's connection (the run's own),
-  //    and from a connection that says it is MOSS: the engine refuses both, and the card waits on.
+  // 2. Signed as MOSS Code: MOSS's own key over MOSS Code's signing input, sent on a MOSS connection (the run's own):
+  //    the engine refuses it, and the card waits on. (MOSS Code's own connection and key: the last row.)
   const key = mossKey(s.keyFile);
   const at = Date.now();
   const signature = sign(null, Buffer.from(programCardAnswerSigningInput({ program: "code", id: card.id, hash: card.hash, option, at })), key).toString("base64");
   const proof = { via: "device", device: s.device, at, signature, program: "code" };
   const asCode = await s.c.request<{ accepted: boolean; reason?: string }>("card.answer", { id: card.id, hash: card.hash, option, proof });
   if (asCode.accepted) s.x.fail("the engine took an answer signed as MOSS Code for a card MOSS draws");
-  const other = await s.x.helloAs({ surface: "moss" });
-  let asMoss: { accepted: boolean; reason?: string };
-  try {
-    asMoss = await other.client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: card.id, hash: card.hash, option, proof });
-  } finally {
-    other.client.close();
-  }
-  if (asMoss.accepted) s.x.fail("the engine took an answer signed as MOSS Code from a MOSS connection");
   if (!(await cardIds(s.c)).has(card.id)) s.x.fail("the card was answered by an answer signed as MOSS Code");
 
   // 3. The real press, in her conversation.
@@ -371,7 +373,7 @@ async function cardRow(s: UnitState): Promise<string> {
     const page = await s.c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 });
     return page.events.some((e) => e.type === "assistant_message" && (e.text ?? "").startsWith("ACCEPTANCE-DONE")) ? true : undefined;
   }, 500).catch(() => false);
-  return `the ${card.kind} card placed ${placeWords(place)} and drawn in her conversation; the frame's own script answering with no press: MOSS refused it (${refusedLine.replace(/^sealed: answer refused /, "").slice(0, 80)}); signed as MOSS Code with MOSS's key: refused from MOSS Code's connection (${asCode.reason ?? "no reason"}) and from MOSS's (${asMoss.reason ?? "no reason"}); a real press on Approve accepted, MOSS's key the engine's moss key for this device${landed ? "; the Write's turn went on" : ""}`;
+  return `the ${card.kind} card placed ${placeWords(place)} and drawn in her conversation; the frame's own script answering with no press: MOSS refused it (${refusedLine.replace(/^sealed: answer refused /, "").slice(0, 80)}); signed as MOSS Code with MOSS's key: refused (${asCode.reason ?? "no reason"}); a real press on Approve accepted, MOSS's key the engine's moss key for this device${landed ? "; the Write's turn went on" : ""}`;
 }
 
 /** The raw 32 bytes of an Ed25519 private key's public half. */
@@ -385,6 +387,14 @@ async function awayRow(s: UnitState): Promise<string> {
   await openBot(s, "alpha", "Alpha");
   const from = s.x.readLog(s.appLog).length;
   writeFileSync(s.front, "back");
+  try {
+    return await awayRowBehind(s, a, from);
+  } finally {
+    writeFileSync(s.front, "front");
+  }
+}
+
+async function awayRowBehind(s: UnitState, a: RecordView, from: number): Promise<string> {
   await s.x.until("MOSS's window behind (the test seam)", 10_000, () => (s.x.readLog(s.appLog).slice(from).includes("MOSS's window is not in front") ? true : undefined), 100);
   // Her turn goes on while MOSS is behind: a message from elsewhere (the run's own connection).
   const before = await cardIds(s.c);
@@ -576,3 +586,43 @@ async function archiveRow(s: UnitState): Promise<string> {
   return `${name} archived from Settings (bot.remove): gone from the list, in bot.archived and under Archived bots; Bring back: listed again with its conversation (${page.events.length} events, ${bubbles} bubbles drawn)`;
 }
 
+
+/** The last row: MOSS Code's own answer key registered on the same computer (as MOSS Code's window registers it,
+ *  `device.answerKey.set`, from a MOSS Code connection), then a card MOSS draws: MOSS Code's connection can't answer it,
+ *  even signed with its own key, and MOSS's press still signs with MOSS's key and is taken. */
+async function bothKeysRow(s: UnitState): Promise<string> {
+  const code = await s.x.helloAs({});
+  try {
+    if (code.result.surface !== undefined && code.result.surface !== "code") s.x.fail(`MOSS Code's hello came back as ${String(code.result.surface)}`);
+    const { privateKey } = generateKeyPairSync("ed25519");
+    const pub = Buffer.from(createPublicKeyRaw(privateKey)).toString("base64");
+    const set = await code.client.request<{ applied?: boolean }>("device.answerKey.set", { publicKey: pub, held: "none", signature: sign(null, Buffer.from(answerKeyStatement(s.device, pub, "none")), privateKey).toString("base64") });
+    if (set.applied !== true) s.x.fail(`MOSS Code's key wasn't applied: ${JSON.stringify(set)}`);
+    const a = await alpha(s.c);
+    await openBot(s, "alpha", "Alpha");
+    const before = await cardIds(s.c);
+    const path = join(s.x.userHome, ".acceptance", `moss-both-${randomBytes(3).toString("hex")}.txt`);
+    await sendInMoss(s, "Alpha", callText("Write", { file_path: path, content: "moss both\n" }));
+    const card = await newCard(s, before, "the Write's approval card", (k) => k.session === a.mainSession);
+    const place = await s.x.until("the card placed in her conversation in MOSS", 20_000, async () => {
+      const p = await placementOf(s.c, card.id);
+      return p?.kind === "conversation" && p.program === "moss" ? p : undefined;
+    }, 300).catch(async () => s.x.fail(`the card is placed ${placeWords(await placementOf(s.c, card.id))}`));
+    const option = approveOf(card);
+    const at = Date.now();
+    const own = sign(null, Buffer.from(programCardAnswerSigningInput({ program: "code", id: card.id, hash: card.hash, option, at })), privateKey).toString("base64");
+    const fromCode = await code.client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: card.id, hash: card.hash, option, proof: { via: "device", device: s.device, at, signature: own, program: "code" } });
+    if (fromCode.accepted) s.x.fail("MOSS Code's connection answered a card MOSS draws");
+    if (!(await cardIds(s.c)).has(card.id)) s.x.fail("the card was answered from MOSS Code's connection");
+    await s.w.pressApprove(card.id);
+    await s.x.until("the card answered", 15_000, async () => ((await cardIds(s.c)).has(card.id) ? undefined : true), 300);
+    const table = JSON.parse(readFileSync(join(s.x.home, "devices", "program-keys.json"), "utf8")) as { keys: Record<string, Partial<Record<string, { publicKey: string }>>> };
+    const mossPub = Buffer.from(createPublicKeyRaw(mossKey(s.keyFile))).toString("base64");
+    if (table.keys[s.device]?.moss?.publicKey !== mossPub) s.x.fail("the engine's moss key changed when MOSS Code's key came");
+    return `MOSS Code's key registered beside MOSS's (device.answerKey.set applied); the card placed ${placeWords(place)}; MOSS Code's connection, signing with its own key: refused (${fromCode.reason ?? "no reason"}); MOSS's press taken with MOSS's own key, the engine's moss key unchanged`;
+  } finally {
+    // Left open until the run ends (it closes every connection it made): today's engine still pairs with the newest app
+    // connection and stops when that one goes (the background host's lane changes it), which would take MOSS's engine away.
+    void code;
+  }
+}
