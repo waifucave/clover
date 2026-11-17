@@ -95,6 +95,8 @@ const AS_WRITTEN: readonly RegExp[] = [/^sessions\/.*\.jsonl$/, /^transcripts\//
 /** Files read as text for the path rewrite and the record mapping, by extension. */
 const TEXT_EXT = /\.(?:json|jsonl|md|txt|toml|ya?ml|ini|conf)$/i;
 /** A plugin's source files the content map applies to, by extension. */
+/** The old home's records that name a model to run on: its settings (the default model) and each bot's record and layer. */
+const MODEL_RECORDS: readonly RegExp[] = [/^settings\.json$/, /^user-layers\/[^/]+\.json$/, /^bots\/[^/]+\/bot\.json$/];
 const PLUGIN_TEXT_EXT = /\.(?:[cm]?[jt]sx?|json|css|html?)$/i;
 /** The largest file read as text (larger ones are copied as they are). */
 const TEXT_MAX = 64 * 1024 * 1024;
@@ -318,6 +320,7 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
       sinceYield = 0;
       await new Promise((r) => setImmediate(r));
     };
+    const modelRecords: string[] = [];
     const walk = async (relDir: string): Promise<void> => {
       const dirAbs = relDir === "" ? oldRoot : join(oldRoot, ...relDir.split("/"));
       for (const name of readdirSync(dirAbs).sort()) {
@@ -406,6 +409,9 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
           const raw = readOld(abs, TEXT_MAX);
           if (raw !== undefined && !raw.subarray(0, 8192).includes(0)) {
             const was = raw.toString("utf8");
+            // The records that name the models the old install ran on (its default, each bot's): which providers' keys
+            // to enter again, said in the notice (`left-behind.ts`), as the keys themselves stay in its Keychain.
+            if (MODEL_RECORDS.some((re) => re.test(rel)) && modelRecords.length < 512) modelRecords.push(was);
             let text = was;
             if (!AS_WRITTEN.some((re) => re.test(rel))) {
               const pathed = rewriteHomePath(text, olds, home);
@@ -451,7 +457,7 @@ export async function copyOldHome(o: CopyOptions): Promise<CopyReport> {
       return readOld(join(oldRoot, dir, file), 16 * 1024 * 1024)?.toString("utf8");
     };
     const carry: RegistryCarry = carryFromOldRegistry(fixed("plugins-state", "installed.json"));
-    const left: LeftBehind = leftBehindFrom({ credentialsIndex: fixed("credentials", "index.json"), devices: fixed("devices", "registry.json") });
+    const left: LeftBehind = leftBehindFrom({ credentialsIndex: fixed("credentials", "index.json"), devices: fixed("devices", "registry.json"), modelRecords });
     const after = await o.alive();
     if (after.alive) throw new OldEngineRunning(after.how ?? "it answers");
     rmSync(p.scratch, { recursive: true, force: true });

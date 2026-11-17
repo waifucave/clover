@@ -302,6 +302,11 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       if (refused !== undefined && record.keyMatched) {
         record.answered = "400";
         record.refused = refused;
+        // The request's shape, for whoever replays it (tool names, their deferral, and each system message's tool changes
+        // by index; never a text or a key): what the refusal was about.
+        const b = body as WireBody;
+        const changes = (b.messages ?? []).flatMap((m, i) => (m.role === "system" ? blocksOf(m).filter((x) => x.type !== "text").map((x) => `${i}:${String(x.type)}:${String((x.tool as { name?: unknown; type?: unknown } | undefined)?.type ?? "")}:${String((x.tool as { name?: unknown } | undefined)?.name ?? (x as { name?: unknown }).name ?? "")}`) : []));
+        console.error(`acceptance fake: refused (${refused.slice(0, 160)}): ${b.messages?.length ?? 0} message(s); tools ${JSON.stringify((b.tools ?? []).map((t) => `${String(t.name)}${t.defer_loading === true ? "(deferred)" : ""}`))}; system tool changes ${JSON.stringify(changes)}`);
         return Response.json({ type: "error", error: { type: "invalid_request_error", message: refused } }, { status: 400 });
       }
       if (!record.keyMatched) {

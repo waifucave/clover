@@ -5456,7 +5456,13 @@ async function copyOffered(cdp: Cdp | undefined): Promise<{ notice: string[] } |
   try {
     const d = await appDriver();
     const c = d.client;
-    const homeCard = async (title: RegExp) => until(`the core's own card (${title.source})`, 60_000, async () => (await cards(c)).find((x) => x.kind === "change" && (x as { change?: string }).change === "home-copy" && title.test(JSON.stringify(x.fields))), 500);
+    // The broker comes up with the core's parts, a moment after the daemon listens: until then `card.list` says to try
+    // again (MOSS_ERR "not running yet"), which is not yet, not a failure.
+    const notYet = (err: unknown): Card[] => {
+      if (err instanceof RpcError && /try again/.test(err.message)) return [];
+      throw err;
+    };
+    const homeCard = async (title: RegExp) => until(`the core's own card (${title.source})`, 60_000, async () => (await cards(c).catch(notYet)).find((x) => x.kind === "change" && (x as { change?: string }).change === "home-copy" && title.test(JSON.stringify(x.fields))), 500);
     const offer = await homeCard(/Bring your data over from/);
     if (offer.pluginId !== undefined) fail(`the offer names a plugin (${offer.pluginId}): it is the core's own card`);
     if (!JSON.stringify(offer.fields).includes("left exactly as it is")) fail(`the offer doesn't say the old install is left as it is: ${JSON.stringify(offer.fields).slice(0, 300)}`);
@@ -5482,7 +5488,7 @@ async function copyOffered(cdp: Cdp | undefined): Promise<{ notice: string[] } |
     if (swapped === undefined) fail(`the restarted daemon didn't say the copy is in place: ${lastLines(again.log)}`);
     const c2 = (await appDriver()).client;
     await c2.request("events.subscribe", { areas: ["approvals"] }).catch(() => undefined);
-    const notice = await until("the core's own card (the notice after the copy)", 60_000, async () => (await cards(c2)).find((x) => x.kind === "change" && (x as { change?: string }).change === "home-copy"), 500);
+    const notice = await until("the core's own card (the notice after the copy)", 60_000, async () => (await cards(c2).catch(notYet)).find((x) => x.kind === "change" && (x as { change?: string }).change === "home-copy"), 500);
     const detail = (notice.fields as { detail?: { items?: string[] } }).detail?.items ?? [];
     await approve(c2, notice);
     c2.close();

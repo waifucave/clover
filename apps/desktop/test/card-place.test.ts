@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mossFront, FrontWatcher, islandMayDraw, placeCard, placeFromEngine, placeLine, presenceOf, pressMayBeTaken, showingOf, type WatchedWindow } from "../src/main/card-place";
+import { APP_EVENT_AREAS, subscribeThenListCards, mossFront, FrontWatcher, islandMayDraw, placeCard, placeFromEngine, placeLine, presenceOf, pressMayBeTaken, showingOf, type WatchedWindow } from "../src/main/card-place";
 import { SealedFrames } from "../src/main/sealed";
 
 /** The app's bookkeeping for where a pending card is drawn, as index.ts keeps it, over a fake front state: the three
@@ -263,5 +263,57 @@ describe("lane RT: a press right after a focus change is taken at once (one pres
     // The instant reads unfocused, but the watcher hasn't settled out: the next report still says focused.
     await w.reporter.report();
     expect(w.sent.map((r) => r.windows[0]?.focused)).toEqual([true, true]);
+  });
+});
+
+describe("a card raised the moment the core's parts come up reaches an app that connected before (the upgrade pair's step 2)", () => {
+  /** A core as the engine answers one connection: its calls in order, `card.list` waiting for the late doors; the parts
+   *  raise a card the moment the doors open, told as `card_requested` to the connection only if it has subscribed. */
+  function core() {
+    const told: string[] = [];
+    const cards: { id: string; kind: string }[] = [];
+    let subscribed = false;
+    let open!: () => void;
+    const doors = new Promise<void>((r) => { open = r; });
+    let queue = Promise.resolve<unknown>(undefined);
+    const request = <T>(method: string, params?: unknown): Promise<T> => {
+      const run = async (): Promise<unknown> => {
+        if (method === "events.subscribe") { if ((params as { areas: string[] }).areas.includes("approvals")) subscribed = true; return { ok: true }; }
+        if (method === "card.list") { await doors; return { cards: [...cards] }; }
+        return {};
+      };
+      const p = queue.then(run);
+      queue = p.catch(() => undefined);
+      return p as Promise<T>;
+    };
+    // The parts come up: the doors open (a waiting call is answered), then the offer is raised at once.
+    const partsUp = async () => {
+      open();
+      await Promise.resolve();
+      cards.push({ id: "card_offer", kind: "change" });
+      if (subscribed) told.push("card_offer");
+    };
+    return { client: { request }, told, partsUp };
+  }
+
+  test("subscribed first, then listed: the card is told or listed; listed first (the old order), it was neither", async () => {
+    const c = core();
+    const waiting: string[] = [];
+    const done = subscribeThenListCards(c.client, (x) => waiting.push((x as { id: string }).id));
+    await new Promise((r) => setTimeout(r, 5));
+    await c.partsUp();
+    await done;
+    expect([...c.told, ...waiting]).toContain("card_offer");
+    expect(APP_EVENT_AREAS).toEqual(expect.arrayContaining(["approvals", "surfaces"]));
+
+    // The order before the fix: the list first, the subscription after it.
+    const old = core();
+    const listedOld: string[] = [];
+    const list = old.client.request<{ cards: { id: string }[] }>("card.list").then((r) => { for (const x of r.cards) listedOld.push(x.id); });
+    const sub = old.client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] });
+    await new Promise((r) => setTimeout(r, 5));
+    await old.partsUp();
+    await Promise.all([list, sub]);
+    expect([...old.told, ...listedOld]).toEqual([]);
   });
 });
