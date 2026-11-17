@@ -2,7 +2,7 @@
 //
 //   out/main/index.js        the main process, one ESM file for Electron's Node (electron stays external)
 //   out/main/preload.cjs     the one preload (sandboxed preloads are CommonJS)
-//   out/renderer/window/     MOSS's own window: index.html, window.js (its React app, the living-bots kit inside), window.css
+//   out/renderer/window/     MOSS's own window: index.html, window.js (its React app, the living-bots kit inside), window.css, pages.css
 //
 // `--test-build`: the main process and the window are compiled with the test-build label (scripts/test-build.ts) in
 // place of `false`, which turns on the UI test's smoke run, the renders and the test hooks; a real build compiles all of
@@ -47,5 +47,7 @@ await build({
 }, "the window");
 cpSync(join(root, "src", "window", "index.html"), join(windowOut, "index.html"));
 cpSync(join(root, "src", "window", "window.css"), join(windowOut, "window.css"));
+// The pages' own styles (lane MA2's: the side panel, Plugins and Settings), after the window's.
+cpSync(join(root, "src", "window", "pages.css"), join(windowOut, "pages.css"));
 
 console.log(`built ${relative(root, join(out, "main"))} and ${relative(root, windowOut)}${testBuild ? " (test build)" : ""}`);
