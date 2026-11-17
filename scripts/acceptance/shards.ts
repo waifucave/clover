@@ -72,6 +72,9 @@ export interface Unit {
   phase: "parallel" | "serial";
   /** About how long it takes on the source target, in seconds, as a sharded run measured it (the split's weights). */
   estimate: number;
+  /** Its rows need a home no other unit has used (MOSS's "only MOSS has ever run here" rows): beside other units it runs
+   *  as a run of its own (`--units <it>`, its own temp home, keychain file, fake provider and daemon), as a shard does. */
+  ownHome?: true;
 }
 
 /** The window's steps, in three units: the places in UI_STEPS where each starts (the last ends at its length). */
@@ -113,7 +116,7 @@ const OTHERS: readonly Unit[] = [
   { id: "browser", rows: [BROWSER_STEP], phase: "parallel", estimate: 60 },
   { id: "models", rows: [CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP, OAUTH_SIGN_IN_STEP, SCHEDULED_ROUTINE_STEP], phase: "parallel", estimate: 90 },
   // MOSS, the bots app (moss-step.ts): its own app from source over the shard's engine, the bots as engine data.
-  { id: "moss", rows: MOSS_STEPS, phase: "parallel", estimate: 240 },
+  { id: "moss", rows: MOSS_STEPS, phase: "parallel", estimate: 240, ownHome: true },
   { id: "stage", rows: [STAGE_STEP], phase: "serial", estimate: 125 },
   { id: "tab-flash", rows: [TAB_FLASH_STEP], phase: "serial", estimate: 105 },
   { id: "cold", rows: [COLD_START_STEP], phase: "serial", estimate: 16 },
@@ -161,6 +164,14 @@ export function planShards(n: number, all: readonly Unit[] = units()): UnitId[][
 }
 
 /** The serial phase: each measuring unit alone, in the table's order. */
+/** Where a run's units go: those that share the run's own home, and those run as runs of their own (`ownHome`), each in
+ *  a home no other unit uses. A unit that needs its own home and is the run's only unit is that run's home already. */
+export function homePlan(ids: readonly UnitId[], all: readonly Unit[] = units()): { shared: UnitId[]; ownRuns: UnitId[] } {
+  const own = new Set(all.filter((u) => u.ownHome === true).map((u) => u.id));
+  if (ids.length === 1) return { shared: [...ids], ownRuns: [] };
+  return { shared: ids.filter((id) => !own.has(id)), ownRuns: ids.filter((id) => own.has(id)) };
+}
+
 export function serialUnits(all: readonly Unit[] = units()): UnitId[] {
   return all.filter((u) => u.phase === "serial").map((u) => u.id);
 }

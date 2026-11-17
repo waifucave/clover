@@ -129,7 +129,7 @@ import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
 import { APP_NEWER, APP_OLDER, ENGINE_NEWER, ENGINE_OLDER, RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, WORDS as RELEASE_WORDS } from "./release-step";
-import { expandUnitIds, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
+import { expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
@@ -3190,7 +3190,7 @@ async function main(): Promise<void> {
   // MOSS, the bots app, after that: its own daemon on the home, the records as the bots' source (moss-step.ts).
   if (runs("moss")) {
     if (keepState !== undefined) for (const name of MOSS_STEPS) record(stepNumber(FULL_STEPS, name), "PASS", "not run: a --keep-state run keeps the home as today's bots left it (run it with --units moss)");
-    else await mossRun(false);
+    else await ownHomeRun("moss");
   }
 }
 
@@ -3428,11 +3428,43 @@ async function keyedSession(c: MossClient): Promise<string> {
  *  their own daemons and apps, in the full run's order (the cold start, the reopen steps, the stage's levels, idle). The
  *  reopen steps get step 4's fixture plugin first, installed and OK'd over RPC (the mid-tool-call one calls its tool). */
 async function unitsRun(app: { exe: string; args: string[] }, allIds: readonly UnitId[]): Promise<void> {
-  // The moss unit alone: its daemon is the home's first, with the records as the bots' source. Beside other units it runs
-  // after them (mossRun ends their daemon and starts its own on the home).
+  // The moss unit alone: its daemon is the home's first, with the records as the bots' source. Beside other units it is a
+  // run of its own after them (shards.ts `homePlan`, `ownHome`): its own temp home, never the one they used.
   if (allIds.length === 1 && allIds[0] === "moss") return mossRun(true);
-  await otherUnitsRun(app, allIds.filter((id) => id !== "moss"));
-  if (allIds.includes("moss")) await mossRun(false);
+  const plan = homePlan(allIds);
+  await otherUnitsRun(app, plan.shared);
+  for (const id of plan.ownRuns) await ownHomeRun(id);
+}
+
+/** A unit that needs a home no other unit has used (`ownHome`), run beside others: a run of its own (`--units <id>`,
+ *  its own temp home, keychain file, fake provider and daemon, under this run's hold of the machine), as the sharded
+ *  run's shards are; its rows go into this run's table. */
+async function ownHomeRun(id: UnitId): Promise<void> {
+  const names = allUnits().find((u) => u.id === id)!.rows;
+  if (id === "moss" && target !== "source") return mossRun(false);
+  try {
+    if (id === "moss" && target === "source") mossApp();
+  } catch (err) {
+    names.forEach((name, i) => record(stepNumber(FULL_STEPS, name), "BLOCKED", i === 0 ? `the ${id} unit's build: ${why(err)}` : "setup failed"));
+    return;
+  }
+  const out = join(root, `rows-own-${id}.json`);
+  const log = join(logs, `own-home-${id}.log`);
+  const fd = openSync(log, "a");
+  const args = [import.meta.path, ...(appBundle !== undefined ? ["--app", appBundle] : []), "--no-build", ...(verbose ? ["--verbose"] : []), ...(skipWebTurns ? ["--skip-web-turns"] : []), ...(pressing ? [] : ["--no-press"]), "--units", id, "--rows-out", out, ...(keepLogs !== undefined ? ["--keep-logs", join(keepLogs, `own-${id}`)] : [])];
+  const child = spawn(process.execPath, args, { cwd: REPO, env: process.env, stdio: ["ignore", fd, fd], detached: true });
+  children.push({ name: `own-home-${id}`, proc: child });
+  const code = await new Promise<number>((done) => child.on("exit", (c, s) => done(c ?? (s === null ? 1 : 128))));
+  closeSync(fd);
+  let got: TimedRow[] = [];
+  try { got = JSON.parse(readFileSync(out, "utf8")) as TimedRow[]; } catch { /* never wrote its rows: they read "not reached" */ }
+  say(`the ${id} unit's own run ended ${code}: ${got.filter((r) => r.status === "PASS").length}/${got.length} passed (logs/own-home-${id}.log)`);
+  for (const name of names) {
+    const n = stepNumber(FULL_STEPS, name);
+    const row = got.find((r) => r.name === name);
+    if (row === undefined) record(n, "BLOCKED", `not reached: the ${id} unit's own run ended ${code} (logs/own-home-${id}.log)`);
+    else rows.push({ ...row, n, shard: `own-${id}` });
+  }
 }
 
 async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly UnitId[]): Promise<void> {

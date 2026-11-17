@@ -10,7 +10,7 @@ import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { MOSS_STEPS } from "./moss-step";
-import { MAIN_PARTS, expandUnitIds, mergeShards, planShards, serialUnits, slowest, unitOf, units, windowIndexes, type TimedRow } from "./shards";
+import { MAIN_PARTS, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units, windowIndexes, type TimedRow } from "./shards";
 
 const row = (name: string, status: TimedRow["status"] = "PASS", seconds = 1): TimedRow => ({ n: stepNumber(FULL_STEPS, name), name, status, detail: status === "PASS" ? "ok" : "red", seconds });
 
@@ -73,6 +73,33 @@ describe("the split", () => {
     const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
     expect(run).toContain('if (allIds.length === 1 && allIds[0] === "moss") return mossRun(true);');
     expect(run).toContain('if (runs("moss"))');
+  });
+
+  test("the moss unit's rows are never scheduled into a home another unit uses", () => {
+    const all = units();
+    const ids = all.map((u) => u.id).filter((id) => id !== "moss");
+    expect(all.find((u) => u.id === "moss")!.ownHome).toBe(true);
+    // Alone, the run's home is its own; beside any other unit, or all of them (the full run's list), a run of its own.
+    expect(homePlan(["moss"])).toEqual({ shared: ["moss"], ownRuns: [] });
+    for (const other of ids) {
+      expect(homePlan([other, "moss"])).toEqual({ shared: [other], ownRuns: ["moss"] });
+      expect(homePlan(["moss", other]).shared).not.toContain("moss");
+    }
+    expect(homePlan(["main", "workshop", "plugin-app", "browser", "cards", "bundled-tools", "moss"]).ownRuns).toEqual(["moss"]);
+    // Every shard plan: a shard holding moss and anything else runs moss as its own run (unitsRun uses homePlan).
+    for (const n of [1, 2, 3, 4]) for (const shard of planShards(n)) if (shard.includes("moss") && shard.length > 1) expect(homePlan(shard).ownRuns).toEqual(["moss"]);
+    // run.ts: moss's rows run on the run's home only when moss is the run's one unit; the full run and unitsRun hand it to
+    // a run of its own (`--units moss`), never to the shared home's daemon.
+    const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
+    expect(run).toContain("const plan = homePlan(allIds);");
+    expect(run).toContain("await otherUnitsRun(app, plan.shared);");
+    expect(run).toContain("for (const id of plan.ownRuns) await ownHomeRun(id);");
+    expect(run).toContain('else await ownHomeRun("moss");');
+    expect(run).toContain('"--units", id, "--rows-out", out');
+    const calls = [...run.matchAll(/mossRun\((true|false)\)/g)].map((m) => m[0]);
+    expect(calls).toEqual(["mossRun(true)", "mossRun(false)"]);
+    // The one `mossRun(false)` left is a target with no MOSS bundle, where it only records the rows BLOCKED.
+    expect(run).toContain('if (id === "moss" && target !== "source") return mossRun(false);');
   });
 
   test("run.ts runs a unit's rows only where the unit is its own, and every unit has a runner", () => {
