@@ -26,6 +26,7 @@
 // fields never reach it"), and of the streaming events only the reply's text is sent.
 import { MossSessionEvent, SessionEvent, type Caller, type SessionKind } from "@waifucave/moss-protocol";
 import type { SessionRecord, TurnEnd } from "../contracts/session-host";
+import { toolDisplay, toolDisplayTitle } from "../runtime-sdk/tool-display";
 import { contextTokensOf } from "./compaction";
 import { CORE_ONLY_EVENT_TYPES } from "./durable-host";
 
@@ -73,7 +74,10 @@ export function acpRecordEvent(event: { type: string; [key: string]: unknown }):
       } catch {
         // A raw input that doesn't serialize shows as none.
       }
-      return { type: "tool_call", callId: id, name, argsJson };
+      // A plugin tool's declared title, as a bot's call carries it (display only; the driver read it from the bridge),
+      // made plain and bounded again here (a log may come from elsewhere).
+      const displayTitle = toolDisplayTitle(event["displayTitle"]);
+      return { type: "tool_call", callId: id, name, argsJson, ...(displayTitle === undefined ? {} : { displayTitle }) };
     }
     case "agent_tool_call_update": {
       const id = s("id");
@@ -83,7 +87,9 @@ export function acpRecordEvent(event: { type: string; [key: string]: unknown }):
       // A call MOSS closed when the agent's turn was cancelled (it left the call open) reads as interrupted.
       if (event["closedByMoss"] === true) return { type: "tool_result", callId: id, output: told ?? "Interrupted.", isError: true, interrupted: true };
       const output = told ?? (status === "completed" ? "" : event["refused"] === true ? "Refused." : "Failed.");
-      return { type: "tool_result", callId: id, output, isError: status === "failed" };
+      // What a plugin tool's successful result showed (`ToolDisplay`, already plain and bounded), as a bot's carries it.
+      const display = status === "completed" ? toolDisplay(event["display"]) : undefined;
+      return { type: "tool_result", callId: id, output, isError: status === "failed", ...(display === undefined ? {} : { display }) };
     }
     default:
       return undefined;

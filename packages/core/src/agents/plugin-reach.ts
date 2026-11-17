@@ -29,6 +29,7 @@ import type { PluginRegistry } from "../contracts/plugin-registry";
 import { glossaryIndex, parseFrontmatter, searchGlossary, SKILL_BODY_MAX_CHARS, type GlossaryItem } from "../runtime-sdk/turn-loop/glossary";
 import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
 import { partsServe } from "../runtime-sdk/turn-loop/only-backends";
+import { toolDisplay } from "../runtime-sdk/tool-display";
 import type { BotMcpServer, McpRunner } from "../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeCallContext, BridgeToolDef, BridgeToolSource } from "./bridge/tools";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
@@ -179,6 +180,7 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
         description: bridgeToolDescription(t),
         inputSchema: t.tool.inputSchema as Record<string, unknown>,
         ...(t.tool.load === "preload" ? { preload: true } : {}),
+        ...(t.tool.title === undefined ? {} : { displayTitle: t.tool.title }),
       }));
     },
     ...(d.settled === undefined ? {} : { settled: (ms: number) => d.settled!(ms) }),
@@ -229,10 +231,13 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
         });
         const out = { content: Array.isArray(result.content) && result.content.length > 0 ? result.content : [{ type: "text", text: "" }], isError: result.isError === true };
         try { d.observeResult?.(agentCheckContext(s, ctx.level), served, out, verdict.input); } catch { /* an observer never fails a call */ }
-        if (hooks === "none") return out;
+        // What its successful result shows in the conversation, as a bot's (`ToolDisplays.put`: a success's valid one only).
+        const display = out.isError ? undefined : toolDisplay(result.structuredContent);
+        const shown = <T extends { content: unknown[]; isError: boolean }>(r: T) => (display === undefined || r.isError ? r : { ...r, display });
+        if (hooks === "none") return shown(out);
         const after = await hooks.toolAfter(hookSession, { name: served, callId: c.callId }, verdict.input, out, ctx.signal);
         const a = after as { content?: unknown; isError?: unknown } | undefined;
-        return a !== undefined && Array.isArray(a.content) ? { content: a.content, isError: a.isError === true } : out;
+        return shown(a !== undefined && Array.isArray(a.content) ? { content: a.content, isError: a.isError === true } : out);
       } catch (err) {
         return text(err instanceof Error ? err.message : String(err));
       }

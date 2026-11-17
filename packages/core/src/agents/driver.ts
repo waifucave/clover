@@ -15,7 +15,7 @@
 import type { AgentEvent, AgentSession, AgentTurnEnd } from "../contracts/agent-backend";
 import { isContractError } from "../contracts/common";
 import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../contracts/session-host";
-import type { TurnOrigin } from "@waifucave/moss-protocol";
+import type { ToolDisplay, TurnOrigin } from "@waifucave/moss-protocol";
 
 export interface AgentDriverOptions {
   /** Starts the agent (or reattaches to it); called once, by the first turn. */
@@ -37,14 +37,29 @@ export interface AgentDriverOptions {
   /** A turn starts, from this input and origin (before the agent is started or asked anything): what the conversation
    *  saw, as a bot's turn reports it (the addresses the user gave, the fetch budget's reset). */
   turnStarted?(input: TurnInput, origin: TurnOrigin | undefined): void;
+  /** What the conversation shows of a plugin tool's call beside its name, as a bot's turn shows it: the tool's declared
+   *  title by the call's title (`tool_call.displayTitle`), and what its successful result showed, taken once
+   *  (`tool_result.display`). Display only. */
+  toolShows?: AgentToolShows;
 }
+
+/** How a session's agent calls find their plugin tool's display (the manager's, from the bridge). */
+export interface AgentToolShows {
+  /** The plugin tool's declared title for a call titled so (`mcp__moss_<hex>__<tool>`, …), or none. */
+  title(callTitle: string): string | undefined;
+  /** What the call's result showed, by its title and input, taken once; none for a call with no display. */
+  take(callTitle: string, rawInput: unknown): ToolDisplay | undefined;
+}
+
+/** The most calls whose title and input the driver keeps for their end. */
+const CALLS_KEPT = 256;
 
 /** What the driver records in the session's log. */
 export type AgentLogEvent =
   | { type: "agent_text"; text: string }
   | { type: "agent_thought"; text: string }
-  | { type: "agent_tool_call"; id: string; kind: string; title: string; status: string; rawInput?: unknown }
-  | { type: "agent_tool_call_update"; id: string; status: string; refused?: boolean; closedByMoss?: boolean; output?: string }
+  | { type: "agent_tool_call"; id: string; kind: string; title: string; status: string; rawInput?: unknown; displayTitle?: string }
+  | { type: "agent_tool_call_update"; id: string; status: string; refused?: boolean; closedByMoss?: boolean; output?: string; display?: ToolDisplay }
   | { type: "agent_usage"; inputTokens: number; outputTokens: number }
   | { type: "agent_started"; agentSessionId: string }
   /** MOSS's own word to the person about this agent, not the agent's (`hook_notice` on the wire). */
@@ -68,6 +83,8 @@ export class AgentDriver implements SessionDriver {
   #stalled = false;
   #ended = false;
   #pendingModel: { model: string; effort?: string } | undefined;
+  /** The calls seen, by id, for their end's display. */
+  readonly #calls = new Map<string, { title: string; rawInput: unknown }>();
 
   constructor(opts: AgentDriverOptions) {
     this.#opts = opts;
@@ -112,7 +129,33 @@ export class AgentDriver implements SessionDriver {
   }
 
   #record(ctl: TurnControl, e: AgentLogEvent): void {
-    ctl.record(this.#opts.redact ? this.#opts.redact(e) : e);
+    const shown = this.#shown(e);
+    ctl.record(this.#opts.redact ? this.#opts.redact(shown) : shown);
+  }
+
+  /** A plugin tool's call with its title, and its successful end with what it showed (`toolShows`). */
+  #shown(e: AgentLogEvent): AgentLogEvent {
+    const shows = this.#opts.toolShows;
+    if (shows === undefined) return e;
+    try {
+      if (e.type === "agent_tool_call") {
+        this.#calls.delete(e.id);
+        this.#calls.set(e.id, { title: e.title, rawInput: e.rawInput });
+        while (this.#calls.size > CALLS_KEPT) this.#calls.delete(this.#calls.keys().next().value!);
+        const title = shows.title(e.title);
+        return title === undefined ? e : { ...e, displayTitle: title };
+      }
+      if (e.type === "agent_tool_call_update" && (e.status === "completed" || e.status === "failed")) {
+        const call = this.#calls.get(e.id);
+        this.#calls.delete(e.id);
+        if (call === undefined || e.status !== "completed" || e.refused === true) return e;
+        const display = shows.take(call.title, call.rawInput);
+        return display === undefined ? e : { ...e, display };
+      }
+    } catch {
+      // Display only: a lookup that throws shows nothing more.
+    }
+    return e;
   }
 
   async #turn(input: TurnInput, ctl: TurnControl): Promise<TurnEnd> {

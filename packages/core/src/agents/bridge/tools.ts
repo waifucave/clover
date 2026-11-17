@@ -5,7 +5,7 @@
 //
 // Plugin tools come from lane B's registry (B-M2: the plugins scoped to `agents` or `both`); until then the source
 // is empty, and `BridgeToolSource` is the seam it plugs into.
-import type { Level, TurnOrigin } from "@waifucave/moss-protocol";
+import type { Level, ToolDisplay, TurnOrigin } from "@waifucave/moss-protocol";
 
 export interface BridgeToolDef {
   name: string;
@@ -14,6 +14,9 @@ export interface BridgeToolDef {
   /** A plugin tool its manifest preloads (`tools: { <name>: "preload" }`): offered to the model from the start, as a
    *  bot's is (`anthropic/alwaysLoad`), never only behind a tool search. */
   preload?: boolean;
+  /** A plugin tool's declared title (its listing's `title`, plain and bounded), for the conversation only: never listed
+   *  to the agent (`listedBridgeTool`). */
+  displayTitle?: string;
 }
 
 /** A bridge tool as MCP's `tools/list` gives it. */
@@ -53,7 +56,9 @@ export interface AgentSessionFacts {
 
 export interface BridgeToolSource {
   tools(sessionId: string, session?: AgentSessionFacts): Promise<BridgeToolDef[]>;
-  call(sessionId: string, call: { callId: string; tool: string; input: unknown }, ctx: BridgeCallContext): Promise<{ content: unknown[]; isError: boolean }>;
+  /** `display`: what a plugin tool's successful result showed (its `structuredContent` as a `ToolDisplay`), for the
+   *  conversation only; the bridge never passes it to the agent. */
+  call(sessionId: string, call: { callId: string; tool: string; input: unknown }, ctx: BridgeCallContext): Promise<{ content: unknown[]; isError: boolean; display?: ToolDisplay }>;
   /** The plugins' own instructions, which the bridge sends as its server instructions and `Glossary` also serves. */
   instructions?(sessionId: string, session?: AgentSessionFacts): Promise<string>;
   /** Waits, at most `timeoutMs`, for the plugins' servers installed or enabled a moment ago to have listed their tools, so a

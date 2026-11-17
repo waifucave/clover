@@ -51,6 +51,7 @@ import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
 import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type AgentSessionFacts, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
+import { AgentToolDisplays } from "./tool-shows";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
@@ -195,6 +196,8 @@ interface Entry {
   token: string;
   serverName: string;
   bridgeTools: string[];
+  /** What its plugin tools' calls show in the conversation (their titles, their results' displays). */
+  shows: AgentToolDisplays;
   /** What the agent holds of the bridge's tools (`toolsSignature`): the list it started with, or was last told of. */
   toolsSig?: string;
   /** The tool names the agent holds, for saying what changed. */
@@ -726,6 +729,7 @@ export class AgentManager {
     const entry = {
       id, backend, transcript, record, daemon, token, rootPath, computer: daemon.computer, root: daemon.root,
       held: 0, gone: new AbortController(), serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
+      shows: new AgentToolDisplays(),
       ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
       ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
       ...(daemon.level === undefined ? {} : { level: daemon.level }),
@@ -734,6 +738,7 @@ export class AgentManager {
     entry.driver = new AgentDriver({
       start: () => this.#startAgent(entry, reattach),
       turnStarted: (input, origin) => this.#o.turnStarted?.(id, input, origin),
+      toolShows: entry.shows,
       // A turn another computer sent carries the prompt it built there (its images read there).
       promptOf: async (input) => peerPromptOf(input) ?? promptOf(input),
       redact: (v) => transcript.redacted(v),
@@ -1308,11 +1313,14 @@ export class AgentManager {
           return { content: [{ type: "text", text: `Not run: ${why}.` }], isError: true };
         }
         const signal = e.driver.currentSignal();
-        return source.call(id, c, {
+        const r = await source.call(id, c, {
           computer: e.computer, origin: e.driver.currentOrigin() ?? "agent",
           ...(e.bot === undefined ? {} : { bot: e.bot }), ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }), ...(signal ? { signal } : {}),
           session: this.#facts(e),
         });
+        // What its result shows stays in MOSS, for the conversation; the agent gets the content.
+        if (r.display !== undefined && !r.isError) e.shows.put(c.tool, c.input, r.display);
+        return { content: r.content, isError: r.isError };
       },
       sendMessage: async (id, m) => {
         await this.#holdForBridge(id);
@@ -1331,6 +1339,7 @@ export class AgentManager {
     const source = this.#o.pluginTools ?? NO_PLUGIN_TOOLS;
     const facts = e === undefined ? undefined : this.#facts(e);
     const plugin = await source.tools(id, facts).catch(() => []);
+    e?.shows.listed(plugin);
     const own = await source.instructions?.(id, facts).catch(() => "");
     const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
     return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
