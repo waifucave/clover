@@ -224,7 +224,8 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
           const bytes = reader.latest();
           if (bytes !== undefined) write(c, { jsonrpc: "2.0", method: "picture.frame", params: { stream, seq: seq++, format: "png", width: 1280, height: 800, data: Buffer.from(bytes).toString("base64"), at: Date.now() } });
         };
-        setTimeout(send, 50);
+        // As the real engine does: the latest frame goes out at once, before this call's own answer reaches the window.
+        send();
         c.streams.set(stream, setInterval(send, o.frameMs ?? 1_000));
         return { stream };
       }

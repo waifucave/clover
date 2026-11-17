@@ -89,6 +89,9 @@ export class MossEngine {
   private sessionBot = new Map<string, string>();
   /** The live pictures this window follows: stream → picture id. */
   private streams = new Map<string, string>();
+  /** A stream's latest frame that came before `picture.open`'s answer named it (the engine sends the picture's latest frame
+   *  at once, and a still picture sends no other): kept until the answer comes, a few streams at most. */
+  private early = new Map<string, PictureFrameView & { stream: string }>();
   private emitTimer: ReturnType<typeof setTimeout> | undefined;
   /** The bot session the window follows live now. */
   private attached: string | undefined;
@@ -334,12 +337,19 @@ export class MossEngine {
 
   private frame(params: unknown): void {
     const f = params as { stream?: unknown; seq?: unknown; format?: unknown; data?: unknown };
-    const id = typeof f?.stream === "string" ? this.streams.get(f.stream) : undefined;
-    if (id === undefined || typeof f.data !== "string" || typeof f.seq !== "number") return;
+    if (typeof f?.stream !== "string" || typeof f.data !== "string" || typeof f.seq !== "number") return;
     if (f.format !== "jpeg" && f.format !== "png" && f.format !== "webp") return;
     // Inert pixels: a data URL of the declared image type, base64 only.
     if (!/^[A-Za-z0-9+/]+={0,2}$/.test(f.data)) return;
     const url = `data:image/${f.format};base64,${f.data}`;
+    const id = this.streams.get(f.stream);
+    if (id === undefined) {
+      // Before `picture.open`'s answer: the latest one kept for it (a stream nobody opened is dropped with the oldest).
+      this.early.delete(f.stream);
+      this.early.set(f.stream, { stream: f.stream, id: "", seq: f.seq, url });
+      while (this.early.size > 4) this.early.delete(this.early.keys().next().value!);
+      return;
+    }
     for (const l of this.frameListeners) l({ id, seq: f.seq, url });
   }
 
@@ -418,6 +428,9 @@ export class MossEngine {
     const r = await this.read<{ stream: string }>("pictures", "picture.open", { id, maxFps: 10 });
     if (r === undefined) return false;
     this.streams.set(r.stream, id);
+    const first = this.early.get(r.stream);
+    this.early.delete(r.stream);
+    if (first !== undefined) for (const l of this.frameListeners) l({ id, seq: first.seq, url: first.url });
     return true;
   }
 

@@ -29,10 +29,10 @@ const until = async (what: () => boolean, ms = 2_000): Promise<void> => {
   }
 };
 
-async function setup(drop: FakePiece[] = []): Promise<{ e: FakeEngine; client: DaemonClient; engine: MossEngine; sealed: SealedFrames }> {
+async function setup(drop: FakePiece[] = [], still?: { frameMs: number; picturePng: Uint8Array }): Promise<{ e: FakeEngine; client: DaemonClient; engine: MossEngine; sealed: SealedFrames }> {
   const h = mkdtempSync(join(tmpdir(), "ma-"));
   homes.push(h);
-  const e = await startFakeEngine({ home: h, drop });
+  const e = await startFakeEngine({ home: h, drop, ...(still ?? {}) });
   closers.push(() => e.close());
   const client = (await dial(daemonEndpoint(h)))!;
   closers.push(() => client.close());
@@ -115,6 +115,20 @@ describe("a bot's own choices", () => {
     if ("waiting" in rows) throw new Error("waiting");
     expect(rows.map((r) => `${r.pluginId}/${r.key}:${r.type}`)).toEqual(["moss/voice/voice:enum", "moss/voice/silent:boolean"]);
     expect(rows[0]?.options?.[0]).toEqual({ value: "fish:river", title: "River (Fish Audio)" });
+  });
+});
+
+describe("a bot's live picture", () => {
+  test("a still picture's one frame, sent before picture.open's answer, is drawn (the moss unit's empty screen)", async () => {
+    // One frame, published once, and no other for an hour.
+    const { engine } = await setup([], { frameMs: 3_600_000, picturePng: Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=", "base64")) });
+    const pics = await engine.pictures("juniper");
+    if ("waiting" in pics || pics[0] === undefined) throw new Error(`no picture: ${JSON.stringify(pics)}`);
+    const got: string[] = [];
+    engine.onPictureFrame((f) => got.push(f.id));
+    expect(await engine.openPicture(pics[0].id)).toBe(true);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(got).toEqual([pics[0].id]);
   });
 });
 
