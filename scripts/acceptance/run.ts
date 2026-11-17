@@ -1229,8 +1229,15 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
       if (own !== undefined) return own;
       // A card can stand in two places at once (a hidden window's page that was drawn first, and the island's): the page that
       // says it is ready to answer is the one to press; a card whose pages all say no is pressed on the first, as before.
+      // Never the conversation's own frames (`.cl-conv-approval`, as pressOnIsland): a press there is a click in the window,
+      // which a person's click would have focused, and the router (lane RT) takes it only for a card placed in the window.
+      const conv = new Set<string>();
+      for (const d of docs) {
+        const v = await cdp.evaluate(d.session, `JSON.stringify([...document.querySelectorAll('.cl-conv-approval iframe')].map((f) => f.src))`).catch(() => "[]");
+        for (const u of JSON.parse(String(v)) as string[]) conv.add(decodeURIComponent(u));
+      }
       let first: (typeof docs)[number] | undefined;
-      for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`))) {
+      for (const d of docs.filter((x) => decodeURIComponent(x.url).startsWith(`${cardUrl}button:`) && !conv.has(decodeURIComponent(x.url)))) {
         if ((await cdp.evaluate(d.session, "!!document.querySelector('.seal-button[data-kind=approve]:not(.quiet):not([data-remember])')").catch(() => false)) !== true) continue;
         if ((await cdp.evaluate(d.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes") return d;
         first ??= d;
