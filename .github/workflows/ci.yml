@@ -1144,9 +1144,12 @@ jobs:
       # Row 37 counts a hidden page's 100 ms ticks over 3 s (30 on a free machine, about 3 when throttled; the bar is 20): a shared runner
       # can starve the page, so the bar here is 10, still well above a throttled page.
       MOSS_ACCEPT_TICK_MIN: "10"
-      # Every "not within N s" wait of the run takes three times as long (scripts/acceptance/time-scale.ts; a Mac keeps 1): a
-      # shared runner is several times slower than the machine the waits were set on, and its speed moves from run to run.
-      MOSS_ACCEPT_TIME_SCALE: "3"
+      # Every "not within N s" wait of the run takes this many times as long (scripts/acceptance/time-scale.ts; a Mac keeps 1): a
+      # shared runner is several times slower than the machine the waits were set on, and its speed moves from run to run. The
+      # unit's two attempts differ (scripts/ci/acceptance-unit.ts): the first is quick (a first attempt that is going to fail
+      # fails fast, not after 450 s), the retry patient (a slow runner still gets its second chance).
+      MOSS_ACCEPT_TIME_SCALE_ATTEMPT_1: "1.5"
+      MOSS_ACCEPT_TIME_SCALE_ATTEMPT_2: "3"
       # The rows whose bar is a measured CPU share or message rate say "MEASURED ON THE MAC ONLY" instead (scripts/acceptance/measured.ts):
       # a runner's load decides those numbers, so the Mac's merge check measures them.
       MOSS_ACCEPT_MEASURE: "mac-only"
@@ -1198,6 +1201,10 @@ jobs:
     needs: [changes, names, machine, sealed-core, workspaces-pr, packages, installers, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift, acceptance]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    # Reads this run's own artifacts (the acceptance units' retry records) for its summary.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Every job passed, or was not needed
         env:
@@ -1205,6 +1212,28 @@ jobs:
         run: |
           echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null
+
+      # Flakes as data: every acceptance row that passed only on its unit's retry, in one table on this job's summary page, so
+      # which rows keep needing the retry is visible at a glance. (A unit that failed twice fails its own job and is not here.)
+      - name: Acceptance rows that passed on retry
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p retries
+          gh run download "$GITHUB_RUN_ID" -R "$GITHUB_REPOSITORY" --pattern 'acceptance-*' --dir retries || echo "no acceptance artifacts to read"
+          {
+            echo "### Acceptance rows that passed on retry"
+            echo
+            rows="$(for f in retries/*/retry.json; do [ -f "$f" ] || continue
+              jq -r '.unit as $u | ((.rows[] | "| \($u) | \(.n) \(.name[0:100] | gsub("[|\n]"; " ")) | \(.detail[0:220] | gsub("[|\n]"; " ")) |"), (.problems[] | "| \($u) | - | \(.[0:220] | gsub("[|\n]"; " ")) |"))' "$f"
+            done)"
+            if [ -z "$rows" ]; then echo "None: every acceptance unit passed on its first attempt."; else
+              echo "| unit | row | what the first attempt failed on |"
+              echo "|---|---|---|"
+              echo "$rows"
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   # Winter for Chrome's native host (apple/ComputerUse/WinterBrowserHost): framing, the relay, the daemon check (fakes
   # plus the real Security.framework decision against this process), identity. It imports nothing outside the system, so
