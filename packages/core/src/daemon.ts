@@ -4128,7 +4128,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // An uninstalled plugin's tool choices (Settings, Tools) go with it; a stop or a switch-off keeps them.
       try {
         const next = dropPluginServers(loadSettings(dirs.settingsPath), change.id);
-        if (next !== undefined) { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); }
+        if (next !== undefined) { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); toolSettings.noteWritten(next); }
       } catch (err) { console.error(`tool permissions: couldn't clear ${change.id}'s choices: ${(err as Error).message}`); }
     });
     // A bot's own plugin that the crash rules stop tells that bot, once per stop (crash-notice.ts).
@@ -4269,7 +4269,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       onListed: () => {
         try {
           const next = pruneDroppedTools(loadSettings(dirs.settingsPath), pluginMcp?.toolListing() ?? []);
-          if (next !== undefined) { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); }
+          if (next !== undefined) { saveSettings(dirs.settingsPath, next); connectorPermissions.noteWritten(next); toolSettings.noteWritten(next); }
         } catch (err) { console.error(`tool permissions: couldn't drop values for tools no longer listed: ${(err as Error).message}`); }
       },
       ...(stdioMcp !== undefined ? { stdio: stdioMcp } : {}),

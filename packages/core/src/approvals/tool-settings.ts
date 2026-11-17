@@ -46,6 +46,11 @@ export interface EngineToolSettingsDeps {
   emit?(event: ToolSettingsEvent): void;
 }
 
+/** What the tool setting and the permission read of a settings: the part a write changes and a model's list depends on. */
+function slice(settings: Settings | null | undefined): string {
+  return JSON.stringify([(settings?.mcp as Extra | undefined)?.toolAvailability ?? null, connectorPermissionTable(settings)]);
+}
+
 type Extra = { toolsSeen?: Record<string, string[]>; toolsOwner?: Record<string, string>; toolAvailability?: Record<string, unknown> };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -112,17 +117,36 @@ export class EngineToolSettings implements ToolSettings {
   readonly #d: EngineToolSettingsDeps;
   readonly #declared = new Map<string, Record<string, Declared>>();
   readonly #listeners = new Listeners<ToolSettingRow>();
-  /** What a write just saved, read in place of the live settings until the watcher swaps them (the connector source's pattern). */
-  #written: { basis: Settings | null | undefined; settings: Settings } | undefined;
+  /** What a write just saved. It is read in place of the live settings until the live copy HAS CAUGHT UP to it (carries the
+   *  same availability and permissions), not merely until the live copy changes: the watcher's reload of the file as it was a
+   *  moment before the write can land after it, and a turn that started then would be offered the tool as it was before the
+   *  user's press (found on the acceptance row: set on demand, send at once, the model's list still had the old value). */
+  #written: { basis: Settings | null | undefined; settings: Settings; expected: string } | undefined;
 
   constructor(deps: EngineToolSettingsDeps) {
     this.#d = deps;
   }
 
-  /** The live settings: a write's own until the watcher's copy replaces it. */
+  /** The live settings, or what a write of this store (or one told to it by `noteWritten`) saved while the live copy is
+   *  behind it: the live copy is behind when it lacks the write and the FILE still has it (a reload of the file as it was
+   *  before the write landing late). A file someone else has changed since is not ours to stand in for: the live copy then. */
   #now(): Settings | null | undefined {
     const live = this.#d.read();
-    return this.#written !== undefined && this.#written.basis === live ? this.#written.settings : live;
+    const w = this.#written;
+    if (w === undefined) return live;
+    if (live === w.basis) return w.settings;
+    if (slice(live) !== w.expected) {
+      let onDisk: string | undefined;
+      try { onDisk = slice(this.#d.load()); } catch { onDisk = undefined; }
+      if (onDisk === w.expected) return w.settings;
+    }
+    this.#written = undefined;
+    return live;
+  }
+
+  /** A write made elsewhere (a plugin dropped, its tools pruned): the daemon tells the store, which reads it until the live copy has it. */
+  noteWritten(next: Settings): void {
+    this.#written = { basis: this.#d.read(), settings: next, expected: slice(next) };
   }
 
   #servers(): ListedServer[] {
@@ -184,7 +208,7 @@ export class EngineToolSettings implements ToolSettings {
 
   #saved(next: Settings): void {
     this.#d.save(next);
-    this.#written = { basis: this.#d.read(), settings: next };
+    this.noteWritten(next);
   }
 
   setAvailability(server: string, tool: string | undefined, availability: ToolAvailability): void {
