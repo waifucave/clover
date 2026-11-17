@@ -22,9 +22,7 @@ function withBotTab(views: ReturnType<typeof mossViews>): ReturnType<typeof moss
   return views.map((v) => {
     if (v.pluginId !== "moss/shell") return v;
     const ui = v.ui.map((u) => (u.spot === "app.root" ? { ...u, declares: { ...(u.declares as Record<string, unknown>), ...fixture.rootDeclares } } : u));
-    // The shell as it was: it holds user.send now for its page that starts a session (lane MC), which these tests of the
-    // bot tab's documents don't need; one test grants it again on purpose.
-    return { ...v, ui: [...ui, ...fixture.ui], capabilities: [...new Set([...(v.capabilities ?? []).filter((c) => c !== "user.send"), "bots.read", "conversation.read"])] };
+    return { ...v, ui: [...ui, ...fixture.ui], capabilities: [...new Set([...(v.capabilities ?? []), "bots.read", "conversation.read"])] };
   });
 }
 let pid = 100;

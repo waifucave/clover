@@ -141,7 +141,7 @@ describe("the plugin API's gating", () => {
     // `audio` is the frames' autoplay and the device's speech turn (the turns catalog), not an API call either.
     // approvals.all, user.send, overlay and tray gate a window's fields, a hook and a spot (the app checks them), not a call.
     // F2's eight gate the app's door for its parts (tree-calls.ts and the composer spot's), not a plugin-API call.
-    const doorCaps = ["app.settings", "bots.edit", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run"];
+    const doorCaps = ["app.settings", "bots.edit", "plugins.read", "plugins.manage", "tools.permissions", "account.read", "commands.run", "sessions.start"];
     const notCalls = ["approvals.all", "user.send", "overlay", "tray", "project.write", "plugins.watch", "logs.read", "memory.read", "routines.read", "microphone", "audio", ...doorCaps];
     for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:") && !notCalls.includes(c.name)) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
     expect(used.has("plugins.watch")).toBe(false);

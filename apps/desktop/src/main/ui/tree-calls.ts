@@ -41,6 +41,7 @@ export const TOOLS_PERMISSIONS = "tools.permissions";
 export const ACCOUNT_READ = "account.read";
 export const COMMANDS_RUN = "commands.run";
 export const USER_SEND = "user.send";
+export const SESSIONS_START = "sessions.start";
 export const SESSIONS_READ = "sessions.read";
 
 export interface TreeCall {
@@ -83,7 +84,7 @@ export type PickUse = "plugin.install" | "plugin.dev.add" | "agent.start";
 const PICK_USES: Readonly<Record<string, readonly PickUse[]>> = {
   [PLUGINS_MANAGE]: ["plugin.install", "plugin.dev.add"],
   // A new session's folder (spec §9.4): the person picks it in main's own dialog; the page holds only the token.
-  [USER_SEND]: ["agent.start"],
+  [SESSIONS_START]: ["agent.start"],
 };
 
 /** A `plugin.settings.*` call that names a bot, from a holder of `bots.edit`, is a bot's Edit page's (its own bot's
@@ -139,7 +140,7 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // A new session (spec §9.4): the coding agents plugins bring, with what this computer has; and starting one, the
   // person's own press, in a folder they picked in main's dialog (a pick token, `agentStart`), with no prompt.
   "agent.backends": read(SESSIONS_READ),
-  "agent.start": press(USER_SEND),
+  "agent.start": press(SESSIONS_START),
   "plugin.logs": read("logs.read"),
   // Settings' Tools tab: what each plugin tool may do and the card rules saved for one bot. A value decides whether a
   // card is raised at all, so setting one or taking one back is the user's own press.
@@ -717,7 +718,7 @@ async function pick(r: TreeRoute, part: string, c: TreeCaller): Promise<{ token:
   // The uses the part's plugin's capabilities give (`PICK_USES`), never its id.
   const allowed = Object.entries(PICK_USES).flatMap(([cap, uses]) => (holds(c.capabilities, cap) ? uses : []));
   const use = allowed.find((u) => u === p.use);
-  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage or user.send capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
+  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage or sessions.start capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
   const filters = Array.isArray(p.filters)
     ? p.filters.slice(0, 8).flatMap((f: unknown) => {
       const x = (f ?? {}) as { name?: unknown; extensions?: unknown };

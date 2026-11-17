@@ -1,7 +1,7 @@
 // A new session (spec §9.4): the person picks a coding agent, any installed one (an `agentBackends` entry a plugin
 // brings, MOSS's own `moss-code` among them), and a folder in their own computer's home, and starts it; the window then
 // shows its live tab. The folder is chosen in the app's own dialog (`ui.pick`, use `agent.start`): the page holds only a
-// token and the folder's name, never a path; `agent.start` is the person's press (`user.send`, one call per press).
+// token and the folder's name, never a path; `agent.start` is the person's press (`sessions.start`, one call per press).
 import { useCore } from "@waifucave/moss-plugin-sdk/ui";
 import { useEffect, useState } from "react";
 import { plain } from "./local";

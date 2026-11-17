@@ -17,7 +17,7 @@
     "computers.read",
     "sessions.read",
     "account.read",
-    "user.send"
+    "sessions.start"
   ],
   "contributes": {
     "ui": [
