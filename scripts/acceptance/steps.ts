@@ -30,6 +30,7 @@ import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from ".
 import { BROWSER_STEP } from "./browser-step";
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 import { BOT_RECORDS_STEP } from "./bot-records-step";
+import { MOSS_STEPS } from "./moss-step";
 
 export type Status = "PASS" | "FAIL" | "BLOCKED";
 /** Stage 2 of "bots ask less": its name, which its number is looked up by (it sits before the three web steps, whose
@@ -124,6 +125,8 @@ export const FULL_STEPS = [
   ROUTER_STEP,
   RELEASE_BEHIND_STEP,
   RELEASE_AHEAD_STEP,
+  // Lane MA's rows: MOSS, the bots app, on the real engine (the `moss` unit).
+  ...MOSS_STEPS,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;

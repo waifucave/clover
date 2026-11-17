@@ -25,6 +25,9 @@
 //   shard's keyed daemon with no app; and the reopen steps, which start
 //   their own daemons and apps on the home in order, with step 4's fixture plugin installed and OK'd first in their
 //   shard (the mid-tool-call step calls its Echo tool: a first sharded run without it found no Echo tool).
+//   `moss`: MOSS, the bots app (apps/moss), from source over a keyed engine with the bots as engine data, its rows in its
+//   own window (moss-step.ts); alone in its run its home is fresh, beside other units it runs last, on a daemon restarted
+//   with the records as the bots' source.
 //   Everything else stays in `main`: what reads step 4's plugin or the first daemon's state (the API areas row, the
 //   host API, plugin CLI and index/npm rows, the agent row and its plugin-tool probes), and the workshop's own steps.
 // * Measuring units, serial after the parallel phase: the stage row (its narrow-window readings: a card's timing and
@@ -56,8 +59,9 @@ import { BROWSER_STEP } from "./browser-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 import { RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP } from "./release-step";
+import { MOSS_STEPS } from "./moss-step";
 
-export type UnitId = "main" | "chain" | "window-1" | "window-2" | "window-3" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "release" | "browser" | "plugin-app" | "models" | "stage" | "tab-flash" | "cold" | "idle";
+export type UnitId = "main" | "chain" | "window-1" | "window-2" | "window-3" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "release" | "browser" | "plugin-app" | "models" | "moss" | "stage" | "tab-flash" | "cold" | "idle";
 
 export interface Unit {
   id: UnitId;
@@ -107,6 +111,8 @@ const OTHERS: readonly Unit[] = [
   { id: "plugin-app", rows: [CHILD_STEP, NOTIFY_STEP, LISTEN_STEP, WEB_STEP, DRAG_STEP, REVIEW_STEP, SURFACE_COPY_STEP, CONVERSATION_COPY_STEP, STAGE_COPY_STEP], phase: "parallel", estimate: 330 },
   { id: "browser", rows: [BROWSER_STEP], phase: "parallel", estimate: 60 },
   { id: "models", rows: [CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP, OAUTH_SIGN_IN_STEP, SCHEDULED_ROUTINE_STEP], phase: "parallel", estimate: 90 },
+  // MOSS, the bots app (moss-step.ts): its own app from source over the shard's engine, the bots as engine data.
+  { id: "moss", rows: MOSS_STEPS, phase: "parallel", estimate: 240 },
   { id: "stage", rows: [STAGE_STEP], phase: "serial", estimate: 125 },
   { id: "tab-flash", rows: [TAB_FLASH_STEP], phase: "serial", estimate: 105 },
   { id: "cold", rows: [COLD_START_STEP], phase: "serial", estimate: 16 },

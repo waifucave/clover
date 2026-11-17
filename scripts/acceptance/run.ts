@@ -94,6 +94,7 @@ import { BUILDER_EXAMPLES_STEP, builderExamplesStep } from "./builder-examples-s
 import { WORKSHOP_POINTS_STEP, workshopPointsStep } from "./workshop-points-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { BOT_RECORDS_ENV, BOT_RECORDS_STEP, botRecordsWrong } from "./bot-records-step";
+import { MOSS_ENV, MOSS_STEPS, mossUnit } from "./moss-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
@@ -136,6 +137,8 @@ import { scaled } from "./time-scale";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
+/** MOSS, the bots app (the `moss` unit, moss-step.ts). */
+const MOSS_APP = join(REPO, "apps", "moss");
 
 // ── arguments ────────────────────────────────────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -191,6 +194,8 @@ const shardUnits = unitsAsked === undefined ? undefined : expandUnitIds(unitsAsk
 // run that holds other rows in the same app keeps the layer's own minute (a row there may count on a frame staying awake).
 const tabFlashAlone = tabFlashOnly || (shardUnits !== undefined && shardUnits.length === 1 && shardUnits[0] === "tab-flash");
 const runs = (u: UnitId | undefined): boolean => shardUnits === undefined || (u !== undefined && shardUnits.includes(u));
+/** A run of the `moss` unit alone: MOSS Code's window isn't built (its rows drive MOSS's own window only). */
+const mossOnly = shardUnits !== undefined && shardUnits.length > 0 && shardUnits.every((u) => u === "moss");
 // --no-build: the desktop app is the one apps/desktop/out already holds (the sharded run built it once for its shards).
 const noBuild = argv.includes("--no-build");
 // --rows-out <file>: the run's rows, with their seconds, as JSON (the sharded run merges its shards' files).
@@ -1767,7 +1772,7 @@ async function main(): Promise<void> {
   try {
     if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
     // The code-adapter row alone drives no window: its clause runs over the app's methods, so no app is built.
-    app = appless ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
+    app = appless || mossOnly ? { exe: "", args: [] } : target === "source" ? sourceApp() : packagedApp(appBundle!);
   } catch (err) {
     for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
     return;
@@ -3181,6 +3186,73 @@ async function main(): Promise<void> {
     if (keepState !== undefined) record(stepNumber(FULL_STEPS, BOT_RECORDS_STEP), "PASS", "not run: a --keep-state run keeps the home as today's bots left it (run it with --only-bot-records)");
     else await botRecordsStep(false);
   }
+  // MOSS, the bots app, after that: its own daemon on the home, the records as the bots' source (moss-step.ts).
+  if (runs("moss")) {
+    if (keepState !== undefined) for (const name of MOSS_STEPS) record(stepNumber(FULL_STEPS, name), "PASS", "not run: a --keep-state run keeps the home as today's bots left it (run it with --units moss)");
+    else await mossRun(false);
+  }
+}
+
+/** MOSS built from this checkout as a test build (apps/moss/scripts/build.ts --test-build: its acceptance seams compiled
+ *  in), once a run; and its Electron. Never from a packaged bundle: MOSS has none yet. */
+let mossBuilt = false;
+function mossApp(): { exe: string; args: string[] } {
+  if (!noBuild && !mossBuilt) {
+    console.error("acceptance: building apps/moss from this checkout (a test build)");
+    const heavy = join(REPO, "scripts", "heavy");
+    const r = spawnSync(existsSync(heavy) ? heavy : process.execPath, existsSync(heavy) ? [process.execPath, "run", "scripts/build.ts", "--test-build"] : ["run", "scripts/build.ts", "--test-build"], { cwd: MOSS_APP, encoding: "utf8", timeout: 600_000 });
+    writeFileSync(join(logs, "moss-build.log"), `${r.stdout ?? ""}${r.stderr ?? ""}`);
+    if (r.status !== 0) throw new Error("building apps/moss failed (logs/moss-build.log)");
+    mossBuilt = true;
+  }
+  if (!existsSync(join(MOSS_APP, "out", "main", "index.js"))) throw new Error("apps/moss/out has no build (run without --no-build once)");
+  const req = createRequire(join(MOSS_APP, "package.json"));
+  const pkgDir = dirname(req.resolve("electron/package.json"));
+  if (!existsSync(join(pkgDir, "path.txt"))) {
+    const r = spawnSync(process.execPath, [join(pkgDir, "install.js")], { cwd: pkgDir, encoding: "utf8", timeout: 600_000 });
+    if (r.status !== 0 || !existsSync(join(pkgDir, "path.txt"))) throw new Error(`electron's install.js failed: ${(r.stderr ?? "").trim().slice(0, 300)}`);
+  }
+  return { exe: join(pkgDir, "dist", readFileSync(join(pkgDir, "path.txt"), "utf8").trim()), args: [MOSS_APP] };
+}
+
+/** The `moss` unit: a daemon with the records as the bots' source (`fresh`: the home is new, so this is its first
+ *  daemon; otherwise the one before is ended first and the home's bots move), the dummy key, then MOSS over it and its
+ *  rows (moss-step.ts). Source target only. */
+async function mossRun(fresh: boolean): Promise<void> {
+  if (target !== "source") {
+    for (const name of MOSS_STEPS) record(stepNumber(FULL_STEPS, name), "BLOCKED", "the moss unit runs MOSS from source: a packaged run has no MOSS bundle yet");
+    return;
+  }
+  let daemon: { proc: ChildProcess; log: string } | undefined;
+  try {
+    if (!fresh && lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
+    stoppingDaemon = false;
+    daemon = await startDaemonProc({ ...MOSS_ENV });
+    const c = (await appDriver()).client;
+    try {
+      await signInKey(c);
+      await keyedSession(c).catch(() => undefined);
+    } finally {
+      c.close();
+    }
+  } catch (err) {
+    MOSS_STEPS.forEach((name, i) => record(stepNumber(FULL_STEPS, name), i === 0 ? statusOf(err) : "BLOCKED", i === 0 ? `the moss unit's setup: ${why(err)}` : "setup failed"));
+    return;
+  }
+  await mossUnit({
+    root, home, userHome, logs, fake: fake!,
+    env: baseEnv, startChild, endChild: (p) => endChild(p), alive, until, fail, readLog,
+    driver: appDriver,
+    helloAs: async (extra) => {
+      const d = await hello(join(home, "run", "core.sock"), "app", readFileSync(join(home, "run", "app.token"), "utf8").trim(), "moss-acceptance-other", MOSS_PROTOCOL_VERSION, extra);
+      clients.push(d.client);
+      return d;
+    },
+    freePort, mossApp,
+    record: (name, status, detail) => record(stepNumber(FULL_STEPS, name), status, detail),
+    statusOf, why,
+  });
+  void daemon;
 }
 
 /** The bots-as-engine-data row (bot-records-step.ts): the daemon before it ended, one started with records as the bots'
@@ -3246,7 +3318,7 @@ async function orchestrate(): Promise<void> {
   const t0 = Date.now();
   console.error(`acceptance: ${shards} shards (${plan.map((ids, i) => `s${i + 1}: ${ids.join(", ")}`).join("; ")}), then alone: ${serial.join(", ")}`);
   if (target === "source") {
-    try { sourceApp(); } catch (err) { for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed"); return; }
+    try { sourceApp(); if (plan.some((ids) => ids.includes("moss"))) mossApp(); } catch (err) { for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed"); return; }
   }
   const builtAt = Date.now();
   const base = [import.meta.path, ...(appBundle !== undefined ? ["--app", appBundle] : []), "--no-build", ...(verbose ? ["--verbose"] : []), ...(skipWebTurns ? ["--skip-web-turns"] : []), ...(pressing ? [] : ["--no-press"])];
@@ -3349,7 +3421,15 @@ async function keyedSession(c: MossClient): Promise<string> {
  *  app over it drives (the examples, the bundled tools, the cards, the workshop, the tab flash), then the ones that run
  *  their own daemons and apps, in the full run's order (the cold start, the reopen steps, the stage's levels, idle). The
  *  reopen steps get step 4's fixture plugin first, installed and OK'd over RPC (the mid-tool-call one calls its tool). */
-async function unitsRun(app: { exe: string; args: string[] }, ids: readonly UnitId[]): Promise<void> {
+async function unitsRun(app: { exe: string; args: string[] }, allIds: readonly UnitId[]): Promise<void> {
+  // The moss unit alone: its daemon is the home's first, with the records as the bots' source. Beside other units it runs
+  // after them (mossRun ends their daemon and starts its own on the home).
+  if (allIds.length === 1 && allIds[0] === "moss") return mossRun(true);
+  await otherUnitsRun(app, allIds.filter((id) => id !== "moss"));
+  if (allIds.includes("moss")) await mossRun(false);
+}
+
+async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly UnitId[]): Promise<void> {
   const mine = allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
   const windowIds = ids.filter((id) => windowIndexes(id) !== undefined);
   let windowSetup: string | undefined;
