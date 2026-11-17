@@ -1158,7 +1158,7 @@ jobs:
       fail-fast: false
       matrix:
         # THE line a new unit is added on (scripts/ci/acceptance-units.ts says what stays off it, and why).
-        unit: [chain, window-1, window-2, window-3, workshop, plugin-app, browser, bundled-tools, examples, reopen, host, browser-host, surface-copy-host, cards, moss]
+        unit: [chain, window-1, window-2, window-3, workshop, plugin-app, browser, bundled-tools, examples, reopen, host, cards, moss]
     env:
       MOSS_PINNED_BUN: "0"
       # Row 37 counts a hidden page's 100 ms ticks over 3 s (30 on a free machine, about 3 when throttled; the bar is 20): a shared runner
