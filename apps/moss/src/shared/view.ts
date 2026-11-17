@@ -75,8 +75,9 @@ export interface RoutineRow {
 
 export interface PictureRow {
   id: string;
-  /** The plugin that publishes it, shown beside the picture. */
+  /** The plugin that publishes it (its id, shown beside the picture), and its name when the engine lists it. */
   publisher: string;
+  publisherName?: string;
   tool?: string;
   width: number;
   height: number;

@@ -82,9 +82,9 @@ export const SCENES: readonly Scene[] = [
   { name: "settings", go: { page: "settings" } },
   // Lane MA2's pages (the side panel, Plugins, Settings), written as `ma2-<scene>-<theme>-<size>.png`.
   { name: "ma2-panel", go: { bot: "juniper", panel: true } },
-  { name: "ma2-plugins", go: { page: "plugins" } },
-  { name: "ma2-settings-account", go: { page: "settings" } },
-  { name: "ma2-settings-bot", go: { page: "settings", bot: "juniper" } },
+  { name: "ma2-plugins", go: { page: "plugins", strip: false } },
+  { name: "ma2-settings-account", go: { page: "settings", strip: false } },
+  { name: "ma2-settings-bot", go: { page: "settings", bot: "juniper", strip: false } },
 ];
 
 /** The file a scene's picture goes to. */

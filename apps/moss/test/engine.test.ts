@@ -133,6 +133,7 @@ describe("the pages' data (Plugins, Settings, a bot's Edit view)", () => {
     expect(await engine.editBot("juniper", { model: "anthropic/claude-haiku" })).toBe(true);
     expect(await engine.botRecord("juniper")).toMatchObject({ model: "anthropic/claude-haiku" });
     expect(await engine.signIn("fish-audio", 0, "dummy-key")).toEqual({ state: "signed-in" });
+    expect(await engine.pictures("juniper")).toEqual([]);
   });
 });
 

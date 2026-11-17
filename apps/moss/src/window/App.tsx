@@ -34,6 +34,8 @@ export function App() {
   const [panel, setPanel] = useState(false);
   /** The bot whose own choices Settings opens on (the side panel's settings button), if any. */
   const [settingsBot, setSettingsBot] = useState<string | undefined>(undefined);
+  /** The test build's renders may draw a page without the strip, so the page itself shows whole. */
+  const [stripShown, setStripShown] = useState(true);
   const [, setTick] = useState(0);
   useEffect(() => {
     void bridge().view().then(setView);
@@ -54,8 +56,9 @@ export function App() {
   if (typeof __MOSS_TEST_BUILD__ === "string") {
     // The test build's hook for the UI test and the renders: open a bot, its panel or a page, and hold the faces still.
     (window as unknown as { __mossTest: unknown }).__mossTest = {
-      go: (g: { bot?: string; panel?: boolean; page?: "plugins" | "settings"; calm?: boolean }) => {
+      go: (g: { bot?: string; panel?: boolean; page?: "plugins" | "settings"; calm?: boolean; strip?: boolean }) => {
         if (g.calm !== undefined) faceMotion.calm = g.calm;
+        setStripShown(g.strip !== false);
         if (g.page !== undefined) { setSettingsBot(g.page === "settings" ? g.bot : undefined); setPage({ page: g.page }); }
         else if (g.bot !== undefined && g.bot !== "") setPage({ bot: g.bot });
         if (g.panel !== undefined) setPanel(g.panel);
@@ -67,7 +70,7 @@ export function App() {
   const inConversation = bot === undefined ? [] : view.cards.filter((c) => c.place === "conversation" && c.bot === bot.id);
   // The strip: every card the router placed in this window that this conversation doesn't draw.
   const stripCards = view.cards.filter((c) => !inConversation.includes(c));
-  const strip = <Strip cards={stripCards} botName={(id) => names.get(id)} onOpen={(id) => setPage({ bot: id })} />;
+  const strip = !stripShown ? null : <Strip cards={stripCards} botName={(id) => names.get(id)} onOpen={(id) => setPage({ bot: id })} />;
   const banner = CONNECTION_WORDS[view.connection.kind];
   return (
     <div className={`window${bot !== undefined && panel ? " has-panel" : ""}`}>
