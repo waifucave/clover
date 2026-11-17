@@ -200,10 +200,14 @@ export const APP_EVENT_AREAS: readonly string[] = ["plugins", "app", "approvals"
  *  offer, raised at once on a fresh home) fell between the list's answer and the subscription, told to no connection.
  *  Subscribed first, a card raised after the subscription is told as `card_requested`, and one raised before the list's
  *  answer is in the list (a card in both is the caller's to take once). */
-export async function subscribeThenListCards(client: { request<T>(method: string, params?: unknown): Promise<T> }, waiting: (card: unknown) => void): Promise<void> {
+export async function subscribeThenListCards(client: { request<T>(method: string, params?: unknown): Promise<T> }, waiting: (card: unknown) => void): Promise<string[] | undefined> {
   await client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] }).catch(() => undefined);
   const listed = await client.request<unknown>("card.list").catch(() => undefined);
-  for (const c of (listed as { cards?: unknown[] } | undefined)?.cards ?? []) waiting(c);
+  const cards = (listed as { cards?: unknown[] } | undefined)?.cards;
+  for (const c of cards ?? []) waiting(c);
+  // lane HS (the reviewer's S): the ids the engine still holds, for the caller to drop what it no longer does; none when the
+  // list wasn't read (nothing is dropped on a failed read).
+  return Array.isArray(cards) ? cards.map((c) => String((c as { id?: unknown } | null)?.id ?? "")).filter((id) => id !== "") : undefined;
 }
 
 /** The engine's placements as this program heard them (lane RT, §3.5): the last word on each card wins. A `card_placed` event

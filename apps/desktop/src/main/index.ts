@@ -58,8 +58,8 @@ import { AppTray } from "./tray";
 // lane HS: start
 import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostProfileAndHome, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
 import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
-import { fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
-import { overlayStandsDown, surfacesReport } from "./host-stacking";
+import { fallbackHere as fallbackHereOf, fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
+import { drawerExempt, overlayStandsDown, surfacesReport } from "./host-stacking";
 import { RemoteViews } from "./browser/remote-view";
 import { streamCommandOf } from "./browser/stream-command";
 import { electronRemoteViewport } from "./browser/remote-viewport";
@@ -595,7 +595,7 @@ async function ready(): Promise<void> {
         : sealed.elementOf(token) === OWN_ELEMENT ? "fallback" : "window";
       const placed = cardOfPress === undefined ? undefined : enginePlaces.get(cardOfPress);
       // lane HS (B1): the app's own card takes a press only in the program the placement names.
-      if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) }) || (source === "fallback" && !fallbackMayDraw(placed, { drawsIsland: mountNow.surfaces, hasWindow: mountNow.mainWindow }))) {
+      if (!pressMayBeTaken({ from: source, placed, front: mainWindowFront(mainState()) }) || (source === "fallback" && !fallbackMayDraw(placed, fallbackHereOf(mountNow, hostGaveUp)))) {
         log(`sealed: answer refused (a press ${source === "island" ? "on the island" : "in the window"} for a card the router placed ${placed?.kind === "island" ? "on the island" : "in the window"})`);
         return { accepted: false, reason: placed?.kind === "island" ? "this card is on the island now" : "this card is in MOSS's window now" };
       }
@@ -1185,7 +1185,12 @@ const stoodDown = new Set<string>();
 /** Every surface follows the stacking rule again (a card came, was answered, or its own card showed or went). */
 function restack(): void {
   for (const s of surfaces.values()) applyVisibility(s);
+  // lane HS (the reviewer's S): decided again at the earliest expiry, when a card stops being pending with no event.
+  clearTimeout(expiryRestack);
+  const next = sealed.nextExpiry();
+  if (next !== undefined) { expiryRestack = setTimeout(restack, Math.min(Math.max(0, next - Date.now()) + 50, 2 ** 31 - 1)); expiryRestack.unref?.(); }
 }
+let expiryRestack: ReturnType<typeof setTimeout> | undefined;
 let surfacesTimer: ReturnType<typeof setTimeout> | undefined;
 let lastSurfaces = "";
 function scheduleSurfacesReport(): void {
@@ -1349,7 +1354,18 @@ function makePair(): Pair {
       void refreshBotNames(client);
       // The engine's placements are this connection's from its first subscription (it tells each card's place then, lane RT).
       enginePlaces.follow(client);
-      void subscribeThenListCards(client, cardWaitingAtConnect);
+      // lane HS (the reviewer's S): a card resolved while the connection was down is dropped once the list says so, and the
+      // third-party parts are decided again (they stood down for it).
+      const knownBefore = sealed.pendingIds();
+      void subscribeThenListCards(client, cardWaitingAtConnect).then((listed) => {
+        if (listed === undefined) return;
+        const gone = sealed.dropUnlisted(knownBefore, listed);
+        if (gone.length === 0) return;
+        for (const id of gone) { enginePlaces.delete(id); disarmFallback(id); heldOffFallbacks.delete(id); cardArrived.delete(id); cardPlaces.delete(id); windowDraws.delete(id); }
+        log(`card: ${gone.length} card(s) resolved while the connection was down, dropped`);
+        if (program === "host") tellSurfaces();
+        restack();
+      });
       // lane HS: once the registry is in, the mount applies; the host then says it is up.
       return loadRegistry(client).then(() => mounted(client, hello));
     },
@@ -1524,7 +1540,7 @@ const tabFrames = new TabFrameSender((params) => pair?.client?.request("host.tab
 const heldOffFallbacks = new Set<string>();
 /** Whether this program keeps its own fallback card for a card (B1), from the router's placement and what it draws. */
 function fallbackHere(cardId: string): boolean {
-  return fallbackMayDraw(enginePlaces.get(cardId), { drawsIsland: mountNow.surfaces, hasWindow: mountNow.mainWindow });
+  return fallbackMayDraw(enginePlaces.get(cardId), fallbackHereOf(mountNow, hostGaveUp));
 }
 
 function hostDeps(): HostRuntimeDeps {
@@ -1598,6 +1614,8 @@ function hostStatusHeard(params: unknown): void {
   hostStateNow = p.state as HostState;
   hostGaveUp = p.state === "absent" && p.gaveUp === true;
   applyMount();
+  // B2 (never nowhere): a fallback held off for a card on the island is this window's again once nothing draws the island.
+  for (const id of [...heldOffFallbacks]) if (sealed.isPending(id) && fallbackHere(id) && heldOffFallbacks.delete(id)) void armFallback(id);
   if (!hostGaveUp) { hostDownNoticed = false; return; }
   if (hostDownNoticed || program !== "code") return;
   hostDownNoticed = true;
@@ -2326,7 +2344,7 @@ function applyVisibility(s: Surface): void {
   if (s.win.isDestroyed()) return;
   // lane HS (R12): a plugin's overlay stands down while a card is pending here, so nothing it draws is over a sealed button
   // (decided, and said, whether or not the part has asked to show yet).
-  const down = overlayStandsDown(s, sealed.anyPending(), sealed.holdsPending(s.win.id));
+  const down = overlayStandsDown(s, sealed.anyPending(), drawerExempt(s, sealed.pendingHeldIn(s.win.id), (id) => enginePlaces.get(id)?.kind === "island", (id) => runtime?.cardSurfaceMayDraw?.(id) !== false));
   if (down !== stoodDown.has(s.ref)) {
     if (down) stoodDown.add(s.ref); else stoodDown.delete(s.ref);
     log(`surface: ${s.ref} ${down ? "hidden while a card is pending (a plugin's on-screen part)" : sealed.anyPending() ? "back (it draws the pending card)" : "back (no card pending here)"}`);

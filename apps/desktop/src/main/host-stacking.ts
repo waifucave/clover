@@ -20,6 +20,15 @@ export function overlayStandsDown(surface: { pluginId: string }, cardPending: bo
   return cardPending && surface.pluginId !== TREE_PLUGIN && !holdsCard;
 }
 
+/** Whether a surface is the island's drawer for a pending card it holds, and so not stood down (the controller's ruling; the
+ *  reviewer's B1): it is the island drawer (`cards`: the plugin holds `approvals.all` and the surface declares `window.cards`),
+ *  and it holds a sealed frame of a pending card the ROUTER placed on this program's island that it may draw now
+ *  (`mayDraw`: `cardSurfaceMayDraw`). A part with plain `approvals` that minted frames of its own bot's card is no drawer: it
+ *  stands down while any card is pending, its own included (that card is drawn where the router placed it). */
+export function drawerExempt(surface: { cards: boolean }, heldCards: readonly string[], placedOnIsland: (cardId: string) => boolean, mayDraw: (cardId: string) => boolean): boolean {
+  return surface.cards && heldCards.some((id) => placedOnIsland(id) && mayDraw(id));
+}
+
 /** The surfaces on the screen now as the engine keeps them: visible ones only, at most the protocol's 64. */
 export function surfacesReport(wins: readonly { id: string; visible: boolean; bounds: { x: number; y: number; width: number; height: number } }[]): MossWindow[] {
   return wins.filter((w) => w.visible).slice(0, 64).map((w) => ({ id: w.id.slice(0, 128), x: w.bounds.x, y: w.bounds.y, width: Math.max(0, w.bounds.width), height: Math.max(0, w.bounds.height) }));

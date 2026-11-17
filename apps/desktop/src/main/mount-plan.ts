@@ -51,6 +51,13 @@ export function mountPlan(program: DesktopProgram, mount: MountList | undefined,
   };
 }
 
+/** What this process is for `fallbackMayDraw` (the reviewer's B2, "never nowhere"): it draws the island's cards when it mounts
+ *  the screen's surfaces, and a window does too when the engine gave up on the host (no island anywhere: the router still
+ *  places a card `island` or `elsewhere` with no window focused, and the window's fallback card is then the one place). */
+export function fallbackHere(plan: Pick<MountPlan, "surfaces" | "mainWindow">, gaveUp: boolean): { drawsIsland: boolean; hasWindow: boolean } {
+  return { drawsIsland: plan.surfaces || (plan.mainWindow && gaveUp), hasWindow: plan.mainWindow };
+}
+
 /** Whether this process may arm and draw its own fallback card for a card the router placed so (the reviewer's B1): one
  *  card is drawn in one place. The program that draws the island (the host, or a window with no host) for a card on the
  *  island or with no surface; MOSS Code's window for a card in its conversation or its strip; either while no placement

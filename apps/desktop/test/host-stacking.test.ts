@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { overlayStandsDown, surfacesReport } from "../src/main/host-stacking";
+import { drawerExempt, overlayStandsDown, surfacesReport } from "../src/main/host-stacking";
 import { SealedFrames } from "../src/main/sealed";
 
 test("R12: while any card is pending every third-party on-screen part stands down, floating or not; the tree's never does", () => {
@@ -35,30 +35,91 @@ test("R12 across programs: a card placed in MOSS Code's window or MOSS's hides t
   }
 });
 
-// The controller's ruling (raised by lane RT, row 65): a third-party copy of the island that draws a pending card is that
-// card's drawer and is not hidden for it; every OTHER third-party on-screen part stands down, a part that claims the island's
-// point and holds no frames among them.
-test("R12: the surface holding a pending card's sealed frames is its drawer and stays; any other third-party part is hidden", () => {
+// The controller's ruling (raised by lane RT, row 65), with the reviewer's B1: only the island's drawer (approvals.all and
+// window.cards), holding a frame of a card the router placed on this program's island that it may draw, is not stood down.
+const card = (id: string) => ({ id, kind: "tool", hash: "h", options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }], fields: {}, issuedAt: 1, expiresAt: null });
+function world() {
   const store = new SealedFrames(() => 1_000);
-  const copyIsland = { pluginId: "acme-island", windowId: 7 };
-  const otherPart = { pluginId: "acme-overlay", windowId: 8 };
-  const claimsIslandNoFrames = { pluginId: "acme-island-two", windowId: 9 };
-  const down = (s: { pluginId: string; windowId: number }) => overlayStandsDown(s, store.anyPending(), store.holdsPending(s.windowId));
-  store.fromCore({ id: "card_ok", kind: "plugin-ok", hash: "h", options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }], fields: {}, issuedAt: 1, expiresAt: null });
-  // As the card arrives, before any frame is asked for: every third-party part stands down, the copy island too.
-  expect([down(copyIsland), down(otherPart), down(claimsIslandNoFrames)]).toEqual([true, true, true]);
-  // The copy island asks for the card's frames (it is the drawer): it comes back; the others stay hidden.
-  expect(store.mint("card_ok", "button:approve", undefined, copyIsland.windowId)).toBeDefined();
-  store.mint("card_ok", "button:deny", undefined, copyIsland.windowId);
-  expect([down(copyIsland), down(otherPart), down(claimsIslandNoFrames)]).toEqual([false, true, true]);
-  // Another card pending elsewhere (MOSS Code's window draws it): the drawer of the first stays, only while it holds that card.
-  store.fromCore({ id: "card_tool", kind: "tool", hash: "h", options: [{ id: "approve", kind: "approve" }, { id: "deny", kind: "deny" }], fields: {}, issuedAt: 1, expiresAt: null });
-  store.mint("card_tool", "button:approve", undefined, 100);
-  expect([down(copyIsland), down(otherPart)]).toEqual([false, true]);
-  store.resolvedOutcome("card_ok", "approved");
-  expect([down(copyIsland), down(otherPart)]).toEqual([true, true]);
-  store.resolvedOutcome("card_tool", "denied");
-  expect([down(copyIsland), down(otherPart), down(claimsIslandNoFrames)]).toEqual([false, false, false]);
-  // The bundled tree's own surfaces never stand down.
+  const placed = new Map<string, string>();
+  const down = (s: { pluginId: string; cards: boolean; windowId: number }) => overlayStandsDown(s, store.anyPending(), drawerExempt(s, store.pendingHeldIn(s.windowId), (id) => placed.get(id) === "island", (id) => placed.get(id) === "island"));
+  return { store, placed, down };
+}
+const copyIsland = { pluginId: "acme-island", cards: true, windowId: 7 };
+const otherPart = { pluginId: "acme-overlay", cards: false, windowId: 8 };
+
+test("R12: the copy island, the island's drawer, stays while it holds a frame of the card placed on the island; other parts stand down", () => {
+  const w = world();
+  w.store.fromCore(card("card_ok"));
+  w.placed.set("card_ok", "island");
+  expect([w.down(copyIsland), w.down(otherPart)]).toEqual([true, true]);
+  w.store.mint("card_ok", "button:approve", undefined, copyIsland.windowId);
+  expect([w.down(copyIsland), w.down(otherPart)]).toEqual([false, true]);
+  w.store.resolvedOutcome("card_ok", "approved");
+  expect([w.down(copyIsland), w.down(otherPart)]).toEqual([false, false]);
   expect(overlayStandsDown({ pluginId: "moss" }, true, false)).toBe(false);
+});
+
+test("B1: a part with plain approvals that mints frames of its own bot's card is no drawer: hidden while the island holds another card", () => {
+  const w = world();
+  const botPart = { pluginId: "acme-bot", cards: false, windowId: 9 };
+  w.store.fromCore(card("card_island"));
+  w.placed.set("card_island", "island");
+  w.store.fromCore({ ...card("card_bot"), bot: "acme-bot" });
+  w.placed.set("card_bot", "strip");
+  w.store.mint("card_bot", "button:approve", undefined, botPart.windowId);
+  w.store.mint("card_bot", "button:deny", undefined, botPart.windowId);
+  expect(w.down(botPart)).toBe(true);
+  // Even its own card placed on the island does not make it the drawer: it declares no window.cards (or lacks approvals.all).
+  w.placed.set("card_bot", "island");
+  expect(w.down(botPart)).toBe(true);
+});
+
+test("B1: two cards in two places: only the island-placed card's drawer is exempt, and a drawer holding only a card placed elsewhere is not", () => {
+  const w = world();
+  w.store.fromCore(card("card_a"));
+  w.store.fromCore(card("card_b"));
+  w.placed.set("card_a", "island");
+  w.placed.set("card_b", "conversation");
+  const otherDrawer = { pluginId: "acme-island-two", cards: true, windowId: 11 };
+  w.store.mint("card_b", "button:approve", undefined, otherDrawer.windowId);
+  expect(w.down(otherDrawer)).toBe(true);
+  w.store.mint("card_a", "button:approve", undefined, copyIsland.windowId);
+  expect([w.down(copyIsland), w.down(otherDrawer)]).toEqual([false, true]);
+  // card_a moves to the window: the copy island holds no island-placed card any more and stands down too.
+  w.placed.set("card_a", "strip");
+  expect(w.down(copyIsland)).toBe(true);
+});
+
+test("S: a card resolved while the connection was down is dropped after the reconnect's list, and the parts come back", () => {
+  const w = world();
+  w.store.fromCore(card("card_gone"));
+  w.placed.set("card_gone", "island");
+  expect(w.down(otherPart)).toBe(true);
+  // The socket dropped; the card was answered elsewhere meanwhile (its card_resolved reached no one). On the reconnect:
+  const before = w.store.pendingIds();
+  // A card raised during the connect (heard before the list's answer was handled) is not in `before`: never dropped.
+  w.store.fromCore(card("card_new"));
+  expect(w.store.dropUnlisted(before, [])).toEqual(["card_gone"]);
+  expect(w.store.isPending("card_new")).toBe(true);
+  w.store.resolvedOutcome("card_new", "approved");
+  expect(w.down(otherPart)).toBe(false);
+  // A list that names the card keeps it.
+  w.store.fromCore(card("card_kept"));
+  expect(w.store.dropUnlisted(["card_kept"], ["card_kept"])).toEqual([]);
+  expect(w.down(otherPart)).toBe(true);
+});
+
+test("S: the stand-down is decided again at the earliest expiry (no event comes when a card expires)", () => {
+  let now = 1_000;
+  const store = new SealedFrames(() => now);
+  store.fromCore({ ...card("card_a"), expiresAt: 5_000 });
+  store.fromCore({ ...card("card_b"), expiresAt: 3_000 });
+  store.fromCore(card("card_c"));
+  expect(store.nextExpiry()).toBe(3_000);
+  store.resolvedOutcome("card_c", "approved");
+  now = 3_000;
+  expect(store.nextExpiry()).toBe(5_000);
+  now = 5_000;
+  expect(store.nextExpiry()).toBeUndefined();
+  expect(overlayStandsDown(otherPart, store.anyPending())).toBe(false);
 });

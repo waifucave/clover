@@ -80,7 +80,7 @@ import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 // lane HS
-import { BROWSER_HOST_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
+import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
 import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
 import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
@@ -3670,7 +3670,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
   let session: string | undefined;
   let c: MossClient | undefined;
   // lane HS: the host unit runs alone (its own daemon starts the host).
-  if (ids.includes("host")) { await hostOnlyRun(app); return; }
+  if (ids.includes("host")) { await hostOnlyRun(app); await hostGaveUpRun(app); return; }
   if (ids.includes("browser-host")) { await browserOnlyRun(app, { withHost: true }); return; }
   if (ids.includes("surface-copy-host")) { await browserOnlyRun(app, { withHost: true, row: "surface-copy" }); return; }
   try {
@@ -4558,6 +4558,55 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
 // lane HS: start. ----------------------------------------------------------------------------------------------------
 /** The background host's row (`--units host`, serial; host-step.ts): its own daemon starts the host from this checkout
  *  (`MOSS_HOST_COMMAND`, the engine's source seam, as its own child: the run's cleanup of the daemon's group ends it). */
+/** lane HS (the reviewer's B2): a host command that always fails, so the engine gives up after its bounded starts; MOSS Code's
+ *  window (not in front) then keeps the fallback card for a card the router placed with no island: it is shown and pressed. */
+async function hostGaveUpRun(app: { exe: string; args: string[] }): Promise<void> {
+  const n = stepNumber(FULL_STEPS, HOST_GAVE_UP_STEP);
+  let c: MossClient | undefined;
+  let appCdp: Cdp | undefined;
+  let appProc: { proc: ChildProcess; log: string } | undefined;
+  try {
+    if (target !== "source") fail("the gave-up row needs the engine's source seam (MOSS_HOST_COMMAND)");
+    // The host row's last daemon goes first: one daemon per home.
+    if (lastDaemon !== undefined && alive(lastDaemon.proc)) {
+      const gone = new Promise<void>((r) => lastDaemon!.proc.once("exit", () => r()));
+      stoppingDaemon = true;
+      try { process.kill(lastDaemon.proc.pid!, "SIGTERM"); } catch { /* gone */ }
+      await Promise.race([gone, sleep(30_000)]);
+      stoppingDaemon = false;
+    }
+    endStartedHosts();
+    const d = await startDaemonProc({ MOSS_HOST_COMMAND: JSON.stringify(["/usr/bin/false"]), MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1" });
+    await until("the engine giving up on the host", 120_000, () => (/\[host\] the host did not start \d+ times in a row/.test(readLog(d.log)) ? true : undefined), 500);
+    const appPort = freePort();
+    const frontFile = join(root, "gave-up-front");
+    writeFileSync(frontFile, "back");
+    appProc = startChild("gave-up-app", app.exe, [...app.args, "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${appPort}`], { ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1", MOSS_TEST_MAIN_FRONT_FILE: frontFile });
+    const proc = appProc;
+    appCdp = await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(proc.proc)) fail(`the app exited (${proc.proc.exitCode ?? proc.proc.signalCode}): ${lastLines(proc.log)}`);
+      try { return await Cdp.connect(appPort); } catch { return undefined; }
+    }, 200);
+    await until("the window's mount with the host given up (no island)", 60_000, () => (/mount: \{"mainWindow":true,"surfaces":false,"background":true/.test(readLog(proc.log)) ? true : undefined), 300);
+    c = (await appDriver()).client;
+    const fixture = join(import.meta.dir, "fixtures", "acceptance-island");
+    const r = await c.request<{ id: string }>("plugin.install", { source: { from: "folder", path: fixture } }, 60_000);
+    const card = await until("the plugin's OK card", 30_000, async () => (await cards(c!)).find((x) => x.kind === "plugin-ok" && x.pluginId === r.id), 300);
+    const place = await until("the router placing the card", 20_000, () => [...readLog(proc.log).matchAll(new RegExp(`router: ${card.id} placed (\\w+)`, "g"))].at(-1)?.[1], 200);
+    if (place !== "elsewhere" && place !== "island") fail(`the card was placed ${place}, not with no island and no window in front`);
+    const how = await pressApprove(appCdp, card, proc.log);
+    if (how !== "fallback") fail(`the card was pressed on the ${how}, not on the window's fallback card`);
+    await until("the plugin running after the press", 60_000, async () => ((await c!.request<{ plugin: { state: string } }>("plugin.get", { id: r.id }).catch(() => undefined))?.plugin.state === "running" ? true : undefined));
+    record(n, "PASS", `the engine gave up on a host that never started; the card placed ${place} with no window in front was shown on MOSS Code's window's fallback card and a real press there answered it`);
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  } finally {
+    c?.close();
+    appCdp?.close();
+    if (appProc !== undefined) await endChild(appProc.proc);
+  }
+}
+
 async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> {
   const n = stepNumber(FULL_STEPS, HOST_STEP);
   const lines: string[] = [];

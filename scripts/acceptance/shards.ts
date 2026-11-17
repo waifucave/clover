@@ -61,7 +61,7 @@ import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from ".
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 import { RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP } from "./release-step";
 import { MOSS_STEPS } from "./moss-step";
-import { BROWSER_HOST_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP } from "./host-step";
+import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP } from "./host-step";
 
 export type UnitId = "main" | "chain" | "window-1" | "window-2" | "window-3" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "release" | "browser" | "plugin-app" | "models" | "moss" | "stage" | "tab-flash" | "cold" | "idle" | "host" | "browser-host" | "surface-copy-host";
 
@@ -120,7 +120,7 @@ const OTHERS: readonly Unit[] = [
   { id: "cold", rows: [COLD_START_STEP], phase: "serial", estimate: 16 },
   { id: "idle", rows: [IDLE_STEP], phase: "serial", estimate: 45 },
   // lane HS: the background host's row, alone (its own daemon starts the host, host-step.ts).
-  { id: "host", rows: [HOST_STEP], phase: "serial", estimate: 150 },
+  { id: "host", rows: [HOST_STEP, HOST_GAVE_UP_STEP], phase: "serial", estimate: 240 },
   // …and the Browser rows with that host running (the controller's ruling: every browser row passes with a host too).
   { id: "browser-host", rows: [BROWSER_HOST_STEP], phase: "serial", estimate: 90 },
   // lane HS: row 65 (the island and pill copies) with the background host drawing the screen (the controller's R12 ruling).

@@ -148,11 +148,29 @@ export class SealedFrames {
     return false;
   }
 
-  /** lane HS (R12, the controller's ruling on a copy of the island): whether a window holds sealed frames of a card that still
-   *  waits: it is that card's drawer, the one third-party surface not stood down for it. */
-  holdsPending(windowId: number): boolean {
-    for (const ch of this.channels.values()) if (ch.windowId === windowId && this.isPending(ch.cardId)) return true;
-    return false;
+  /** lane HS (the reviewer's S): after a reconnect's list, the cards this store knew before the connection that the engine no
+   *  longer holds (answered, expired or withdrawn while the connection was down: their `card_resolved` reached no one) are
+   *  dropped as withdrawn. A card first heard during the connect is never in `before`, so a card raised then stays. */
+  dropUnlisted(before: readonly string[], listed: readonly string[]): string[] {
+    const keep = new Set(listed);
+    const gone = before.filter((id) => !keep.has(id) && this.isPending(id));
+    for (const id of gone) this.resolvedOutcome(id, "withdrawn");
+    return gone;
+  }
+
+  /** The earliest expiry still ahead among the pending cards (the stand-down is decided again then). */
+  nextExpiry(): number | undefined {
+    let next: number | undefined;
+    for (const [id, c] of this.cards) if (this.isPending(id) && c.expiresAt !== null && (next === undefined || c.expiresAt < next)) next = c.expiresAt;
+    return next;
+  }
+
+  /** lane HS (R12): the still-pending cards a window holds sealed frames of. A frame alone proves nothing about who draws the
+   *  card (a plugin mints frames of its own bot's cards anywhere): `drawerExempt` (host-stacking.ts) decides with the placement. */
+  pendingHeldIn(windowId: number): string[] {
+    const out = new Set<string>();
+    for (const ch of this.channels.values()) if (ch.windowId === windowId && this.isPending(ch.cardId)) out.add(ch.cardId);
+    return [...out];
   }
 
   /** Every card that still waits, oldest first (known, not answered or resolved, not past its expiry). */

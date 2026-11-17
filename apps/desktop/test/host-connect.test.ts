@@ -31,3 +31,10 @@ test("subscribeThenListCards: events.subscribe with the approvals area goes out 
   expect(APP_EVENT_AREAS).toContain("approvals");
   expect(seen).toEqual([{ id: "card_1" }]);
 });
+
+test("subscribeThenListCards says which cards the engine holds (the caller drops the rest), and nothing when the list failed", async () => {
+  const ok = await subscribeThenListCards({ request: async <T,>(method: string) => (method === "card.list" ? { cards: [{ id: "card_1" }, { id: "card_2" }] } : { ok: true }) as T }, () => {});
+  expect(ok).toEqual(["card_1", "card_2"]);
+  const failed = await subscribeThenListCards({ request: async <T,>(method: string): Promise<T> => { if (method === "card.list") throw new Error("gone"); return { ok: true } as T; } }, () => {});
+  expect(failed).toBeUndefined();
+});
