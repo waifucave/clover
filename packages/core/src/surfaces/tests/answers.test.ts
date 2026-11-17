@@ -18,7 +18,6 @@ import { EngineSurfaceDoor } from "../door";
 import { ProgramKeyTable } from "../program-keys";
 import { cardPressGate, routeBrokerCards } from "../routing";
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
 const enc = (s: string) => new TextEncoder().encode(s);
 
 function conn(connId: number, program: Program): MossConn {
@@ -58,9 +57,9 @@ async function world(o: { singleKey?: boolean } = {}) {
   door.admit({ connId: 3, role: "app", surface: "host", signed: "host" });
   const raise = async (bot: string): Promise<Card> => {
     const req: ApprovalRequest = { kind: "tool", session: `s_${bot}`, bot, origin: "user", computers: ["Studio"], effect: "execute", fields: { title: { type: "text", text: "Run a command" }, command: { type: "code", code: "git push", language: "sh" } } };
-    void broker.request(req);
-    await flush();
-    return broker.cards().at(-1)!;
+    // The card this request shows, by its own id (no tick counting: the broker's card is made asynchronously).
+    const id = await new Promise<string>((resolve) => { void broker.request(req, { onCard: resolve }); });
+    return broker.cards().find((c) => c.id === id)!;
   };
   const answer = async (from: MossConn, card: Card, signer: FakeDevice, named: Program | undefined) => {
     const at = clock.now();
@@ -161,9 +160,11 @@ describe("device.programKey.set", () => {
     expect(table.keyOf(device, "moss")?.publicKey).toBe(a.publicKey);
     const card = broker.get(r.card)!.card;
     expect(card.change).toBe("answer-key-rotate");
+    // The replacement after the yes is asynchronous (the table checks both signatures again): the test waits for the table's
+    // own word that it took the key, never a count of ticks (two ticks fell short under load on a CI shard).
+    const replaced = new Promise<string>((resolve) => { const off = table.watch((c) => { if (c.device === device && c.key.program === "moss") { off(); resolve(c.key.publicKey); } }); });
     expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at } }, { role: "app" })).toBe("accepted");
-    await flush();
-    await flush();
+    expect(await replaced).toBe(b.publicKey);
     expect(table.keyOf(device, "moss")?.publicKey).toBe(b.publicKey);
   });
 });

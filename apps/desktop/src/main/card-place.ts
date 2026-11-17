@@ -214,6 +214,8 @@ export async function subscribeThenListCards(client: { request<T>(method: string
  *  surface drawing it). A new connection starts the book afresh. */
 export class PlacementBook {
   readonly #places = new Map<string, CardPlacement>();
+  /** Cards resolved on this connection: a snapshot asked before the resolution and answered after it must not bring one back. */
+  readonly #gone = new Set<string>();
   #connection: unknown;
 
   /** The connection the book follows: a new one forgets what the last one said. */
@@ -221,6 +223,7 @@ export class PlacementBook {
     if (connection === this.#connection) return;
     this.#connection = connection;
     this.#places.clear();
+    this.#gone.clear();
   }
 
   /** A `card_placed` event: it wins. Returns whether the place changed. */
@@ -235,7 +238,7 @@ export class PlacementBook {
   /** A `card.placement` answer: only the cards no event has placed. Returns those it placed. */
   snapshot(placements: readonly { card: string; place: CardPlacement }[]): string[] {
     const took: string[] = [];
-    for (const p of placements) if (!this.#places.has(p.card) && this.placed(p.card, p.place)) took.push(p.card);
+    for (const p of placements) if (!this.#places.has(p.card) && !this.#gone.has(p.card) && this.placed(p.card, p.place)) took.push(p.card);
     return took;
   }
 
@@ -243,8 +246,11 @@ export class PlacementBook {
     return this.#places.get(card);
   }
 
+  /** The card was resolved: its place goes, and no later snapshot brings it back. */
   delete(card: string): void {
     this.#places.delete(card);
+    this.#gone.add(card);
+    if (this.#gone.size > 512) this.#gone.delete(this.#gone.values().next().value!);
   }
 
   entries(): IterableIterator<[string, CardPlacement]> {

@@ -102,6 +102,16 @@ class FakeBridgeTokens implements BridgeGate {
   revoke(): void { const c = this.live; this.live = undefined; for (const fn of this.listeners) fn({ sessionId: this.session, ...(c === undefined ? {} : { connection: c }) }); }
 }
 
+
+/** Waits until `check` holds, looking again each tick, for at most `ms` (what the server does on its own turn: a closed
+ *  connection let go of, an event sent on another connection). Never a fixed sleep. */
+async function settled(check: () => boolean, ms = 5_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error("not settled in time");
+    await new Promise((r) => setImmediate(r));
+  }
+}
 describe("MOSS connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
@@ -351,11 +361,12 @@ describe("MOSS connections (C-M1)", () => {
     expect((await host.request("presence.report", { windows: [] })).error.code).toBe(MOSS_ERR.SURFACE_REFUSED);
     // MOSS's window goes: its report with it; the cards move to the island (drawn by MOSS Code's window today), heard.
     moss.close();
-    await Bun.sleep(50);
+    // The server lets go of the closed connection on its own turn: wait for that, not for a time.
+    await settled(() => b.moss.surfaces.router.placementOf("card_aaaaaa")?.kind === "island");
     expect(b.moss.surfaces.router.placementOf("card_aaaaaa")).toEqual({ kind: "island" });
     await code.request("events.subscribe", { areas: ["surfaces"] });
     await code.request("presence.report", { windows: [{ window: "main", focused: true, visible: true, showing: { kind: "session", id: "s_1" } }] });
-    await Bun.sleep(50);
+    // The moves were written before the report's answer: nothing to wait for.
     const placed = code.fromDaemon.filter((m) => m.method === "core.event" && m.params?.type === "card_placed").map((m) => [m.params.card, m.params.place.kind, m.params.before?.kind]);
     // First what was there when it subscribed (each card's place, told to it alone), then the moves its report made.
     expect(placed).toEqual([["card_aaaaaa", "island", undefined], ["card_bbbbbb", "island", undefined], ["card_aaaaaa", "strip", "island"], ["card_bbbbbb", "strip", "island"]]);
@@ -368,7 +379,8 @@ describe("MOSS connections (C-M1)", () => {
     await code.hello("app", b.appToken);
     await code.request("events.subscribe", { areas: ["surfaces"] });
     b.moss.surfaces.router.pending({ id: "card_aaaaaa", bot: "alpha" });
-    await Bun.sleep(30);
+    // The pending card's own `card_placed` is written at once; a round trip on the same connection comes back after it.
+    await code.request("card.placement", {});
     const before = code.fromDaemon.length;
     const r = await code.request("presence.report", { windows: [{ window: "main", focused: true, visible: true, showing: { kind: "bot", id: "alpha" } }] });
     expect(r.result).toEqual({ ttlMs: 10_000 });
@@ -406,7 +418,8 @@ describe("MOSS connections (C-M1)", () => {
     expect((await older.hello("app", b.appToken, { surface: "moss", release: "1.111.0" })).error).toMatchObject({ code: MOSS_ERR.SURFACE_REFUSED, data: { reason: "older-copy" } });
     const newer = await Client.connect(b.socketPath);
     expect((await newer.hello("app", b.appToken, { surface: "moss", release: "1.111.2" })).result).toMatchObject({ surface: "moss" });
-    await Bun.sleep(50);
+    // Told on another connection: wait until it has come, not for a time.
+    await settled(() => a.fromDaemon.some((m) => m.method === "app.quit"));
     expect(a.fromDaemon.filter((m) => m.method === "app.quit").map((m) => m.params)).toEqual([{ reason: "update" }]);
     for (const c of [a, older, newer]) c.close();
   });
