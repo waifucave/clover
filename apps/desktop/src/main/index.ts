@@ -2909,9 +2909,11 @@ async function smoke(): Promise<void> {
       if (spec !== undefined) {
         try {
           const {
-            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead, pulse,
+            cardId, element, cover, opacity, doubleClick, coverLead, parentCoverLead, pulse, classicBars,
           } = JSON.parse(spec) as {
             cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number;
+            /** Classic scroll bars on the sealed page's own document (macOS "Show scroll bars: Always"): space-taking bars wherever it can scroll. */
+            classicBars?: boolean;
           };
           const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("moss-sealed://") &&
@@ -2920,6 +2922,10 @@ async function smoke(): Promise<void> {
           if (frame !== undefined) {
             // URLs carry single-use tokens (?token=, ?mount=): the logs keep origin and path only, never the token.
             log(`sealed-click: frame found ${frame.url.split("?")[0]!.slice(0, 80)}`);
+            if (classicBars === true) {
+              await frame.executeJavaScript(`(() => { const s = document.createElement("style"); s.textContent = "::-webkit-scrollbar { width: 15px; height: 15px; background: #888 } ::-webkit-scrollbar-thumb { background: #444 }"; document.head.append(s); const d = document.documentElement; return d.clientWidth + "x" + d.clientHeight + " of " + innerWidth + "x" + innerHeight; })()`, true)
+                .then((r) => log(`sealed-click: classic scroll bars on the sealed page (client ${String(r)})`)).catch(() => log("sealed-click: classic scroll bars couldn't be set"));
+            }
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
             // The covered run's own fact: whether the button had been reported visible BEFORE the cover went on (the page's last
             // verdict), so the press below waits for the verdict to flip, never for a delay.

@@ -121,7 +121,7 @@ function cardRegistry(path: string, withFixture = true, alpha = false): string {
 
 /** Start the app against the fake daemon, click via the smoke run, and return the run's output. */
 async function runApp(opts: {
-  click?: { cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number };
+  click?: { cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean; coverLead?: number; parentCoverLead?: number; pulse?: number; classicBars?: boolean };
   acting?: boolean;
   dropFresh?: boolean;
   pinVisible?: boolean;
@@ -319,6 +319,16 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     expect(r.output).not.toContain(`sealed: answer accepted for ${CARD_ID}`);
     // The card still waits, and the page says the press didn't count (try again), never that it was answered.
     expect(r.output).toMatch(/sealed-click: after press state=Couldn't confirm — try again\. answered=no/);
+  }, 120_000);
+
+  onCi("under classic scroll bars (\"Show scroll bars: Always\") the button page takes no bar and a real press lands", async () => {
+    const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", classicBars: true } });
+    // The page can't scroll, so no bar takes any room: its client area is its whole frame.
+    const m = r.output.match(/classic scroll bars on the sealed page \(client (\d+)x(\d+) of (\d+)x(\d+)\)/);
+    expect(m, r.output).not.toBeNull();
+    expect([m![1], m![2]]).toEqual([m![3], m![4]]);
+    expect(r.output).toContain("presses=[[");
+    expect(answerCallsOf(r.home), r.output).toHaveLength(1);
   }, 120_000);
 
   onCi("a second press does not land", async () => {
