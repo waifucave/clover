@@ -4416,7 +4416,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const readElements = new ReadElements();
     const seenUrls = new SeenUrls({ rootOf: (id) => { const h = sessionsOf?.(); return h === undefined ? undefined : budgetRootOf(id, (s) => h.get(s)); } });
     // A code session's (or a bot's agent's) turns feed it as a bot's do: its WebFetch is judged by the same check.
-    agentTurnSeen = (id, input, origin) => { seenUrls.turnStarted(id, origin); seenUrls.input(id, input); };
+    agentTurnSeen = (id, input, origin) => seenUrls.agentTurn(id, input, origin);
     // The conversations' shell grants (lane C's `SandboxGrants`, made with the drivers): a removed bot's go with it, and
     // a conversation's own when it ends.
     let shellGrants: SandboxGrants | undefined;

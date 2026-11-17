@@ -1086,7 +1086,7 @@ describe("the agent methods", () => {
     const turns: { id: string; origin: string | undefined }[] = [];
     const w = make({
       script: [[{ say: "Reading it." }]],
-      turnStarted: (id, input, origin) => { turns.push({ id, origin }); seen.turnStarted(id, origin); seen.input(id, input); },
+      turnStarted: (id, input, origin) => { turns.push({ id, origin }); seen.agentTurn(id, input, origin); },
     });
     const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32) });
     const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, { caller: { kind: "user", client: "app" } })) as { session: string };
