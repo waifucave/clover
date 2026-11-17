@@ -70,7 +70,7 @@ import { LayerError, UiRuntime, type SealedAskOutcome } from "./ui/runtime";
 import { PluginKeys, keysMayRun, type HoldStep } from "./plugin-keys";
 import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
-import { mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PresenceReporter, pressMayBeTaken, placeLine, showingOf, type CardPlace, type PressSource } from "./card-place";
+import { APP_EVENT_AREAS, mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PresenceReporter, pressMayBeTaken, placeLine, showingOf, subscribeThenListCards, type CardPlace, type PressSource } from "./card-place";
 import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
@@ -1053,6 +1053,24 @@ function movePendingCards(): void {
   for (const id of sealed.pendingIds()) if (cardPlaces.has(id)) placeCardNow(id);
 }
 
+/** A card the core told the app of (`card_requested`), or one already waiting when the app connected (`card.list`): the
+ *  store's copy, its fallback timer and its place, once. Its id and kind only in the log (no text): the acceptance run
+ *  checks the app was told of each card it answers. */
+function cardArrivedNow(card: { id: string; kind: string }, waiting = false): void {
+  if (cardArrived.has(card.id)) return;
+  sealed.fromCore(card);
+  if (!sealed.isPending(card.id)) return;
+  cardArrived.set(card.id, { at: Date.now(), seen: new Set() });
+  armFallback(card.id);
+  placeArrivedCard(card.id);
+  log(`card: a ${card.kind} card ${card.id} arrived${waiting ? " (waiting when the app connected)" : ""}`);
+}
+function cardWaitingAtConnect(c: unknown): void {
+  const card = c as { id?: unknown; kind?: unknown } | null;
+  if (card === null || typeof card !== "object" || typeof card.id !== "string" || typeof card.kind !== "string") return;
+  cardArrivedNow(card as { id: string; kind: string }, true);
+}
+
 async function armFallback(cardId: string): Promise<void> {
   disarmFallback(cardId);
   const timer = setTimeout(() => void showFallbackCard(cardId), FALLBACK_DELAY_MS);
@@ -1203,12 +1221,10 @@ function makePair(): Pair {
       keyRegistration?.stop();
       keyRegistration = new KeyRegistration(answerKey(), client, hello.device, () => pair.client === client, log);
       signedDevice = hello.device;
-      // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones, and the
-      // fallback's 2-second timers arm on each (a part's own button disarms its card's before the core's fires).
+      // The pending cards, and their outcomes as they come: subscribed first, then listed (`subscribeThenListCards`: listed
+      // first, a card raised the moment the core's parts came up was told to no connection, the upgrade pair's step 2).
       void refreshBotNames(client);
-      void client.request<unknown>("card.list").catch(() => undefined).then((r) => {
-        for (const c of (r as { cards?: unknown[] })?.cards ?? []) { sealed.fromCore(c); armFallback(String((c as { id?: unknown }).id ?? "")); }
-      });
+      void subscribeThenListCards(client, cardWaitingAtConnect);
       return loadRegistry(client);
     },
     onState: (s) => stateChanged(s),
@@ -1323,14 +1339,8 @@ function makePair(): Pair {
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found" || type === "plugin_ui_changed" || type === "methods_changed") scheduleReload();
     if (type === "card_requested") {
       const parsed = CardRequestedEvent.safeParse(params);
-      if (parsed.success) {
-        sealed.fromCore(parsed.data.card);
-        cardArrived.set(parsed.data.card.id, { at: Date.now(), seen: new Set() });
-        armFallback(parsed.data.card.id);
-        placeArrivedCard(parsed.data.card.id);
-        // Its id and kind only (no text): the acceptance run checks the app was told of each card it answers.
-        log(`card: a ${parsed.data.card.kind} card ${parsed.data.card.id} arrived`);
-      } else log("pair: ignored a card_requested event that isn't one");
+      if (parsed.success) cardArrivedNow(parsed.data.card);
+      else log("pair: ignored a card_requested event that isn't one");
     }
     if (type === "card_placed") {
       const parsed = CardPlacedEvent.safeParse(params);
@@ -1427,7 +1437,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
   // was never told of a card (the acceptance run's first card-arrival check found it).
   // `surfaces` (lane RT): where the engine's router places each card (`card_placed`).
-  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals", "surfaces", "release"] }).catch(() => undefined);
+  await client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] }).catch(() => undefined);
   void reportPresence().then(() => client.request<unknown>("card.placement", {})).then((raw) => {
     const r = SURFACES_METHODS.cardPlacement.result.safeParse(raw);
     if (r.success) for (const p of r.data.placements) enginePlaced(p.card, p.place);

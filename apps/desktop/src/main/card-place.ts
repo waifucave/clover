@@ -188,4 +188,19 @@ export class PresenceReporter {
     if (this.#lastFocused !== this.#settled) await this.report();
     else if (this.#inFlight !== undefined) await this.#inFlight.catch(() => undefined);
   }
+
+/** The areas the app's own connection hears: the registry's, the app's, the cards' (`card_requested`, `card_resolved`) and
+ *  where the engine's router places each card (`card_placed`, lane RT), and the release channel's. */
+export const APP_EVENT_AREAS: readonly string[] = ["plugins", "app", "approvals", "surfaces", "release"];
+
+/** On each connection: the cards' events subscribed FIRST, then the cards already waiting listed, each handed to
+ *  `waiting`. A connection's calls are answered in order and `card.list` waits for the engine's late doors (its parts):
+ *  listed first, the subscription sat behind it, and a card raised the moment the parts came up (the one-time copy's
+ *  offer, raised at once on a fresh home) fell between the list's answer and the subscription, told to no connection.
+ *  Subscribed first, a card raised after the subscription is told as `card_requested`, and one raised before the list's
+ *  answer is in the list (a card in both is the caller's to take once). */
+export async function subscribeThenListCards(client: { request<T>(method: string, params?: unknown): Promise<T> }, waiting: (card: unknown) => void): Promise<void> {
+  await client.request("events.subscribe", { areas: [...APP_EVENT_AREAS] }).catch(() => undefined);
+  const listed = await client.request<unknown>("card.list").catch(() => undefined);
+  for (const c of (listed as { cards?: unknown[] } | undefined)?.cards ?? []) waiting(c);
 }
