@@ -127,12 +127,16 @@ describe.skipIf(!supported)("the session", () => {
   test("messages buffered before the first subscriber are delivered to it, in order; later ones live", async () => {
     const { r, session } = await opened();
     sendMessage(r.peerFd, line({ t: "pong", id: "req-1" })); sendMessage(r.peerFd, line({ t: "pong", id: "req-2" }));
-    await settle();
+    // Both lines are read off the descriptor by the session's pump, which a fixed 10 ms does not wait for on a loaded
+    // runner: wait until the session holds them (bounded), then subscribe.
+    const held = () => (session as unknown as { buffered: unknown[] }).buffered.length;
+    for (let i = 0; i < 500 && held() < 2; i += 1) await settle();
+    expect(held()).toBe(2);
     const seen: string[] = [];
     session.onMessage(message => { if (message.t === "pong") seen.push(message.id); });
     expect(seen).toEqual(["req-1", "req-2"]);
     sendMessage(r.peerFd, line({ t: "pong", id: "req-3" }));
-    await settle();
+    for (let i = 0; i < 500 && seen.length < 3; i += 1) await settle();
     expect(seen).toEqual(["req-1", "req-2", "req-3"]);
   });
   test("sends are canonical L1 lines with the descriptors attached to the one line that carries them", async () => {

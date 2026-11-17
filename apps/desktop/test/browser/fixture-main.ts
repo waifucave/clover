@@ -134,7 +134,9 @@ async function main(): Promise<void> {
 
   await step("a bot's tab opens offscreen, in its own partition, and puts no window on screen", async () => {
     tab = await host.open({ id: "tab_main", owner: alpha, url: `${origin}/page`, place: "headless" });
-    token = (await until(() => evalIn(host, tab.id, "window.__t && window.__t.token"), 10_000)) ?? "";
+    // The first page of a fresh partition: a loaded Windows runner takes more than 10 s to draw it (the step ran 13.7 s
+    // and every later step then failed for want of the page). It returns the moment the token is there.
+    token = (await until(() => evalIn(host, tab.id, "window.__t && window.__t.token"), 45_000)) ?? "";
     const size = await evalIn(host, tab.id, "innerWidth + 'x' + innerHeight");
     return { ok: token !== "" && tab.partition === "persist:bot-alpha" && size === "1280x800" && visibleWindows([appWindow]) === 0, detail: { partition: tab.partition, size, visible: visibleWindows([appWindow]) } };
   });

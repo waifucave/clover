@@ -162,8 +162,9 @@ describe("device.programKey.set", () => {
     const card = broker.get(r.card)!.card;
     expect(card.change).toBe("answer-key-rotate");
     expect(await broker.answer(card.id, { optionId: "approve", hash: card.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card.id)!, input: "click", at } }, { role: "app" })).toBe("accepted");
-    await flush();
-    await flush();
+    // The key is replaced after the card's yes by `table.replace`, which verifies two signatures: real, off-thread crypto
+    // that two macrotask turns do not wait for on a loaded runner. Wait for the replacement itself, bounded.
+    for (let i = 0; i < 500 && table.keyOf(device, "moss")?.publicKey !== b.publicKey; i += 1) await new Promise((r) => setTimeout(r, 10));
     expect(table.keyOf(device, "moss")?.publicKey).toBe(b.publicKey);
   });
 });
