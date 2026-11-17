@@ -5,6 +5,7 @@ import type { HookCallback, HookCallbackMatcher } from "@waifucave/clover-agent-
 import { MossApprovalBroker, type StoredRule } from "../../src/approvals/broker";
 import { ruleKeyHash } from "../../src/approvals/strings";
 import { pluginToolName, toolPermissionMethods } from "../../src/approvals/tool-permissions";
+import { EngineToolSettings } from "../../src/approvals/tool-settings";
 import { connectorPermissionTable, type Settings } from "../../src/settings";
 import { sessionHooksFor } from "../../src/runtime-sdk/hooks";
 import { FakeClock } from "../../src/contracts/fakes/clock";
@@ -20,11 +21,14 @@ function setup(tools: string[] = ["Export", "Trim"], rules: StoredRule[] = []) {
   let listed = tools;
   const saves: Settings[] = [];
   const broker = new MossApprovalBroker({ clock: new FakeClock(), levels: () => "ask-for-risky-actions", fence: () => undefined, rules: { load: () => rules, save: (r: StoredRule[]) => { rules.length = 0; rules.push(...r); } }, localComputer: "Delta" } as never);
+  const save = (next: Settings) => { settings = next; saves.push(next); };
+  const listing = () => [{ server: SERVER, plugin: "reel", name: "reel", tools: listed.map((name) => ({ name })) }];
   const methods = toolPermissionMethods({
-    listing: () => [{ server: SERVER, plugin: "reel", name: "reel", tools: listed.map((name) => ({ name })) }],
+    listing,
+    toolSettings: new EngineToolSettings({ read: () => settings, load: () => settings, save, listing }),
     pluginName: () => "Reel",
     loadSettings: () => settings,
-    saveSettings: (next) => { settings = next; saves.push(next); },
+    saveSettings: save,
     savedFor: (h) => broker.savedFor(h),
     forgetSaved: (h, b) => broker.forgetSaved(h, b),
   });
@@ -219,8 +223,9 @@ describe("a tool its plugin drops, and a plugin that is uninstalled", () => {
     const { pruneDroppedTools } = await import("../../src/approvals/tool-permissions");
     let settings = {} as Settings;
     let listed = ["Export", "Trim"];
+    const listing = () => [{ server: SERVER, plugin: "reel", name: "reel", tools: listed.map((name) => ({ name })) }];
     const methods = toolPermissionMethods({
-      listing: () => [{ server: SERVER, plugin: "reel", name: "reel", tools: listed.map((name) => ({ name })) }],
+      listing, toolSettings: new EngineToolSettings({ read: () => settings, load: () => settings, save: (n) => { settings = n; }, listing }),
       pluginName: () => "Reel", loadSettings: () => settings, saveSettings: (n) => { settings = n; }, savedFor: () => [], forgetSaved: () => 0,
     });
     const read = async () => ((await methods["tool.permissions"]!({}, USER)) as { plugins: { tools: { name: string; permission: string; isNew?: boolean }[] }[] }).plugins[0]!.tools;

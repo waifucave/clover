@@ -522,6 +522,41 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 90_000);
 
+  test("the user's tool setting reaches the next turn: a tool turned off, or moved between preloaded and on demand, reopens the runtime once with the list as it is now", async () => {
+    const home = tempHome();
+    const runner: McpRunner = { async run(_server, tool) { return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" }; } };
+    const tool = (name: string, load: "preload" | "on-demand") => ({ name, inputSchema: { type: "object" as const, properties: {} }, load });
+    let tools = [tool("Echo", "preload"), tool("Later", "on-demand")];
+    const listed: string[] = [];
+    const query: typeof sdkQuery = (args) => {
+      listed.push(tools.map((t) => `${t.name}:${t.load}`).join(","));
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => [{ server: "acceptance-echo-echo", plugin: "acceptance-echo", tools }], runner }, log: (l) => lines.push(l) }));
+    const reopens = () => lines.filter((l) => l.includes("reopening: its MCP servers changed")).length;
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect((await driver.turn(user("again"), control())).reason).toBe("end_turn");
+      expect(listed).toHaveLength(1);
+      // Echo is put behind Glossary: the next turn opens the runtime again, once.
+      tools = [tool("Echo", "on-demand"), tool("Later", "on-demand")];
+      expect((await driver.turn(user("third"), control())).reason).toBe("end_turn");
+      expect(listed).toEqual(["Echo:preload,Later:on-demand", "Echo:on-demand,Later:on-demand"]);
+      expect(reopens()).toBe(1);
+      // Later is turned off: it is gone from the next opening.
+      tools = [tool("Echo", "on-demand")];
+      expect((await driver.turn(user("fourth"), control())).reason).toBe("end_turn");
+      expect(listed.at(-1)).toBe("Echo:on-demand");
+      expect(reopens()).toBe(2);
+      // The same list never reopens.
+      await driver.turn(user("fifth"), control());
+      expect(listed).toHaveLength(3);
+    } finally {
+      await driver.stop();
+    }
+  }, 120_000);
+
   test("its own provider's key changing reopens it at the next turn, once; another provider's change never does", async () => {
     const home = tempHome();
     const keys: Record<string, string> = { "winter-test": "compiled:t:1", acme: "absent" };

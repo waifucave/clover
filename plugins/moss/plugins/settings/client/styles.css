@@ -533,6 +533,11 @@
   margin-block-end: var(--moss-space-l);
 }
 
+.cl-settings__tool-group .cl-settings__control {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .cl-settings__three {
   display: inline-flex;
   border: 1px solid var(--moss-color-hairline);
@@ -561,6 +566,11 @@
 
 .cl-settings__three-option[data-value="deny"][aria-checked="true"] {
   color: var(--moss-color-danger);
+}
+
+.cl-settings__three-option[data-default] {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 
 .cl-settings__three-option:focus-visible {

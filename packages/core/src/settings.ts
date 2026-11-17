@@ -418,6 +418,10 @@ export const Settings = z.object({
     toolsSeen: z.record(z.string(), z.array(z.string())).optional(),
     /** The plugin that gave each server's tools when the user set a value (Settings, Tools), so uninstalling it clears them. */
     toolsOwner: z.record(z.string(), z.string()).optional(),
+    /** The tool setting (spec §6.7, lane TS): server → tool → `"off" | "on-demand" | "always"`, only what the user chose;
+     *  a tool with no value follows what its plugin declares (`approvals/tool-settings.ts` is the one reader, which reads an
+     *  unrecognised value as no value). Typed loosely like `toolPermissions`, so one bad row never rolls the file back. */
+    toolAvailability: z.record(z.string(), z.unknown()).optional(),
   }).optional(),
   reviewer: z.object({
     enabled: z.boolean().optional(),

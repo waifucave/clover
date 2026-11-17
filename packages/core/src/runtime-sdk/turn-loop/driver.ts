@@ -74,6 +74,13 @@ export const BOT_BUILTIN_TOOLS: readonly string[] = [
   ...(process.platform === "win32" ? ["PowerShell"] : []),
 ];
 
+/** What the runtime was given of the plugins' servers: each server's name and each of its tools with how it loads. A tool turned
+ *  off, preloaded or put behind `Glossary` by the user's tool setting (§6.7) changes it, so the next turn opens the runtime
+ *  again with the list as it is now (the agent SDK takes `mcpServers` only when a runtime opens). */
+function serversSignature(servers: readonly BotMcpServer[]): string {
+  return ["moss_core", ...servers.filter((s) => s.server !== "moss_core").map((s) => `${s.server}\u0001${s.tools.map((t) => `${t.name}:${t.load ?? "on-demand"}`).sort().join("\u0002")}`)].sort().join("\u0000");
+}
+
 /** The built-ins that start on-demand (§6.7 [D]), with what `Glossary` says of them. */
 export const ON_DEMAND_BUILTINS: readonly { name: string; description: string }[] = [
   { name: "Glob", description: "Find files by name pattern (\"**/*.ts\"), anywhere in the folder tree; the search runs on the computer that holds the files." },
@@ -858,7 +865,7 @@ export class BotSessionDriver implements SessionDriver {
         });
       }
     }
-    this.#builtServers = Object.keys(mcpServers).sort().join("\u0000");
+    this.#builtServers = serversSignature(this.#d.mcp === undefined ? [] : merged);
     const cwd = ctx.paths.scratch;
     mkdirSync(cwd, { recursive: true });
     const queue = createHostPromptQueue();
@@ -1173,7 +1180,7 @@ export class BotSessionDriver implements SessionDriver {
    *  read throws (`#ensureOpen` fails the turn), never "unchanged". */
   #serversChanged(): boolean {
     if (this.#d.mcp === undefined || this.#builtServers === undefined) return false;
-    const now = ["moss_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "moss_core")].sort().join("\u0000");
+    const now = serversSignature(mergedServers(this.#mcpServers(), undefined, this.#reservedNames()));
     if (now === this.#builtServers) return false;
     this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its MCP servers changed`);
     return true;

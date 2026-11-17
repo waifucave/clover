@@ -205,6 +205,32 @@ describe("the Tools tab", () => {
     expect(screen.getAllByText(/runs without asking, whatever it is given|Always allow means the tool runs without asking, whatever it is given/)).toHaveLength(1);
   });
 
+  test("each tool also has whether it is offered: off, on demand or always on, the plugin's own default marked, and it never reads as Always block", () => {
+    const withSetting = { plugins: [{ pluginId: "reel", name: "Reel", server: "reel-reel", tools: [
+      { name: "Export", permission: "deny" as const, availability: "on-demand" as const, declared: "on-demand" as const, cardRules: [] },
+      { name: "Trim", permission: "ask" as const, availability: "off" as const, declared: "preload" as const, cardRules: [] },
+    ] }] };
+    const onSetAvailability = mock((_s: string, _t: string | undefined, _a: string) => undefined);
+    setup({ section: "tools", tools: withSetting, onSetAvailability });
+    const offered = screen.getByRole("radiogroup", { name: "Whether Export is offered" });
+    expect(within(offered).getAllByRole("radio").map((r) => [r.textContent, r.getAttribute("aria-checked")])).toEqual([["Off", "false"], ["On demand (default)", "true"], ["Always on", "false"]]);
+    // The permission beside it is its own: Export is blocked and still offered.
+    expect(within(screen.getByRole("radiogroup", { name: "What Export may do" })).getByRole("radio", { name: "Always block" }).getAttribute("aria-checked")).toBe("true");
+    // Trim's declared default is marked even though the user turned it off.
+    const trim = screen.getByRole("radiogroup", { name: "Whether Trim is offered" });
+    expect(within(trim).getAllByRole("radio").map((r) => [r.textContent, r.getAttribute("aria-checked")])).toEqual([["Off", "true"], ["On demand", "false"], ["Always on (default)", "false"]]);
+    fireEvent.click(within(trim).getByRole("radio", { name: "On demand" }));
+    expect(onSetAvailability).toHaveBeenLastCalledWith("reel-reel", "Trim", "on-demand");
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Whether every tool of Reel is offered" })).getByRole("radio", { name: "Always on" }));
+    expect(onSetAvailability).toHaveBeenLastCalledWith("reel-reel", undefined, "always");
+  });
+
+  test("an engine that doesn't serve the tool setting shows the three permissions only", () => {
+    setup({ section: "tools", tools });
+    expect(screen.queryByRole("radiogroup", { name: "Whether Export is offered" })).toBeNull();
+    expect(screen.queryByText("Offered to bots and agents")).toBeNull();
+  });
+
   test("a card's Always allow for one bot is on the tool's row and is taken back there", () => {
     const onTakeBackRule = mock((_s: string, _t: string, _b: string) => undefined);
     setup({ section: "tools", tools, onTakeBackRule });

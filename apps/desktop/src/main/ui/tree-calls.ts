@@ -136,6 +136,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // card is raised at all, so setting one or taking one back is the user's own press.
   "tool.permissions": read(TOOLS_PERMISSIONS),
   "tool.setPermission": press(TOOLS_PERMISSIONS),
+  // Off, on demand or always on (lane TS): what a model is offered is the user's own press, the same capability and gesture.
+  "tool.setAvailability": press(TOOLS_PERMISSIONS),
   "tool.takeBackRule": press(TOOLS_PERMISSIONS),
   // Main's own dialog, for the use the page names: `plugins.manage`'s folders (an install, a development folder),
   // `bots.avatar`'s model file. The token is redeemable by that one use only.

@@ -16,10 +16,10 @@ import { APPEARANCE_KEYS, NOTIFICATION_KEYS, OWN_SETTING_KEYS, settingKey } from
 import { LanguageChooser } from "./LanguageChooser";
 import { SettingsModal } from "./SettingsModal";
 import { S } from "./strings";
-import type { ExtraSection, Language, OneAtATimeView, SettingsSection, SettingsValues, ToolPermission } from "./types";
+import type { ExtraSection, Language, OneAtATimeView, SettingsSection, SettingsValues, ToolAvailability, ToolPermission } from "./types";
 
 /** `tool.permissions`' answer. */
-interface ToolsRaw { plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; isNew?: boolean; cardRules: { bot: string; computers: string[] }[] }[] }[] }
+interface ToolsRaw { plugins: { pluginId: string; name: string; server: string; tools: { name: string; title?: string; permission: ToolPermission; availability?: ToolAvailability; declared?: "preload" | "on-demand"; isNew?: boolean; cardRules: { bot: string; computers: string[] }[] }[] }[] }
 
 const DEFAULT_APPEARANCE: SettingsValues["appearance"] = { theme: "system", textSize: "default" };
 const DEFAULT_NOTIFICATIONS: SettingsValues["notifications"] = { needsYou: true, agentDone: true, routineFailed: true, sounds: false };
@@ -313,7 +313,7 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
       {...(logs ? { logs: { ...logs, onBack: () => setLogs(undefined) } } : {})}
       extraSections={extra}
       {...(toolsRaw !== undefined ? { tools: { plugins: toolsRaw.plugins.map((p) => ({ ...p, tools: p.tools.map((t) => ({ ...t, cardRules: t.cardRules.map((r) => ({ ...r, botName: bots.find((b) => b.id === r.bot)?.name ?? r.bot })) })) })) } } : {})}
-      {...(core ? { onSetTool: (server: string, tool: string | undefined, permission: ToolPermission) => toolsCall("tool.setPermission", { server, ...(tool !== undefined ? { tool } : {}), permission }), onTakeBackRule: (server: string, tool: string, bot: string) => toolsCall("tool.takeBackRule", { server, tool, bot }) } : {})}
+      {...(core ? { onSetAvailability: (server: string, tool: string | undefined, availability: ToolAvailability) => toolsCall("tool.setAvailability", { server, ...(tool !== undefined ? { tool } : {}), availability }), onSetTool: (server: string, tool: string | undefined, permission: ToolPermission) => toolsCall("tool.setPermission", { server, ...(tool !== undefined ? { tool } : {}), permission }), onTakeBackRule: (server: string, tool: string, bot: string) => toolsCall("tool.takeBackRule", { server, tool, bot }) } : {})}
       {...(oneRaw !== undefined ? { oneAtATime: oneRaw.points.map((p) => ({ ...p, title: typeof p.title === "string" ? p.title : p.title.en })) } : {})}
       {...(core ? { onPickActive: (point: string, entry: { pluginId: string; entryId: string }) => void (core.call as (m: string, p: unknown) => Promise<unknown>)("point.active.set", { point, entry }).then(() => setOneRev((r) => r + 1), () => setFailure(S.choiceFailed(S.section.plugins))) } : {})}
     />

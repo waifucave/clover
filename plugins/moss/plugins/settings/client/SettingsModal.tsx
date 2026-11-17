@@ -6,7 +6,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { IconClose, IconPlugin, IconSearch, SECTION_ICONS } from "./icons";
 import { S } from "./strings";
-import type { OneAtATimeView, SettingsModalProps, SettingsSection, ToolPermission, ToolsView } from "./types";
+import type { OneAtATimeView, SettingsModalProps, SettingsSection, ToolAvailability, ToolPermission, ToolsView } from "./types";
 
 export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "tools", "levels", "bots"];
 
@@ -66,6 +66,25 @@ function ThreeWay({ label, value, mixed, onPick }: { label: string; value: ToolP
   );
 }
 
+const AVAILABILITIES = ["off", "on-demand", "always"] as const;
+const AVAILABILITY_LABEL: Record<ToolAvailability, string> = { off: S.toolOff, "on-demand": S.toolOnDemand, always: S.toolAlways };
+/** What a plugin's declaration gives with nothing chosen (spec §6.7): a preloaded tool is always on, the rest on demand. */
+const declaredAvailability = (declared: "preload" | "on-demand" | undefined): ToolAvailability | undefined => (declared === undefined ? undefined : declared === "preload" ? "always" : "on-demand");
+
+/** The tool setting's control: off, on demand or always on, the plugin's own default marked. Its own words, apart from the
+ *  permission's: "Off" hides a tool, "Always block" refuses a call to one that is offered. */
+function Availability({ label, value, mixed, fallback, onPick }: { label: string; value: ToolAvailability | undefined; mixed?: boolean; fallback?: ToolAvailability | undefined; onPick?: (v: ToolAvailability) => void }) {
+  return (
+    <div className="cl-settings__three" role="radiogroup" aria-label={label} data-mixed={mixed ? "" : undefined}>
+      {AVAILABILITIES.map((v) => (
+        <button key={v} type="button" role="radio" aria-checked={value === v} data-value={v} {...(fallback === v ? { "data-default": "", title: S.toolDefaultMark } : {})} className="cl-settings__three-option" disabled={!onPick} onClick={() => onPick?.(v)}>
+          {AVAILABILITY_LABEL[v]}{fallback === v ? S.toolDefaultSuffix : ""}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const sameRef = (a: { pluginId: string; entryId: string } | undefined, b: { pluginId: string; entryId: string }) => a !== undefined && a.pluginId === b.pluginId && a.entryId === b.entryId;
 
 /** One picker per point that takes one filler at a time and has two or more (spec §5.4 "One at a time"), titled by the
@@ -96,22 +115,33 @@ function ActivePickers({ points, onPick }: { points: OneAtATimeView[] | undefine
   );
 }
 
-function ToolsPage({ tools, onSet, onTakeBack, item }: { tools: ToolsView | undefined; onSet: SettingsModalProps["onSetTool"]; onTakeBack: SettingsModalProps["onTakeBackRule"]; item: string | undefined }) {
+function ToolsPage({ tools, onSet, onSetAvailability, onTakeBack, item }: { tools: ToolsView | undefined; onSet: SettingsModalProps["onSetTool"]; onSetAvailability: SettingsModalProps["onSetAvailability"]; onTakeBack: SettingsModalProps["onTakeBackRule"]; item: string | undefined }) {
   if (tools === undefined) return <p className="cl-settings__note">{S.toolsLoading}</p>;
   return (
     <>
       <h3 className="cl-settings__subhead">{S.toolsTitle}</h3>
       <p className="cl-settings__note">{S.toolsDetail}</p>
+      {tools.plugins.some((p) => p.tools.some((t) => t.availability !== undefined)) && <p className="cl-settings__note">{S.toolsOfferedDetail}</p>}
       {tools.plugins.length === 0 && <p className="cl-settings__note">{S.toolsNone}</p>}
       {tools.plugins.map((p) => {
         const every = p.tools.every((t) => t.permission === p.tools[0]!.permission) ? p.tools[0]!.permission : undefined;
+        const offered = p.tools.every((t) => t.availability !== undefined);
+        const everyOffered = offered && p.tools.every((t) => t.availability === p.tools[0]!.availability) ? p.tools[0]!.availability : undefined;
         return (
           <section key={p.server} className="cl-settings__tool-group" aria-label={p.name} data-item={p.pluginId} {...(item === p.pluginId ? { "data-marked": true } : {})}>
             <Row label={p.name} detail={S.toolsAll}>
               <ThreeWay label={S.toolsAllFor(p.name)} value={every} mixed={every === undefined} {...(onSet ? { onPick: (v: ToolPermission) => onSet(p.server, undefined, v) } : {})} />
             </Row>
+            {offered && (
+              <Row label={S.toolOffered} detail={S.toolsAll}>
+                <Availability label={S.toolsAllOfferedFor(p.name)} value={everyOffered} mixed={everyOffered === undefined} {...(onSetAvailability ? { onPick: (v: ToolAvailability) => onSetAvailability(p.server, undefined, v) } : {})} />
+              </Row>
+            )}
             {p.tools.map((t) => (
               <Row key={t.name} label={t.title ?? t.name} detail={t.isNew ? S.toolsNew : undefined}>
+                {t.availability !== undefined && (
+                  <Availability label={S.toolOfferedFor(t.name)} value={t.availability} fallback={declaredAvailability(t.declared)} {...(onSetAvailability ? { onPick: (v: ToolAvailability) => onSetAvailability(p.server, t.name, v) } : {})} />
+                )}
                 <ThreeWay label={S.toolFor(t.name)} value={t.permission} {...(onSet ? { onPick: (v: ToolPermission) => onSet(p.server, t.name, v) } : {})} />
                 {t.cardRules.map((r) => (
                   <span key={r.bot} className="cl-settings__tool-rule">
@@ -340,7 +370,7 @@ function Page({ props }: { props: SettingsModalProps }) {
         </>
       );
     case "tools":
-      return <ToolsPage tools={props.tools} onSet={props.onSetTool} onTakeBack={props.onTakeBackRule} item={props.item} />;
+      return <ToolsPage tools={props.tools} onSet={props.onSetTool} onSetAvailability={props.onSetAvailability} onTakeBack={props.onTakeBackRule} item={props.item} />;
     case "levels":
       return (
         <>

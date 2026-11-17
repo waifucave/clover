@@ -46,7 +46,7 @@ describe("the door for parts: by capability, never by id (F2)", () => {
       expect(LAYER_METHODS.has(m)).toBe(true);
       for (const part of ["moss/conversation", "moss/sidebar"]) expect(verdict(part, m, { patch: { appearance: "dark" } })).toMatchObject({ ok: false, owned: false });
     }
-    for (const m of ["tool.setPermission", "point.active.set", "plugin.remove", "ui.secret", "ui.pick", "bot.importAvatar"]) {
+    for (const m of ["tool.setPermission", "tool.setAvailability", "point.active.set", "plugin.remove", "ui.secret", "ui.pick", "bot.importAvatar"]) {
       expect(LAYER_METHODS.has(m)).toBe(false);
       expect(verdict("moss/conversation", m)).toMatchObject({ ok: false, owned: true });
       expect(verdict("moss/conversation", m).ok === false && (verdict("moss/conversation", m) as { why: string }).why).toContain("capability");
@@ -346,6 +346,7 @@ const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
   "plugin.logs": { needs: ["logs.read"], gesture: false },
   "tool.permissions": { needs: ["tools.permissions"], gesture: false },
   "tool.setPermission": { needs: ["tools.permissions"], gesture: true },
+  "tool.setAvailability": { needs: ["tools.permissions"], gesture: true },
   "tool.takeBackRule": { needs: ["tools.permissions"], gesture: true },
   "point.active.list": { needs: ["app.settings"], gesture: false },
   "point.active.set": { needs: ["app.settings"], gesture: true },
@@ -398,6 +399,7 @@ const WORST: Record<string, Worst> = {
   "plugin.logs": "read", // its own file only, key-looking runs cut to "…"
   "tool.permissions": "read", // plugin tools by their own names, each with its value and the bots' saved card rules
   "tool.setPermission": "user's permission press", // always allow, ask or always block: the user's own press in Settings, never another part
+  "tool.setAvailability": "user's permission press", // off, on demand or always on: what a model is offered, the user's own press in Settings
   "tool.takeBackRule": "user's permission press", // takes back a card's Always allow for one bot
   "point.active.list": "read", // the one-at-a-time points, their fillers and the one active, for Settings' pickers
   "point.active.set": "user's permission press", // which filler of a one-at-a-time point is used: the user's own press in Settings
@@ -519,7 +521,7 @@ describe("the door, table by table: what each entry needs, with what press", () 
   test("no test or table names a bundled id to allow a call: the bundled parts pass by the capabilities their manifests list", async () => {
     // Every call each bundled part makes today, from its own manifest's capabilities.
     const makes: Record<string, string[]> = {
-      "moss/settings": ["ui.settings", "ui.set", "plugin.setEnabled", "plugin.logs", "plugin.list", "plugin.ui", "account.status", "tool.permissions", "tool.setPermission", "point.active.list", "point.active.set", "computer.list"],
+      "moss/settings": ["ui.settings", "ui.set", "plugin.setEnabled", "plugin.logs", "plugin.list", "plugin.ui", "account.status", "tool.permissions", "tool.setPermission", "tool.setAvailability", "point.active.list", "point.active.set", "computer.list"],
       [PLUGINS_PART]: ["plugin.install", "plugin.remove", "plugin.get", "plugin.settings.get", "plugin.settings.set", "ui.pick", "ui.secret", "plugin.logs", "notify.setMuted", "computer.list", "command.list"],
       [BOT_EDITOR_PART]: ["bot.setUserLayer", "models.list", "plugin.list", "plugin.ui", "ui.secret", "ui.settings"],
       [CHARACTER_PART]: ["bot.importAvatar", "plugin.list"],
