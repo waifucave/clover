@@ -89,6 +89,8 @@ describe("the fence refuses a write there for every kind of caller, and lets eve
     }
     // On this computer's real fence too, by the same names.
     expect(fence.check({ op: "read", path: join(old, "run", "harness-token") }, ctx).allowed).toBe(false);
+    // And a sandboxed command's denyRead (the runner's policy) names them.
+    expect(fence.policy(ctx).denyRead).toEqual(expect.arrayContaining([join(old, "run")]));
   });
 
   test("a link planted in a writable folder leads into it: refused where it lands", () => {
