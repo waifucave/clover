@@ -20,7 +20,7 @@ import { RENDER_CONSOLE_MAX, RenderQueue, renderPlace, type RenderConsoleLine, t
 import type { ShellState } from "@waifucave/moss-plugin-sdk";
 import { pluginIconFile } from "./ui/plugin-icon";
 import { app, BrowserWindow, ipcMain, Menu, webContents, Notification, clipboard, dialog, nativeImage, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardPlacedEvent, CardRequestedEvent, CardResolvedEvent, PairStatus, PRESENCE_REFRESH_MS, SURFACES_METHODS, UiSettings, UiSettingsChangedEvent, type CardPlacement } from "@waifucave/moss-protocol";
+import { APP_METHODS, BROWSER_METHODS, PLUGINS_METHODS, MOSS_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, ReleaseChangedEvent, compareReleases, CardPlacedEvent, CardRequestedEvent, CardResolvedEvent, PairStatus, PRESENCE_REFRESH_MS, SURFACES_METHODS, UiSettings, UiSettingsChangedEvent, type CardPlacement } from "@waifucave/moss-protocol";
 import { systemAccentFromOs } from "@waifucave/moss-plugin-sdk";
 import { testBrowserNames } from "./browser/test-names";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
@@ -29,7 +29,8 @@ import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
-import { cliLauncher, locateDaemonBinary } from "./pair/login";
+import { cliLauncher, installEngineCopy, locateDaemonBinary } from "./pair/login";
+import { appRelease, bundlePathOf, BringWatch, ReleaseCatchUp, writeOwnRecord, type ReleaseNotice, type UpdateOutcome } from "./release";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
@@ -180,6 +181,41 @@ let mainWindow: BrowserWindow | undefined;
 let leaving = false;
 let shuttingDown = false;
 let updater: Updater | undefined;
+// One release for everything (spec §3.1; release.ts). This app's release, its bundle (what its record names), and the two
+// things it can be told: it is behind the engine (it updates itself before it connects), or ahead of it (it asks for its
+// engine to be brought in and says it waits for work to finish).
+const ownRelease = appRelease(app.getVersion(), typeof __MOSS_TEST_BUILD__ === "string" ? process.env.MOSS_TEST_APP_RELEASE : undefined);
+const ownBundle = bundlePathOf(app.getPath("exe"), process.platform, process.env);
+let releaseNotice: ReleaseNotice | undefined;
+function setReleaseNotice(n: ReleaseNotice | undefined): void {
+  releaseNotice = n;
+  log(`release: ${n === undefined ? "no notice" : `notice ${n.kind}${"phase" in n ? ` (${n.phase})` : ""}`}`);
+  if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
+  tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(n === undefined ? {} : { status: n.kind === "waiting" || n.kind === "switching" ? "Waiting to switch to a newer MOSS…" : n.kind === "offline" ? "Offline: MOSS Code can't update yet" : "Updating MOSS Code…" }) });
+}
+/** A test build's stand-in for the update server (`MOSS_TEST_UPDATE_OUTCOME`: offline, none, failed, ready:<version>): no real update is ever fetched. */
+function testUpdateOutcome(): UpdateOutcome | undefined {
+  if (typeof __MOSS_TEST_BUILD__ !== "string") return undefined;
+  const v = process.env.MOSS_TEST_UPDATE_OUTCOME;
+  if (v === undefined) return undefined;
+  if (v.startsWith("ready:")) return { kind: "ready", version: v.slice(6) };
+  return v === "offline" || v === "none" ? { kind: v } : { kind: "failed", why: "a test's stand-in" };
+}
+const catchUp = new ReleaseCatchUp({
+  check: async () => testUpdateOutcome() ?? (updater !== undefined ? updater.checkNow() : { kind: "unavailable" }),
+  install: () => {
+    if (testUpdateOutcome() !== undefined) { log("release: a test build's stand-in update installs here (nothing is installed)"); return true; }
+    return updater?.install(true) ?? false;
+  },
+  notice: setReleaseNotice,
+  after: (ms, fn) => { setTimeout(fn, typeof __MOSS_TEST_BUILD__ === "string" && Number(process.env.MOSS_TEST_RELEASE_RETRY_MS) > 0 ? Number(process.env.MOSS_TEST_RELEASE_RETRY_MS) : ms); },
+  log: (line) => log(line),
+});
+const bringWatch = new BringWatch({
+  bring: async (p) => (await pair.client!.request<{ state: "waiting" | "switching" }>("release.bring", p, 10_000)),
+  notice: setReleaseNotice,
+  log: (line) => log(line),
+});
 /** When a downloaded update installs (updater.ts): at the daemon's first idle moment, or at the user's Quit. */
 const installs = new InstallGate({
   status: async () => {
@@ -748,6 +784,15 @@ async function ready(): Promise<void> {
 
   for (const e of ["display-metrics-changed", "display-added", "display-removed"] as const) screen.on(e as "display-added", () => tellSurfaces());
   startBrowser();
+  // One release for everything (spec §3.1): this app's record under the home (before any engine runs), then its engine put under
+  // the home under the install lock, so the login item and every start use the NEWEST installed copy, not this app's own.
+  if (app.isPackaged) writeOwnRecord(home, { program: "code", bundlePath: ownBundle, release: ownRelease }, log);
+  const bundledEngine = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  if (bundledEngine !== undefined && app.isPackaged && typeof __MOSS_TEST_BUILD__ !== "string") {
+    const placed = await installEngineCopy({ binary: bundledEngine, home, profile: identity.profile, bundlePath: ownBundle });
+    if (placed === undefined) log("release: the engine wasn't put under the home; this app starts its own copy");
+    else { installedEngine = placed.binary; log(`release: the engine starts from the home's copy (release ${placed.release}${placed.installed ? ", this app's was newer" : ""})`); }
+  }
   pair = makePair();
   setMenu();
   // The install marker: this home's daemon is the app's (or a package's), so it never updates itself (updater.ts).
@@ -1120,13 +1165,16 @@ function showInvisible(win: BrowserWindow): void {
   win.showInactive();
 }
 
+/** The engine binary under the home (`engine install`'s answer), which the login item and every start use when there is one. */
+let installedEngine: string | undefined;
+
 function makePair(): Pair {
-  const binary = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  const binary = installedEngine ?? locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
   const p = new Pair({
     endpoint: daemonEndpoint(home),
     hello: () => {
       const token = readAppToken(home, env);
-      return token === undefined ? undefined : appHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION);
+      return token === undefined ? undefined : appHello(token, app.getVersion(), MOSS_PROTOCOL_VERSION, ownRelease);
     },
     // A test-marked build never registers a login item or starts the daemon through the OS (its core is started by
     // the test itself): no launcher.
@@ -1135,7 +1183,16 @@ function makePair(): Pair {
     // pipe's name is in a namespace every user shares.
     prove: { pid: process.pid },
     log,
+    // One release for everything: behind the engine, the app updates itself before it connects (release.ts's `ReleaseCatchUp`).
+    onBehind: (b) => catchUp.start(b.needs),
+    // Ahead of the engine: only the release door is open; the app asks for its engine to be brought in.
+    onAhead: async (client) => {
+      await client.request("events.subscribe", { areas: ["release"] }).catch(() => undefined);
+      await bringWatch.start(ownRelease, ownBundle);
+    },
     onConnected: (client, hello) => {
+      // On this release as the engine: whatever waited for it is done.
+      bringWatch.done();
       // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`), and tried again on a
       // growing wait while the core can't take it yet (try 8: a daemon whose links were still starting answered "not
       // served yet" once, nothing asked again, and every press on a card was refused). A press waits on it.
@@ -1249,6 +1306,16 @@ function makePair(): Pair {
         applyThemeSource(parsed.data.settings.appearance);
       } else log("pair: ignored a ui_settings_changed event that isn't one");
     }
+    if (type === "release_changed") {
+      const parsed = ReleaseChangedEvent.safeParse(params);
+      if (parsed.success) {
+        // A newer app is bringing its engine: this one (older, already open) shows it is updating and updates itself; the app that
+        // brings it hears its own waiting.
+        const inc = parsed.data.incoming;
+        if (inc !== undefined && compareReleases(inc, ownRelease) > 0 && parsed.data.state !== "current") catchUp.start(inc);
+        else bringWatch.event(parsed.data);
+      }
+    }
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found" || type === "plugin_ui_changed" || type === "methods_changed") scheduleReload();
     if (type === "card_requested") {
       const parsed = CardRequestedEvent.safeParse(params);
@@ -1356,7 +1423,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
   // was never told of a card (the acceptance run's first card-arrival check found it).
   // `surfaces` (lane RT): where the engine's router places each card (`card_placed`).
-  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals", "surfaces"] }).catch(() => undefined);
+  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals", "surfaces", "release"] }).catch(() => undefined);
   void reportPresence(client).then(() => client.request<unknown>("card.placement", {})).then((raw) => {
     const r = SURFACES_METHODS.cardPlacement.result.safeParse(raw);
     if (r.success) for (const p of r.data.placements) enginePlaced(p.card, p.place);
@@ -1452,6 +1519,8 @@ const pageDeps = {
   keyTarget: () => (corePage === "key" ? keyTarget : undefined),
   registryReady: () => registryReady,
   daemonDown: () => pair.stuck !== undefined,
+  releaseNotice: () => releaseNotice,
+  switchNow: () => void bringWatch.switchNow(),
 };
 
 /** Shows one of the core's pages in the main window (opening it if need be). */
@@ -1487,7 +1556,7 @@ function stateChanged(s: PairState): void {
   // The root draws "Starting MOSS…" until the shell comes; once the pair has gone a long time with no daemon (and
   // again when one comes), it is asked to draw again, so it says so instead.
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
-  const status = s.kind === "reconnecting" ? "Reconnecting to MOSS…" : s.kind === "unavailable" ? "MOSS Code isn't running" : s.kind === "starting-daemon" ? "Starting MOSS…" : s.kind === "unverified" ? "Can't verify the MOSS daemon" : undefined;
+  const status = s.kind === "behind" ? "Updating MOSS Code…" : s.kind === "ahead" ? "Waiting to switch to a newer MOSS…" : s.kind === "reconnecting" ? "Reconnecting to MOSS…" : s.kind === "unavailable" ? "MOSS Code isn't running" : s.kind === "starting-daemon" ? "Starting MOSS…" : s.kind === "unverified" ? "Can't verify the MOSS daemon" : undefined;
   tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(status !== undefined ? { status } : {}) });
 }
 

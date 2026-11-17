@@ -6,13 +6,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
 body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--moss-color-text, CanvasText); display: flex; flex-direction: column; }
 #moss-stage { position: relative; flex: 1; min-height: 0; }
 #moss-stage > iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: transparent; color-scheme: light dark; }
-#moss-banner { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 96px; background: var(--moss-color-attention, #C27C00); color: #111; font-weight: 600; }
+#moss-banner, #moss-release { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 16px 8px 96px; background: var(--moss-color-attention, #C27C00); color: #111; font-weight: 600; }
 #moss-drag { position: fixed; top: 0; left: 0; right: 0; height: 45px; z-index: 20; -webkit-app-region: drag; }
 #moss-drag[hidden] { display: none; }
-#moss-banner { position: relative; z-index: 30; -webkit-app-region: drag; }
-#moss-banner button, #moss-banner a, .moss-page button, .moss-page input, .moss-page a, .moss-page select, .moss-page textarea, .moss-core-note button, .moss-core-note a { -webkit-app-region: no-drag; }
-#moss-banner[hidden] { display: none; }
-#moss-banner button, .moss-core-note button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid currentColor; background: transparent; color: inherit; cursor: default; }
+#moss-banner, #moss-release { position: relative; z-index: 30; -webkit-app-region: drag; }
+#moss-banner button, #moss-banner a, #moss-release button, .moss-page button, .moss-page input, .moss-page a, .moss-page select, .moss-page textarea, .moss-core-note button, .moss-core-note a { -webkit-app-region: no-drag; }
+#moss-banner[hidden], #moss-release[hidden] { display: none; }
+#moss-banner button, #moss-release button, .moss-core-note button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid currentColor; background: transparent; color: inherit; cursor: default; }
 .moss-core-note { position: absolute; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center; padding: 24px; background: var(--moss-color-canvas, Canvas); color: var(--moss-color-text, CanvasText); }
 .moss-core-note p { margin: 0; max-width: 46ch; }
 

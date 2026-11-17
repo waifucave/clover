@@ -117,3 +117,27 @@ export function copyOutOfAppImage(bundled: string, env: NodeJS.ProcessEnv, userH
   }
   return target;
 }
+
+/** What `moss-core engine install` printed: the binary every start goes through, whichever app's copy won the lock. */
+export function parseEngineInstall(out: string): { installed: boolean; binary: string; release: string; build?: string } | undefined {
+  const line = out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("{")).pop();
+  if (line === undefined) return undefined;
+  try {
+    const p = JSON.parse(line) as { installed?: unknown; binary?: unknown; release?: unknown; build?: unknown };
+    if (typeof p.installed !== "boolean" || typeof p.binary !== "string" || p.binary === "" || typeof p.release !== "string") return undefined;
+    return { installed: p.installed, binary: p.binary, release: p.release, ...(typeof p.build === "string" ? { build: p.build } : {}) };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Puts this app's own engine (and its bundled tree) under the home, under the install lock, and says which binary to start
+ * the engine from: `<home>/bin/daemon/moss-core`, the NEWEST installed copy, whichever of two apps starting at once won
+ * (spec §3.1 "Where the copies are found"). The login item the app then registers (`autostart enable`) names that copy, never
+ * this app's own resources. Undefined when it couldn't (the app then starts its own bundled engine, as a single app did).
+ */
+export async function installEngineCopy(cfg: LauncherConfig & { bundlePath: string; build?: string }): Promise<{ installed: boolean; binary: string; release: string } | undefined> {
+  const r = await run(cfg, ["engine", "install", "--app", cfg.bundlePath, ...(cfg.build !== undefined ? ["--build", cfg.build] : [])]);
+  return r.ok ? parseEngineInstall(r.out) : undefined;
+}

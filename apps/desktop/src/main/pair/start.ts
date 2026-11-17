@@ -83,11 +83,13 @@ export function readAppToken(home: string, env: NodeJS.ProcessEnv): string | und
 
 /** The app's hello (`protocol.hello`, lane B's roles file). `features` names what the app handles: the daemon's
  *  `app.show` and `app.quit`, plugin layers, and `app.window.capture` (`app.capture`), and `app.tab.*` (the browser). */
-export function appHello(token: string, version: string, protocolVersion: number): MossHelloParams {
+export function appHello(token: string, version: string, protocolVersion: number, release?: string): MossHelloParams {
   return {
     protocolVersion,
     role: "app",
     token,
+    // One release for everything (spec §3.1): the engine refuses an app that is behind it, and an app that names none counts as behind.
+    ...(release !== undefined ? { release } : {}),
     clientName: `MOSS Code ${version}`.slice(0, 128),
     features: ["app.show", "app.quit", "layers", "app.capture", "app.open", "app.render", "browser"],
   };

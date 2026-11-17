@@ -22,6 +22,7 @@ import type { RequestOptions } from "node:http";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { GitHubProvider } from "electron-updater/out/providers/GitHubProvider";
+import type { UpdateOutcome } from "./release";
 import { verifyFeed, SIGNATURE_SUFFIX, type FeedVerdict } from "@waifucave/moss-update-feed";
 
 /** An update file's name, as the release holds it (packages/update-feed's FEED_NAME). */
@@ -256,13 +257,41 @@ export interface UpdaterDeps {
   log(line: string): void;
 }
 
+/** The part of electron-updater's `autoUpdater` a forced check uses (a fake stands in for it in the tests). */
+export interface AutoUpdaterLike {
+  checkForUpdates(): Promise<{ isUpdateAvailable?: boolean; updateInfo?: { version?: string }; downloadPromise?: Promise<unknown> | null } | null | undefined>;
+}
+
+/** Whether an update check failed for want of a network (a lookup, a connection, a timeout, Chromium's `net::ERR_`). */
+export function isOfflineError(err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  const code = typeof e?.code === "string" ? e.code : "";
+  const message = typeof e?.message === "string" ? e.message : "";
+  return /^(ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED)$/.test(code)
+    || /net::ERR_(INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|NETWORK_CHANGED|CONNECTION_(REFUSED|RESET|TIMED_OUT)|TIMED_OUT)|getaddrinfo|ENOTFOUND|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN/.test(message);
+}
+
+/** A forced check: looks for an update and waits for it to download, saying which of the four things happened. */
+export async function checkAndDownload(au: AutoUpdaterLike): Promise<UpdateOutcome> {
+  try {
+    const r = await au.checkForUpdates();
+    if (r === null || r === undefined || r.isUpdateAvailable !== true) return { kind: "none" };
+    await r.downloadPromise;
+    return { kind: "ready", version: r.updateInfo?.version ?? "" };
+  } catch (err) {
+    return isOfflineError(err) ? { kind: "offline" } : { kind: "failed", why: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export interface Updater {
+  /** Checks now and downloads what it finds (an app behind the engine, `ReleaseCatchUp`); never installs by itself. */
+  checkNow(): Promise<UpdateOutcome>;
   stop(): void;
   /** Quits and installs the downloaded update; `relaunch` starts the new app after. False when there's nothing to. */
   install(relaunch: boolean): boolean;
 }
 
-const NO_UPDATER: Updater = { stop: () => {}, install: () => false };
+const NO_UPDATER: Updater = { checkNow: async () => ({ kind: "unavailable" }), stop: () => {}, install: () => false };
 
 /** Starts the checks (now, then every UPDATE_CHECK_MS). A no-op where the app doesn't update itself. */
 export async function startUpdater(deps: UpdaterDeps): Promise<Updater> {
@@ -297,6 +326,7 @@ export async function startUpdater(deps: UpdaterDeps): Promise<Updater> {
   const timer = setInterval(check, UPDATE_CHECK_MS);
   timer.unref?.();
   return {
+    checkNow: () => checkAndDownload(autoUpdater as unknown as AutoUpdaterLike),
     stop: () => clearInterval(timer),
     install: (relaunch) => {
       // macOS (Squirrel) reads this instead of quitAndInstall's arguments: relaunch, or install as the app quits.

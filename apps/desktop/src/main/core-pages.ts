@@ -110,10 +110,14 @@ export interface PageDeps {
   registryReady(): boolean;
   /** Set when the app has had no daemon for a long time (the pair's `stuck`): the root says MOSS can't start. */
   daemonDown?(): boolean;
+  /** What the app says about its release (release.ts): updating before it connects, offline, or waiting for work to finish. */
+  releaseNotice?(): unknown;
+  /** The person's "Switch now" while a newer app waits to bring its engine in. */
+  switchNow?(): void;
 }
 
 /** The calls the root's pages make, by name. Anything else is refused. */
-export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove", "key.view", "key.save", "key.remove"] as const;
+export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove", "key.view", "key.save", "key.remove", "release.switchNow"] as const;
 export type PageCall = (typeof PAGE_CALLS)[number];
 
 const ID_RE = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?$/;
@@ -139,7 +143,14 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
     }
     return { page: deps.page() };
   }
-  if (name === "registry.state") return { ready: deps.registryReady(), ...(deps.daemonDown?.() === true ? { down: true } : {}) };
+  if (name === "registry.state") {
+    const release = deps.releaseNotice?.();
+    return { ready: deps.registryReady(), ...(deps.daemonDown?.() === true ? { down: true } : {}), ...(release !== undefined ? { release } : {}) };
+  }
+  if (name === "release.switchNow") {
+    deps.switchNow?.();
+    return { ok: true };
+  }
   if (name === "page.close") {
     deps.closePage();
     return { ok: true };
