@@ -264,6 +264,20 @@ jobs:
           MOSS_UI_TESTS: "1"
         run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/ui-smoke.test.ts test/sealed-ui.test.ts
 
+      # MOSS, the app for bots (apps/moss, lane MA): built and packaged unsigned and unpacked like MOSS Code, then its
+      # window test, headless against its fake engine (the test makes its own test build first).
+      - name: App MOSS · build the unsigned app
+        id: moss-build
+        if: ${{ !cancelled() && env.APP == 'true' }}
+        run: bun run build:moss
+
+      - name: App MOSS · UI test
+        if: ${{ !cancelled() && steps.moss-build.outcome == 'success' }}
+        working-directory: apps/moss
+        env:
+          MOSS_UI_TESTS: "1"
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/ui.test.ts
+
       # The MOSS Browser in a real Electron (lane L, plan §4 L M1 and M2): offscreen bot tabs, the viewport, the
       # person's selecting and copying through it, the screen-reader hybrid, and the streamed view. CI only, like the
       # UI test.

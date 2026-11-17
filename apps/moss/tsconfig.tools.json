@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The tests, the fake engine and the build and render scripts run on Bun.
+  "compilerOptions": { "lib": ["ESNext", "DOM", "DOM.Iterable"], "types": ["bun", "node"], "jsx": "react-jsx" },
+  "include": ["test", "scripts"]
+}

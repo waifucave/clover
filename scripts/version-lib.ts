@@ -68,8 +68,8 @@ export function nextVersion(current: string, mode: string): string {
 }
 
 const PKGS = ["cli", "core", "protocol", "plugin-sdk"];
-/** M-M0: other stamped package.jsons, by repo path — the desktop app, whose version electron-builder reads. */
-const OTHER_PKG_DIRS = ["apps/desktop"];
+/** M-M0: other stamped package.jsons, by repo path — the two apps (MOSS Code and MOSS), whose versions electron-builder reads. */
+const OTHER_PKG_DIRS = ["apps/desktop", "apps/moss"];
 
 /** The generated Info.plists (in apple/Winter/Support) that carry MOSS's version: Winter Headless's (the old Mac app's left the repo). */
 export const MOSS_INFO_PLISTS = ["WinterHeadless-Info.plist"] as const;

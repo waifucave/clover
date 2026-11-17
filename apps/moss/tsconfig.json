@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // MOSS's main process and preload run on Electron's Node, never Bun. Bun's types only because the plugin SDK's root
+  // index (whose `TokenValue` type the sealed pages name) declares its Tier-2 API with them.
+  "compilerOptions": { "types": ["node", "bun"] },
+  "include": ["src/main", "src/shared"]
+}

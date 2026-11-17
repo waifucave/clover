@@ -1,0 +1,33 @@
+{
+  "name": "@waifucave/moss-moss",
+  "version": "0.124.0",
+  "private": true,
+  "description": "MOSS, the app for bots (Electron): a fixed, built-in window on the shared engine.",
+  "author": "waifucave",
+  "homepage": "https://github.com/waifucave/moss",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "dist": "bun run scripts/build.ts && electron-builder --dir --publish never",
+    "render": "bun run scripts/render.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p tsconfig.window.json && tsc --noEmit -p tsconfig.tools.json"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "21.0.4",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "25.9.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@waifucave/moss-core": "workspace:*",
+    "@waifucave/moss-plugin-sdk": "workspace:*",
+    "@waifucave/moss-protocol": "workspace:*",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}
