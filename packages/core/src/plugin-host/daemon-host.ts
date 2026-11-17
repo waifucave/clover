@@ -600,7 +600,10 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
         const w = uiSendWindows.get(ctx.pluginId);
         if (w === undefined || now - w.start >= 1000) uiSendWindows.set(ctx.pluginId, { start: now, n: 1 });
         else if (++w.n > UI_SEND_PER_SECOND) throw new ContractError("refused", `${ctx.pluginId} sent more than ${UI_SEND_PER_SECOND} UI messages this second`);
-        o.emit?.({ type: "plugin_ui_message", pluginId: ctx.pluginId, event, value: JSON.parse(text) });
+        // Sent while serving a session's call: whose, from the core's own record of the call (the caller it bound).
+        const c = ctx.caller;
+        const call = c.kind === "session" && c.sessionKind !== undefined ? { session: c.sessionId, kind: c.sessionKind, ...(c.bot !== undefined ? { bot: c.bot } : {}) } : undefined;
+        o.emit?.({ type: "plugin_ui_message", pluginId: ctx.pluginId, event, value: JSON.parse(text), ...(call !== undefined ? { call } : {}) });
       },
     },
   ];

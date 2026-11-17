@@ -15,7 +15,7 @@ import type { CardMeta } from "@waifucave/moss-protocol";
 import type { TokenValue } from "../catalogs/tokens";
 import { cssProperty } from "../catalogs/tokens";
 import { COMPONENT_CALLS, fromLayerWire, listenerArgOf, toLayerWire } from "../catalogs/layer-calls";
-import type { PluginApi, ShellAccount, ShellApp, ShellState, Unsubscribe } from "../api/plugin-api";
+import type { HostMessageCall, PluginApi, ShellAccount, ShellApp, ShellState, Unsubscribe } from "../api/plugin-api";
 import type { StreamMeta, StreamOpenEvent, StreamOpenOptions, StreamReadEvent } from "../api/plugin-api";
 import { acceptStreams, openPicture, openStream, pointStream, type StreamsTransport } from "../api/streams";
 import type {
@@ -1191,11 +1191,11 @@ export function usePluginApi(): PluginApi {
       host: {
         call: <T,>(handler: string, args?: unknown, opts?: { timeoutMs?: number }) =>
           call<{ result: T }>("plugin.layer.call", { call: "host.call", args: [handler, args ?? null, ...(opts?.timeoutMs !== undefined ? [{ timeoutMs: opts.timeoutMs }] : [])] }).then((r) => r.result),
-        on: (event: string, listener: (data: unknown) => void): Unsubscribe => {
+        on: (event: string, listener: (data: unknown, call?: HostMessageCall) => void): Unsubscribe => {
           subscribe(part.mount, part.entry.pluginId, "plugins");
           return onApiEvent(part.entry.pluginId, (method, params) => {
-            const e = params as { type?: unknown; pluginId?: unknown; event?: unknown; value?: unknown } | undefined;
-            if (method === "core.event" && e?.type === "plugin_ui_message" && e.pluginId === part.entry.pluginId && e.event === event) listener(e.value);
+            const e = params as { type?: unknown; pluginId?: unknown; event?: unknown; value?: unknown; call?: HostMessageCall } | undefined;
+            if (method === "core.event" && e?.type === "plugin_ui_message" && e.pluginId === part.entry.pluginId && e.event === event) listener(e.value, e.call);
           });
         },
       } as unknown as PluginApi["host"],

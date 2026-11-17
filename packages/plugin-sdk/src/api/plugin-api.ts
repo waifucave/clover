@@ -381,8 +381,12 @@ export interface CommandsApi {
  *  component's computer, unless `platforms` leaves it out; then on the main (§5.4 "Its own host"). */
 export interface HostApi {
   call<R = unknown>(name: string, args?: unknown, opts?: CallOptions): Promise<R>;
-  on(event: string, listener: (data: unknown) => void): Unsubscribe;
+  /** `call`, when the host half sent it while serving a session's call (a tool call): whose, as the core recorded it. */
+  on(event: string, listener: (data: unknown, call?: HostMessageCall) => void): Unsubscribe;
 }
+
+/** Whose call a host half's message was sent inside: the session, its kind and its bot (the core's own record). */
+export interface HostMessageCall { session: string; kind: "bot" | "side-thread" | "agent" | "coding"; bot?: string }
 
 /** What a program run outside the sandbox gave back: its exit code (null when a signal ended it), its output as text
  *  (each capped at `OUTSIDE_OUTPUT_MAX` bytes; `truncated` when one was cut), and `timedOut` when its time ran out. */

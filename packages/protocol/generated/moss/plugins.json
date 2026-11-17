@@ -6053,7 +6053,36 @@
             "minLength": 1,
             "maxLength": 128
           },
-          "value": {}
+          "value": {},
+          "call": {
+            "type": "object",
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._:-]+$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "bot",
+                  "side-thread",
+                  "agent",
+                  "coding"
+                ]
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              }
+            },
+            "required": [
+              "session",
+              "kind"
+            ]
+          }
         },
         "required": [
           "type",

@@ -8,7 +8,7 @@ import { z } from "zod";
 import { utf16 } from "./strings";
 import {
   AnyPluginId, BotId, Caller, MAX_CHILD_PLUGINS, CardId, ChangeResult, ComputerName, Empty, HostProcess, Ok, Scope, SemverVersion, Text,
-  SessionId, Timestamp, TopPluginId, TreeHash,
+  SessionId, SessionKind, Timestamp, TopPluginId, TreeHash,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -1044,7 +1044,13 @@ export const PluginUiChangedEvent = coreEvent("plugin_ui_changed", { pluginIds: 
 export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: utf16(4000) });
 /** A plugin's host half sent its components a message (`ui.send`): the app gives it to the components that listen
  *  (`host.on(event)`). */
-export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
+/** A host half's message to its own components (`ui.send`). Sent while it serves a session's call (a tool call), it says
+ *  whose (`call`: the core's own record of that call, never anything the plugin wrote), so a component can act for that
+ *  session or bot only. */
+export const PluginUiMessageEvent = coreEvent("plugin_ui_message", {
+  pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown(),
+  call: z.object({ session: SessionId, kind: SessionKind, bot: BotId.optional() }).optional(),
+});
 export const PluginStoreChangedEvent = coreEvent("plugin_store_changed", { pluginId: AnyPluginId, key: utf16(256, 1) });
 /** A watch's value (`plugin.layer.watch`): a component's listener member (`files.watch`, `logs.follow`, `usage.watch`
  *  …) called on its own layer connection; each value the core's listener got, as JSON (bytes as `{ $bytes }`), for that

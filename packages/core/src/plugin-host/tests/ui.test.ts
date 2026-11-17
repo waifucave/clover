@@ -40,7 +40,7 @@ describe("plugin.ui and plugin.layer.api", () => {
       }),
       "package.json": JSON.stringify({ type: "module" }),
       // What its components may call is its `ui` table only; `onToolAfter` stands for a tool's or a hook's handler.
-      "host/index.js": "export const onToolAfter = async () => \"a hook ran\";\nconst draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
+      "host/index.js": "export const onToolAfter = async () => \"a hook ran\";\nexport const tell = async (args, ctx) => { await ctx.api.ui.send(\"told\", { n: 1 }); return \"told\"; };\nconst draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
         + "const big = async (args, ctx) => { try { await ctx.api.ui.send(\"big\", \"x\".repeat(70000)); return \"sent\"; } catch (e) { return e.message; } };\n"
         + "const remember = async (args, ctx) => { for (let i = 0; i < 5; i++) await ctx.api.storage.synced.set(\"stage\", { v: 1, n: i, ...args }); return { by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
         + "export const ui = { draw: (a, c) => draw(a, c), big: (a, c) => big(a, c), spam: (a, c) => spam(a, c), remember: (a, c) => remember(a, c) };\n"
@@ -84,6 +84,12 @@ describe("plugin.ui and plugin.layer.api", () => {
       const api = ui.methods[PLUGINS_METHODS.pluginLayerApi.name]!;
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "draw", { card: "The Star" }), session: "s_1" }, ctx))
         .toEqual({ result: { drew: "The Star", by: "plugin", as: "tarot", session: "s_1" } });
+      // A component's call is the plugin's: its message names no call. One sent while serving a session's call (a tool
+      // call, here a handler the core invokes for a coding session) says whose, from the core's own record.
+      expect(events.find((e) => e.type === "plugin_ui_message" && e.event === "drawn")!.call).toBeUndefined();
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "tell", args: null, caller: { kind: "session", sessionId: "s_code", sessionKind: "coding" } })).toBe("told");
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "tell", args: null, caller: { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" } })).toBe("told");
+      expect(events.filter((e) => e.type === "plugin_ui_message" && e.event === "told").map((e) => e.call)).toEqual([{ session: "s_code", kind: "coding" }, { session: "s_alpha", kind: "bot", bot: "alpha" }]);
       // ui.send: a value over 64 KiB is refused, and so is a plugin's 51st message in a second (#333's review).
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "big", null) }, ctx)).toEqual({ result: expect.stringContaining("at most 65536") });
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "spam", null) }, ctx)).toEqual({ result: [expect.any(Number), expect.stringContaining("more than 50 UI messages this second")] });
