@@ -12,7 +12,7 @@ import { BotFace as ProtocolBotFace, TOOL_AVAILABILITIES, type MossHelloResult, 
 import { daemonEndpoint, type DaemonClient } from "./client";
 import { bundlePathOf, writeOwnRecord } from "./install-record";
 import { EngineConnection, locateEngine, osLauncher, tokenPath, type ConnectionState } from "./connection";
-import { MossEngine } from "./engine";
+import { MossEngine, routineEditOf } from "./engine";
 import type { BotEdit } from "../shared/view";
 import { engineHome, MAIN_WINDOW_ID, mossIdentity, parseLaunchArgs, resolveProfile, WINDOW_PARTITION } from "./identity";
 import { fileVault, memoryVault, ProgramAnswerKey, safeStorageVault, vaultChoice } from "./answer-key";
@@ -90,7 +90,7 @@ const answerKey = new ProgramAnswerKey((() => {
   const linuxPlainText = process.platform === "linux" && app.isPackaged && !headless && !testBuild ? (() => { try { return safeStorage.getSelectedStorageBackend() === "basic_text"; } catch { return true; } })() : false;
   const choice = vaultChoice({ packaged: app.isPackaged, headless, testBuild, profile, platform: process.platform, ...(testKeyFile !== undefined && isAbsolute(testKeyFile) ? { testKeyFile } : {}), linuxPlainText });
   if (choice.kind === "file") return fileVault(choice.file);
-  if (choice.kind === "safe-storage") return safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage);
+  if (choice.kind === "safe-storage") return safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage, process.platform, log);
   return memoryVault();
 })(), log);
 let device: string | undefined;
@@ -444,13 +444,40 @@ function wireBridge(): void {
     const name = typeof a.name === "string" ? a.name.trim().slice(0, 80) : "";
     if (name === "") return { ok: false, why: "A bot needs a name." };
     if (!personPressed(w)) return { ok: false, why: "A bot is made only right after your own key press or click." };
-    return engine.createBot(name);
+    return engine.createBot(name, str(a.model, 200));
   });
   on("moss:mark-read", (_w, a) => {
     const bot = str(a.bot, 64);
     if (bot !== undefined) engine.markRead(bot, Date.now());
   });
   handle("moss:routines", (_w, a) => engine.routines(str(a.bot, 64) ?? ""));
+  handle("moss:routine-instructions", (_w, a) => {
+    const bot = str(a.bot, 64);
+    const id = str(a.id, 128);
+    if (bot === undefined || id === undefined) return { ok: false, why: "No routine." };
+    return engine.routineInstructions(bot, id);
+  });
+  handle("moss:run-routine", (w, a) => {
+    const id = str(a.id, 128);
+    if (id === undefined) return { ok: false, why: "No routine." };
+    if (!personPressed(w)) return { ok: false, why: "A routine runs only right after your own click." };
+    return engine.runRoutine(id);
+  });
+  handle("moss:edit-routine", (w, a) => {
+    const bot = str(a.bot, 64);
+    const id = str(a.id, 128);
+    const patch = routineEditOf(a.patch);
+    if (bot === undefined || id === undefined || patch === undefined) return { ok: false, why: "Nothing to change." };
+    if (!personPressed(w)) return { ok: false, why: "A routine is changed only right after your own key press or click." };
+    return engine.editRoutine(bot, id, patch);
+  });
+  handle("moss:memory", (_w, a) => engine.memory(str(a.bot, 64) ?? ""));
+  handle("moss:memory-file", (_w, a) => {
+    const bot = str(a.bot, 64);
+    const path = str(a.path, 1024);
+    if (bot === undefined || path === undefined) return { ok: false, why: "No file." };
+    return engine.memoryFile(bot, path);
+  });
   handle("moss:pictures", (_w, a) => engine.pictures(str(a.bot, 64) ?? ""));
   handle("moss:picture-open", (_w, a) => engine.openPicture(str(a.id, 64) ?? ""));
   on("moss:picture-close", (_w, a) => { const id = str(a.id, 64); if (id !== undefined) engine.closePicture(id); });

@@ -14,7 +14,7 @@ import { isContractError } from "../contracts/common";
 import { botSegment } from "../sessions/ids";
 import type { CoreToolDef } from "../bots/tools";
 import { routineFilePath, WEBHOOKS_UNAVAILABLE, type RoutineEngine } from "./engine";
-import { mintRoutineId, parseRoutine, serializeRoutine } from "./file";
+import { mintRoutineId, parseRoutine, routineFileName, serializeRoutine } from "./file";
 import { parseSpec } from "./spec";
 import { isTimeZone } from "./zone";
 
@@ -87,7 +87,7 @@ export function routineToolDef(deps: RoutineToolDeps, caller: { bot: string }): 
       const computer = typeof i["computer"] === "string" ? i["computer"] : deps.computer;
       const target = computers.find((c) => c.name === computer) ?? (computer === deps.computer ? { name: deps.computer, level: "ask-risky" as Level } : undefined);
       if (target === undefined) return fail(`There is no computer ${computer}; the computers are ${computers.map((c) => c.name).join(", ")}.`);
-      const fileName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "routine";
+      const fileName = routineFileName(name);
       const id = mintRoutineId();
       const text = serializeRoutine({
         id, name, missed, body: instructions,

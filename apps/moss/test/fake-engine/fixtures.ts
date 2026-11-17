@@ -64,6 +64,14 @@ export function routinesOf(bot: string, now: number): RoutineView[] {
   return [];
 }
 
+/** Each bot's memory folder, as `memory.list` and `memory.read` serve it. */
+export const MEMORY: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  juniper: {
+    "MEMORY.md": "# Juniper's memory\n\n- [Trips](trips.md): where Sam is going this year.\n<b>not markup</b>\n",
+    "trips.md": "Lisbon in March. Kyoto in October.\n",
+  },
+};
+
 export function sealedCard(c: Omit<Card, "hash">): Card {
   return { ...c, hash: createHash("sha256").update(cardHashInput(c)).digest("hex") } as Card;
 }

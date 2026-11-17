@@ -82,7 +82,7 @@ export function App() {
           : bot !== undefined ? <Conversation bot={bot} cards={inConversation} strip={strip} panelOpen={panel} onPanel={() => setPanel((p) => !p)} {...(view.talk !== undefined ? { talk: view.talk } : {})} />
           : <main className="conversation conversation--empty" data-col="conversation">{strip}<p className="muted">{view.pieces.bots === "waiting" ? "Waiting for the engine's bots." : "Make a bot with + to start."}</p></main>}
       </div>
-      {bot !== undefined && panel ? <SidePanel bot={bot} onClose={() => setPanel(false)} onSettings={() => { setSettingsBot(bot.id); setPage({ page: "settings" }); }} /> : null}
+      {bot !== undefined && panel ? <SidePanel bot={bot} cardsKey={view.cards.map((c) => c.id).join(",")} onClose={() => setPanel(false)} onSettings={() => { setSettingsBot(bot.id); setPage({ page: "settings" }); }} /> : null}
     </div>
   );
 }

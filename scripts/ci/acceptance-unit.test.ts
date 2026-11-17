@@ -98,9 +98,9 @@ describe("the acceptance unit's verdict", () => {
     expect(names.length).toBeGreaterThan(67);
   });
 
-  test("the moss unit (MOSS, the bots app) owns its 12 rows; it is not in the lane check's set until the CI lane adds it", () => {
+  test("the moss unit (MOSS, the bots app) owns its 17 rows", () => {
     const moss = units().find((u) => u.id === "moss")!;
-    expect(moss.rows.length).toBe(12);
-    expect(new Set(moss.rows).size).toBe(12);
+    expect(moss.rows.length).toBe(17);
+    expect(new Set(moss.rows).size).toBe(17);
   });
 });

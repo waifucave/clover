@@ -72,7 +72,7 @@ afterAll(() => {
 
 async function smoke(e: FakeEngine, home: string, bot: string): Promise<{ facts: Facts | undefined; output: string }> {
   const out = join(home, "smoke.json");
-  const env: NodeJS.ProcessEnv = { ...process.env, MOSS_HOME: home, MOSS_USER_DATA: join(home, "user-data"), MOSS_TEST_FRONT: "1", MOSS_TEST_BOT: bot, ELECTRON_ENABLE_LOGGING: "1" };
+  const env: NodeJS.ProcessEnv = { ...process.env, MOSS_HOME: home, MOSS_USER_DATA: join(home, "user-data"), MOSS_TEST_FRONT: "1", MOSS_TEST_BOT: bot, MOSS_TEST_CARDS: "2", ELECTRON_ENABLE_LOGGING: "1" };
   delete env.MOSS_PROFILE;
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.MOSS_APP_TOKEN;

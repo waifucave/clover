@@ -8,7 +8,7 @@ export type { BotFace };
 
 /** The engine pieces the window stands on, each served by its own lane: until a piece is served, the window says it is
  *  waiting for it, never shows something made up. */
-export type Piece = "bots" | "summaries" | "activity" | "routines" | "pictures" | "router" | "tools" | "plugins" | "account" | "devices" | "models" | "key";
+export type Piece = "bots" | "summaries" | "activity" | "routines" | "memory" | "pictures" | "router" | "tools" | "plugins" | "account" | "devices" | "models" | "key";
 export type PieceState = "ready" | "waiting" | "failed";
 
 export type ConnectionKind = "connecting" | "starting-engine" | "connected" | "reconnecting" | "behind" | "refused" | "unavailable" | "stopped";
@@ -77,7 +77,29 @@ export interface RoutineRow {
   /** Its triggers in words (`Every day at 9:00`). */
   schedule: string;
   paused: boolean;
+  /** The engine's state: on, paused (by the person or by MOSS), waiting for the person's OK on a raised level, a copy
+   *  with the same id, or its bot removed. Only an `active` one can run now. */
+  state: "active" | "paused" | "waiting-for-ok" | "duplicate" | "bot-removed";
+  /** Why MOSS paused it, while it stays paused. */
+  pausedWhy?: string;
+  /** Its schedule trigger as written (`every 6h`, `0 8 * * 1-5`), for the edit form; none when it has no schedule. */
+  scheduleSpec?: string;
   nextRunAt?: number;
+}
+
+/** What the person changes on a routine (`routine.edit`): its file is rewritten by the engine. */
+export interface RoutineEdit {
+  name?: string;
+  schedule?: string;
+  instructions?: string;
+  paused?: boolean;
+}
+
+/** One file of a bot's memory, as the engine serves it to MOSS (`memory.list`): read only here. */
+export interface MemoryFileRow {
+  path: string;
+  size: number;
+  modifiedAt: number;
 }
 
 export interface PictureRow {
@@ -182,9 +204,19 @@ export interface MossBridge {
   /** The person picks pictures to attach (main's own file dialog; PNG, JPEG or WebP, at most 4, 10 MB each): their names
    *  and the ids `send` takes. Never their bytes in the window. */
   pickImages(): Promise<{ id: string; name: string }[]>;
-  createBot(name: string): Promise<{ ok: true; id: string } | { ok: false; why: string }>;
+  /** Makes a bot with the model the person chose in the + flow (one of `models`), so its first turn has a credential. */
+  createBot(name: string, model?: string): Promise<{ ok: true; id: string } | { ok: false; why: string }>;
   markRead(bot: string): void;
   routines(bot: string): Promise<RoutineRow[] | { waiting: true }>;
+  /** A routine's instructions as its file has them now (`routine.get`), for the edit form. */
+  routineInstructions(bot: string, id: string): Promise<{ text: string } | { ok: false; why: string }>;
+  /** Runs a routine now (`routine.runNow`), after the person's own press. */
+  runRoutine(id: string): Promise<{ ok: true } | { ok: false; why: string }>;
+  /** Pauses, resumes or edits a routine (`routine.edit`), after the person's own press; the engine's why on a refusal. */
+  editRoutine(bot: string, id: string, patch: RoutineEdit): Promise<{ ok: true; routine: RoutineRow } | { ok: false; why: string }>;
+  /** A bot's memory files and one file's text (`memory.list`, `memory.read`): read only. */
+  memory(bot: string): Promise<MemoryFileRow[] | { waiting: true }>;
+  memoryFile(bot: string, path: string): Promise<{ text: string } | { ok: false; why: string }>;
   pictures(bot: string): Promise<PictureRow[] | { waiting: true }>;
   openPicture(id: string): Promise<boolean>;
   closePicture(id: string): void;

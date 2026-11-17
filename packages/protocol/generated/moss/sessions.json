@@ -2598,6 +2598,297 @@
         "additionalProperties": false
       }
     },
+    "routine.get": {
+      "doc": "One routine of the bot on this computer with its instructions, read from its file as it is now, for the person's edit (`routine.edit`), so an edit never writes over text the person couldn't see. The person's window only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "bot",
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "routine": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              },
+              "computer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+              },
+              "file": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "pattern": "^(home|bots)(\\/|$)"
+              },
+              "triggers": {
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "summary": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "summary"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "level": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "paused",
+                  "waiting-for-ok",
+                  "duplicate",
+                  "bot-removed"
+                ]
+              },
+              "pausedWhy": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "lastRunAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "nextRunAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "bot",
+              "computer",
+              "file",
+              "triggers",
+              "level",
+              "state"
+            ],
+            "additionalProperties": false
+          },
+          "instructions": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "routine",
+          "instructions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "routine.edit": {
+      "doc": "The user changes a routine on this computer: the core rewrites that routine's own file (§7, the file stays the truth) under the Routine tool's rules: a schedule that doesn't read is refused, its id and webhook key stay where they are, a new name renames its file in the bot's own folder and can't take another routine's name, and a raised level waits for its OK again. The person's window only.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "patch": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "schedule": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "instructions": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60000
+              },
+              "paused": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "bot",
+          "id",
+          "patch"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "routine": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "bot": {
+                "type": "string",
+                "maxLength": 81,
+                "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+              },
+              "computer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+              },
+              "file": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "pattern": "^(home|bots)(\\/|$)"
+              },
+              "triggers": {
+                "maxItems": 32,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "summary": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "summary"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "level": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "paused",
+                  "waiting-for-ok",
+                  "duplicate",
+                  "bot-removed"
+                ]
+              },
+              "pausedWhy": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "lastRunAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "nextRunAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "bot",
+              "computer",
+              "file",
+              "triggers",
+              "level",
+              "state"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "routine"
+        ],
+        "additionalProperties": false
+      }
+    },
     "routine.webhookKey": {
       "doc": "A webhook routine's URL and key, for the user to paste into the service that calls it (§7). The key is shown once; after that only a new one (`rotate`), which replaces it, is shown. Never to a bot, a plugin or a remote client.",
       "owner": "D",

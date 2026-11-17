@@ -7,10 +7,10 @@
 //
 // Every change calls the bridge straight from the person's click, change or Enter (main takes it only after a press).
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
-import { bridge } from "../bridge";
+import { bridge, shortTime } from "../bridge";
 import { Face } from "../faces/Face";
 import { EYES, makeBot, PALETTE, SHAPES, TEMPERS, type Eyes, type Shape, type Temper } from "../faces/living-bots";
-import type { BotEdit, BotFace, BotRecordRow, BotRow, BotSetting, ModelRow, SettingsView } from "../../shared/view";
+import type { BotEdit, BotFace, BotRecordRow, BotRow, BotSetting, MemoryFileRow, ModelRow, SettingsView } from "../../shared/view";
 import type { Level } from "@waifucave/moss-protocol";
 
 export const LEVELS: readonly { value: Level; label: string }[] = [
@@ -240,10 +240,53 @@ function BotPage(props: { bot: BotRow }) {
       <Card title="Instructions" id="instructions" note="Who the bot is, how it talks, what it cares about.">
         <Instructions bot={rec.id} name={rec.name} bytes={rec.instructionsBytes} onSave={(instructions) => edit({ instructions }, "Instructions saved.")} />
       </Card>
+      <Memory bot={rec.id} name={rec.name} />
       <Card title="Archive" id="archive" note={`Archiving puts ${rec.name} away: nothing is deleted. Its conversation, memory and routines come back with it from Settings.`}>
         <button type="button" className="text-button" data-archive-bot={rec.id} onClick={() => void bridge().archiveBot(rec.id).then((ok) => { if (!ok) setNote("The engine didn't archive the bot."); })}>Archive {rec.name}</button>
       </Card>
     </div>
+  );
+}
+
+/** A bot's memory, read only (`memory.list`, `memory.read`): its files as the engine serves them, and one file's text
+ *  drawn as text. The bot keeps its memory itself; editing it here comes later. */
+function Memory(props: { bot: string; name: string }) {
+  const [files, setFiles] = useState<MemoryFileRow[] | "waiting" | undefined>(undefined);
+  const [open, setOpen] = useState<{ path: string; text?: string; why?: string } | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    setFiles(undefined);
+    setOpen(undefined);
+    void bridge().memory(props.bot).then((m) => { if (live) setFiles("waiting" in m ? "waiting" : m); });
+    return () => { live = false; };
+  }, [props.bot]);
+  const show = async (path: string): Promise<void> => {
+    if (open?.path === path) { setOpen(undefined); return; }
+    setOpen({ path });
+    const r = await bridge().memoryFile(props.bot, path);
+    setOpen((now) => now?.path !== path ? now : "text" in r ? { path, text: r.text } : { path, why: r.why });
+  };
+  return (
+    <Card title="Memory" id="memory" note={`What ${props.name} keeps in its memory folder, read only.`}>
+      {files === undefined ? null : files === "waiting" ? <Waiting what="memory" />
+        : files.length === 0 ? <p className="muted small" data-memory-empty>{props.name} hasn't written any memory yet.</p> : (
+          <ul className="ma2-memory" data-memory-files>
+            {files.map((f) => (
+              <li key={f.path} data-memory-file={f.path}>
+                <button type="button" className="ma2-memory__file" aria-expanded={open?.path === f.path} onClick={() => void show(f.path)}>
+                  <span className="ma2-memory__path">{f.path}</span>
+                  <span className="muted small">{sizeWords(f.size)} · {shortTime(f.modifiedAt)}</span>
+                </button>
+                {open?.path === f.path ? (
+                  open.text !== undefined ? <pre className="ma2-memory__text" data-memory-text>{open.text}</pre>
+                    : open.why !== undefined ? <p className="muted small" role="status">{open.why}</p>
+                    : <p className="muted small">Reading…</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+    </Card>
   );
 }
 

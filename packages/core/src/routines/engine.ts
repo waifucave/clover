@@ -34,7 +34,7 @@ import { botSegment, transcriptsDir } from "../sessions/ids";
 import type { SideThreadRun } from "../bots/service";
 import { settingsDir } from "../bots/gate";
 import { readOwnFile } from "../bots/own-file";
-import { parseRoutine, routineHash, triggerSummary, withId, withPaused, ROUTINE_FILE_MAX_BYTES, type RoutineFile, type RoutineTrigger } from "./file";
+import { parseRoutine, patchRoutine, routineFileName, routineHash, triggerSummary, withId, withPaused, ROUTINE_FILE_MAX_BYTES, type RoutineFile, type RoutinePatch, type RoutineTrigger } from "./file";
 import { firesBetween, nextRunInZone } from "./zone";
 import { isLate, untrusted, WEBHOOK_LATE_MS } from "../../../../plugins/moss/plugins/trigger-webhook/src/webhook";
 
@@ -70,6 +70,27 @@ function replaceFile(path: string, text: string): void {
   } catch (err) {
     try { unlinkSync(tmp); } catch { /* best effort */ }
     throw err;
+  }
+}
+
+/** A new file, created exclusively and not following a link: a file already at the name refuses it. */
+function writeNewFile(path: string, text: string): void {
+  const fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
+  try {
+    writeSync(fd, text);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Whether two names are one file (a case-only rename on a case-insensitive disk). */
+function sameFile(a: string, b: string): boolean {
+  try {
+    const x = lstatSync(a);
+    const y = lstatSync(b);
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch {
+    return false;
   }
 }
 
@@ -258,6 +279,55 @@ export class RoutineEngine {
         if (run.outcome === "skipped") reject(new ContractError("refused", run.summary ?? "the run was skipped"));
       }, reject);
     });
+  }
+
+  /** A routine of the bot with its instructions as its file has them now (`routine.get`, the person's edit view). */
+  read(id: string, bot: string): { routine: RoutineView; instructions: string } {
+    const l = this.#loaded.get(id);
+    if (!l || l.bot !== bot) throw new ContractError("not_found", `no routine ${id} of this bot on this computer`);
+    const read = readOwnFile(this.#o.home, l.path, { maxBytes: ROUTINE_FILE_MAX_BYTES, whole: true });
+    if (!read.ok) throw new ContractError("refused", `${basename(l.path)} can't be read (${read.why})`);
+    const parsed = parseRoutine(read.data.toString("utf8"), basename(l.path, ".md"));
+    if (!parsed.ok) throw new ContractError("invalid", `${basename(l.path)} doesn't read: ${parsed.reason}`);
+    if (parsed.routine.id !== id) throw new ContractError("conflict", `${basename(l.path)} now holds another routine (${parsed.routine.id}); list the routines again`);
+    return { routine: this.#view(l), instructions: parsed.routine.body };
+  }
+
+  /** The user's edit (`routine.edit`, §7): that routine's own file, read again from disk (the file is the truth: a hand
+   *  edit since the last scan is what is patched, and the last write wins), rewritten as the `Routine` tool writes it,
+   *  then loaded again. A new name renames the file inside the bot's own folder, never over another file; a name
+   *  another routine of the bot has is refused. A routine of another bot is not found through this bot. */
+  async edit(id: string, bot: string, patch: RoutinePatch): Promise<RoutineView> {
+    const l = this.#loaded.get(id);
+    if (!l || l.bot !== bot) throw new ContractError("not_found", `no routine ${id} of this bot on this computer`);
+    if (l.state === "duplicate") throw new ContractError("refused", `the routine ${id} has a copy with the same id here; choose one first`);
+    const read = readOwnFile(this.#o.home, l.path, { maxBytes: ROUTINE_FILE_MAX_BYTES, whole: true });
+    if (!read.ok) throw new ContractError("refused", read.why === "too-large" ? `${basename(l.path)} is too large to edit` : `${basename(l.path)} can't be edited (${read.why})`);
+    const fileName = basename(l.path, ".md");
+    const out = patchRoutine(read.data.toString("utf8"), fileName, patch);
+    if (!out.ok) throw new ContractError("invalid", out.reason);
+    if (out.routine.id !== id) throw new ContractError("conflict", `${basename(l.path)} now holds another routine (${out.routine.id}); list the routines again`);
+    const folder = dirname(l.path);
+    let path = l.path;
+    if (patch.name !== undefined) {
+      const wanted = out.routine.name.toLocaleLowerCase();
+      const taken = [...this.#loaded.values()].find((o) => o.bot === bot && o.routine.id !== id && o.routine.name.toLocaleLowerCase() === wanted);
+      if (taken) throw new ContractError("conflict", `the bot has a routine named ${taken.routine.name} already`);
+      const next = join(folder, `${routineFileName(out.routine.name)}.md`);
+      if (dirname(next) !== folder) throw new ContractError("invalid", "a routine's file stays in its bot's folder");
+      if (next !== l.path && existsSync(next) && !sameFile(next, l.path)) throw new ContractError("conflict", `${basename(next)} is another file in the bot's routines; choose another name`);
+      path = next;
+    }
+    if (path === l.path || sameFile(path, l.path)) replaceFile(l.path, out.text);
+    else {
+      // The new name, created exclusively (never over a file that appeared meanwhile), then the old one goes.
+      writeNewFile(path, out.text);
+      unlinkSync(l.path);
+    }
+    await this.rescan();
+    const view = this.get(id);
+    if (!view) throw new ContractError("not_found", `the routine ${id} didn't load again after the edit`);
+    return view;
   }
 
   /** The routine's webhook URL and key, minting the key the first time, or a new one with `rotate` (the old one stops

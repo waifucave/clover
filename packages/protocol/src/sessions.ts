@@ -472,6 +472,31 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: utf16(128, 1) }), result: z.object({ session: SessionId }),
     doc: "Runs a routine now, in a side thread on its computer.",
   }),
+  routineGet: defineMethod({
+    name: "routine.get", owner: "D", roles: ["app"], userOnly: true,
+    params: z.object({ bot: BotId, id: utf16(128, 1) }),
+    result: z.object({ routine: RoutineView, instructions: z.string() }),
+    doc: "One routine of the bot on this computer with its instructions, read from its file as it is now, for the person's edit (`routine.edit`), so an edit never writes over text the person couldn't see. The person's window only.",
+  }),
+  routineEdit: defineMethod({
+    name: "routine.edit", owner: "D", roles: ["app"], userOnly: true,
+    params: z.object({
+      /** The bot whose routine it is: a routine of another bot is not found through it. */
+      bot: BotId,
+      id: utf16(128, 1),
+      patch: z.object({
+        name: utf16(200, 1).optional(),
+        /** Replaces its schedule trigger (`every <N><s|m|h|d>` or a 5-field cron); its other triggers stay. */
+        schedule: utf16(200, 1).optional(),
+        /** The instructions, the file's body. */
+        instructions: utf16(60_000, 1).optional(),
+        /** `paused: true` in its file, or taken out (resume). */
+        paused: z.boolean().optional(),
+      }).strict(),
+    }),
+    result: z.object({ routine: RoutineView }),
+    doc: "The user changes a routine on this computer: the core rewrites that routine's own file (§7, the file stays the truth) under the Routine tool's rules: a schedule that doesn't read is refused, its id and webhook key stay where they are, a new name renames its file in the bot's own folder and can't take another routine's name, and a raised level waits for its OK again. The person's window only.",
+  }),
   routineWebhookKey: defineMethod({
     name: "routine.webhookKey", owner: "D", roles: ["app", "cli"], userOnly: true,
     params: z.object({ id: utf16(128, 1), rotate: z.boolean().optional() }),

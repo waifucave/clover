@@ -13,10 +13,10 @@
 // a bot's instructions edited in Settings, making bots (the person's and a bot's MakeBot), and archive and bring back.
 // Kept apart from run.ts: run.ts gives it the run's helpers (`MossUnitCtx`) and records its rows.
 import { createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign } from "node:crypto";
-import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
-import { instructionsEditRule, programCardAnswerSigningInput } from "../../packages/protocol/src/index";
+import { instructionsEditRule, LEVELS, programCardAnswerSigningInput } from "../../packages/protocol/src/index";
 import { answerKeyStatement } from "../../packages/core/src/devices/registry";
 import { Cdp } from "./cdp";
 import type { MossClient } from "./client";
@@ -30,14 +30,19 @@ export const MOSS_AWAY_STEP = "MOSS not in front: the router places Alpha's next
 export const MOSS_PANEL_STEP = "MOSS's side panel: Alpha's live picture from her tool, watch only (a click on it reaches nothing), with the publisher's name, and her routines; the plugin that publishes it added behind its OK card, pressed in MOSS's strip";
 export const MOSS_TOOLS_STEP = "MOSS's Plugins page: a plugin's tool set off there is off in the engine's tool.permissions, and Alpha's next turn isn't offered it (it was before)";
 export const MOSS_INSTRUCTIONS_STEP = "MOSS's Settings: Alpha's instructions shown as they are now, edited in place and saved by the person with no card (instructionsEditRule: the person's own edit is free); her next turn is given them";
-export const MOSS_MAKE_STEP = "MOSS: a bot made from the list's + (the person's bot.create) opens on its own conversation and answers; that bot's MakeBot raises the person's OK card in MOSS naming the maker, and once pressed the new bot is listed, made by it";
+export const MOSS_MAKE_STEP = "MOSS: a bot made from the list's + (the person's bot.create, on a model chosen there from the ones the person has set up) opens on its own conversation and answers; that bot's MakeBot raises the person's OK card in MOSS naming the maker, and once pressed the new bot is listed, made by it";
 export const MOSS_EDITOR_STEP = "MOSS's Settings, a bot's own page (the bot editor, MOSS Code's old rows 14 and 15): its name, model and instructions edited there are kept: the engine's record has them, the list shows the new name, and the page opened again shows all three";
 export const MOSS_TRY_AGAIN_STEP = "MOSS: a turn that fails in Alpha's conversation shows Try again; one press sends the same words once more (session.resend), the next turn completes, and the button goes";
 export const MOSS_ARCHIVE_STEP = "MOSS's Settings: a bot archived leaves the list and is listed under Archived bots; brought back, it is in the list again with its conversation whole";
+export const MOSS_LONG_STEP = "MOSS: a long conversation the home already holds (a bot whose one conversation has 20,000 events, as the upgrade's copy brings the owner's): it opens on its latest page, scrolling up with the wheel reads the pages before it from the engine with the message under the eye kept in place, and the oldest message is reached by scrolling; its first paint and its page loads are timed";
+export const MOSS_ROUTINE_RUN_STEP = "MOSS's side panel: Run now on Alpha's routine starts it at once (routine.runNow, the person's press), its run is in routine.runs, and its result is drawn in her conversation";
+export const MOSS_ROUTINE_PAUSE_STEP = "MOSS's side panel: Pause on Alpha's routine pauses it (routine.edit: its file says paused, the engine lists it paused, Run now is off); Resume runs it again on its schedule (the file's paused taken out)";
+export const MOSS_ROUTINE_EDIT_STEP = "MOSS's side panel: Edit on Alpha's routine shows what it does as its file has it now (routine.get) and saves a new name, schedule and instructions to its file (routine.edit); a routine above the computer's level waits for its OK card, pressed in MOSS, and an edit to it raises the card again, pressed in MOSS";
+export const MOSS_MEMORY_STEP = "MOSS's Settings, a bot's own page: its memory folder's files listed as the engine serves them (memory.list), and a file opened shows its text as text (memory.read), read only";
 export const MOSS_BOTH_KEYS_STEP = "MOSS beside MOSS Code on one computer: with MOSS Code's own answer key registered too, MOSS still answers its card with its own key (program moss), and MOSS Code's connection can't answer a card MOSS draws, even signed with MOSS Code's own key";
 
 /** The unit's rows, in the order it runs them. */
-export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_EDITOR_STEP, MOSS_TRY_AGAIN_STEP, MOSS_ARCHIVE_STEP, MOSS_BOTH_KEYS_STEP];
+export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_EDITOR_STEP, MOSS_TRY_AGAIN_STEP, MOSS_ARCHIVE_STEP, MOSS_LONG_STEP, MOSS_ROUTINE_RUN_STEP, MOSS_ROUTINE_PAUSE_STEP, MOSS_ROUTINE_EDIT_STEP, MOSS_MEMORY_STEP, MOSS_BOTH_KEYS_STEP];
 
 /** The unit's daemon: the bots as engine data (lane MC1 makes it the default; until then the unit sets it). */
 export const MOSS_ENV: Readonly<Record<string, string>> = { MOSS_BOT_SOURCE: "records" };
@@ -136,6 +141,11 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
     await row(MOSS_EDITOR_STEP, () => editorRow(s));
     await row(MOSS_TRY_AGAIN_STEP, () => tryAgainRow(s));
     await row(MOSS_ARCHIVE_STEP, () => archiveRow(s));
+    await row(MOSS_LONG_STEP, () => longRow(s));
+    await row(MOSS_ROUTINE_RUN_STEP, () => routineRunRow(s));
+    await row(MOSS_ROUTINE_PAUSE_STEP, () => routinePauseRow(s));
+    await row(MOSS_ROUTINE_EDIT_STEP, () => routineEditRow(s));
+    await row(MOSS_MEMORY_STEP, () => memoryRow(s));
     // Last: it registers MOSS Code's key, so the home is no longer one where only MOSS has run.
     await row(MOSS_BOTH_KEYS_STEP, () => bothKeysRow(s));
   } catch (err) {
@@ -160,6 +170,8 @@ interface UnitState {
   feedPlugin?: string;
   /** The bot the make row made, for the archive row. */
   made?: string;
+  /** The routine Alpha made in the panel row, for the routine rows. */
+  routine?: { id: string; name: string };
 }
 
 /** MOSS's window through its DevTools port: its own page (`moss-app://app/`) and the sealed card frames in it. */
@@ -508,6 +520,7 @@ async function panelRow(s: UnitState): Promise<string> {
   const a = await alpha(s.c);
   const made = await turnInMoss(s, "Alpha", a.mainSession, callText("Routine", { name: routine, instructions: "ACCEPTANCE-TAG-MOSSROUTINE", schedule: "every 6h" }), "ACCEPTANCE-DONE");
   const listed = await s.x.until("her routine in routine.list", 30_000, async () => (await s.c.request<{ routines: { id: string; name: string }[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.name === routine), 500);
+  s.routine = { id: listed.id, name: routine };
   const showed = await turnInMoss(s, "Alpha", a.mainSession, callText("Show", {}), "ACCEPTANCE-DONE");
   await s.x.until("her live picture listed", 60_000, async () => ((await s.c.request<{ pictures: { publisher: string }[] }>("picture.list", { kind: "bots", bot: "alpha" })).pictures.some((p) => p.publisher === installed.id) ? true : undefined), 500);
   // The side panel, opened from her conversation's header.
@@ -597,32 +610,24 @@ async function instructionsRow(s: UnitState): Promise<string> {
 }
 
 async function makeRow(s: UnitState): Promise<string> {
-  // The person's: the list's +, a name, Make.
+  // The person's: the list's +, a name, one of the models the person has set up (Alpha's: the run's key is that
+  // model's plugin's), Make.
   const name = `Nova${randomBytes(2).toString("hex")}`;
   await s.w.click(`button[aria-label="New bot"]`);
   await s.w.type(`input[aria-label="The new bot's name"]`, name);
-  await s.w.click(".new-bot .text-button", "Make");
+  const want = (await alpha(s.c)).model;
+  const offered = await s.w.waitFor<string[]>("the + flow's models", `(() => { const e = document.querySelector('[data-new-bot-model]'); return e && e.options.length > 0 ? [...e.options].map((o) => o.value) : null; })()`, 20_000)
+    .catch(async () => s.x.fail(`the + flow offers no model: ${await s.w.eval<string>("document.querySelector('[data-new-bot-no-model]')?.textContent ?? 'nothing said'")}`));
+  const model = want !== undefined && offered.includes(want) ? want : want === undefined ? offered[0]! : s.x.fail(`the + flow doesn't offer Alpha's model ${want} (it offers ${offered.join(", ")})`);
+  await s.w.eval(`(() => { const e = document.querySelector('[data-new-bot-model]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, ${JSON.stringify(model)}); e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+  await s.w.click("[data-make-bot]", "Make");
   await s.w.waitFor(`${name}'s conversation open`, `document.querySelector('main.conversation')?.getAttribute('aria-label') === ${JSON.stringify(`${name}'s conversation`)}`, 30_000)
     .catch(async () => s.x.fail(`MOSS didn't open the new bot: ${await s.w.eval<string>("document.querySelector('.new-bot__why')?.textContent ?? 'nothing said'")}`));
   const made = await s.x.until(`${name} as a record`, 15_000, async () => (await records(s.c)).find((b) => nameOf(b.name) === name), 300);
   if (made.madeBy.kind !== "user") s.x.fail(`${name}'s record says it was made by ${JSON.stringify(made.madeBy)}`);
+  if (made.model !== model) s.x.fail(`${name}'s record is on ${made.model ?? "the default model"}, not ${model}, chosen in the + flow`);
   s.made = made.id;
-  // Its model, picked in its Settings page as the person does (a new bot is on the person's default model, and this home's
-  // default has no key: the run's key is the Anthropic plugin's, which Alpha runs on).
-  const model = (await alpha(s.c)).model;
-  let picked = "the default model";
-  if (model !== undefined && model !== made.model) {
-    await s.w.click(".list__bottom .nav-item.account");
-    await s.w.click(`[data-section=${JSON.stringify(`bot:${made.id}`)}]`);
-    const has = await s.w.waitFor<string>(`${name}'s model picker offering ${model}`, `(() => { const e = document.querySelector('[data-model-picker]'); return e && [...e.options].some((o) => o.value === ${JSON.stringify(model)}) ? 'yes' : null; })()`, 20_000);
-    void has;
-    await s.w.eval(`(() => { const e = document.querySelector('[data-model-picker]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(e, ${JSON.stringify(model)}); e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-    await s.w.click("[data-settings=model] .text-button--solid", "Save");
-    await s.x.until(`${name}'s record on ${model}`, 15_000, async () => ((await records(s.c)).find((b) => b.id === made.id)?.model === model ? true : undefined), 300)
-      .catch(async () => s.x.fail(`${name}'s model didn't change: ${await s.w.eval<string>("[...document.querySelectorAll('.add__note')].map((n) => n.textContent).join(' | ') || 'nothing said'")}`));
-    picked = `${model}, picked in its Settings`;
-    await openBot(s, made.id, name);
-  }
+  const picked = `${model}, chosen in the + flow (offered: ${offered.join(", ")})`;
   const t = tag("NOVA");
   await sendInMoss(s, name, t);
   await botSaid(s, `ACCEPTANCE-REPLY-OK ${t}`);
@@ -669,6 +674,249 @@ async function archiveRow(s: UnitState): Promise<string> {
   return `${name} archived from Settings (bot.remove): gone from the list, in bot.archived and under Archived bots; Bring back: listed again with its conversation (${page.events.length} events, ${bubbles} bubbles drawn)`;
 }
 
+
+/** The long conversation's bot, seeded in the home before the daemon starts (`seedLongConversation`). */
+export const LONG_BOT = { id: "chronicle", name: "Chronicle" } as const;
+export const LONG_EVENTS = 20_000;
+const longText = (n: number) => `Chronicle message ${n}`;
+
+/** A bot with a long conversation already in the home, as the upgrade's copy brings the owner's own: its record, its
+ *  instructions and its one conversation's log (20,000 records: user messages, turns and replies, written with the
+ *  engine's own log writer), ending two days ago so the bot sorts after Alpha. The session's meta is left for the engine
+ *  to make on open, as it does for a log whose meta was lost. Written before the daemon starts. */
+export async function seedLongConversation(home: string): Promise<void> {
+  const { SessionLogFile } = await import("../../packages/core/src/sessions/event-log");
+  const { sessionLogPath, mainSessionIdFor } = await import("../../packages/core/src/sessions/ids");
+  const { recordFile, instructionsFile } = await import("../../packages/core/src/bots/records");
+  const { mkdirSync } = await import("node:fs");
+  const { dirname } = await import("node:path");
+  const id = LONG_BOT.id;
+  if (existsSync(recordFile(home, id))) return;
+  const session = mainSessionIdFor(id);
+  const end = Date.now() - 2 * 24 * 3_600_000;
+  const start = end - LONG_EVENTS * 1_000;
+  for (const [file, text] of [[recordFile(home, id), `${JSON.stringify({ record: 1, id, name: LONG_BOT.name, madeBy: { kind: "user" }, createdAt: start }, null, 2)}\n`], [instructionsFile(home, id), "You keep a long chronicle."]] as const) {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, text);
+  }
+  const log = new SessionLogFile(sessionLogPath(home, id, session), session);
+  log.load();
+  let seq = 0;
+  let said = 0;
+  const put = (body: Record<string, unknown>) => { log.append({ ...body, seq, sessionId: session, ts: start + seq * 1_000 } as never, { durable: false }); seq++; };
+  while (seq < LONG_EVENTS) {
+    const u = ++said;
+    put({ type: "input", input: { from: "user", text: longText(u), device: "seeddevice000000000", sentAt: start + seq * 1_000, clientMessageId: `seed-${u}` }, disposition: "turn" });
+    put({ type: "turn_started", origin: "user" });
+    const b = ++said;
+    put({ type: "driver", event: { type: "assistant_message", text: longText(b) } });
+    put({ type: "turn_ended", end: { reason: "end_turn", text: longText(b) } });
+  }
+}
+
+/** The long conversation: opened from the list (its first paint timed in the page), then the wheel over its messages until
+ *  the oldest is drawn, each page load timed and the message at the top before it checked to be where it was after. */
+async function longRow(s: UnitState): Promise<string> {
+  try {
+    return await longRowIn(s);
+  } finally {
+    // Put away after the row (archived, nothing deleted), so a whole run's later rows on this home (the cold start, the
+    // idle check) don't start or idle with its 20,000 events.
+    await s.c.request("bot.remove", { id: LONG_BOT.id }).catch(() => undefined);
+  }
+}
+
+async function longRowIn(s: UnitState): Promise<string> {
+  const rec = await s.x.until(`${LONG_BOT.name} as a record`, 30_000, async () => (await records(s.c)).find((b) => b.id === LONG_BOT.id), 500)
+    .catch(() => s.x.fail(`the seeded bot ${LONG_BOT.id} isn't a record (the home's copy wasn't loaded)`));
+  const more = (await s.c.request<{ events: unknown[]; hasMore: boolean }>("bot.conversation", { id: rec.id, limit: 1 })).hasMore;
+  if (!more) s.x.fail("the seeded conversation has one event or none");
+  const newest = longText(LONG_EVENTS / 2);
+  const oldest = longText(1);
+  // The page's own clock: the click's time, then the newest message's first drawing, and each page load (the list's
+  // data-older going loading → back) with where the top message was before and after it.
+  await s.w.eval(`(() => {
+    const t = { clickAt: 0, firstAt: 0, loads: [], drift: [] };
+    window.__mossLong = t;
+    const seen = () => [...document.querySelectorAll('.messages .bubble')].some((b) => b.textContent === ${JSON.stringify(newest)});
+    const top = (m) => { const r = m.getBoundingClientRect(); for (const b of m.querySelectorAll('.bubble')) { const x = b.getBoundingClientRect(); if (x.bottom > r.top + 4) return { text: b.textContent, y: x.top - r.top }; } return undefined; };
+    let started = 0, before;
+    const watchList = (m) => new MutationObserver(() => {
+      const state = m.dataset.older;
+      if (state === 'loading' && started === 0) { started = performance.now(); before = top(m); }
+      else if (state !== 'loading' && started !== 0) {
+        t.loads.push(performance.now() - started);
+        started = 0;
+        if (before !== undefined) { const b = [...m.querySelectorAll('.bubble')].find((x) => x.textContent === before.text); if (b) t.drift.push(Math.round(b.getBoundingClientRect().top - m.getBoundingClientRect().top - before.y)); }
+      }
+    }).observe(m, { attributes: true, attributeFilter: ['data-older'] });
+    let watched;
+    new MutationObserver(() => {
+      if (t.clickAt !== 0 && t.firstAt === 0 && seen()) t.firstAt = performance.now();
+      const m = document.querySelector('main.conversation .messages');
+      if (m && m !== watched) { watched = m; watchList(m); }
+    }).observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('mousedown', () => { if (t.clickAt === 0) t.clickAt = performance.now(); }, { capture: true, once: true });
+    return true;
+  })()`);
+  await s.w.click(`[data-bot-row=${JSON.stringify(rec.id)}]`);
+  await s.w.waitFor(`${LONG_BOT.name}'s newest message drawn`, "window.__mossLong.firstAt > 0 ? true : null", 60_000);
+  const first = await s.w.eval<{ ms: number; count: number }>("({ ms: window.__mossLong.firstAt - window.__mossLong.clickAt, count: document.querySelectorAll('.messages .bubble').length })");
+  const page = await s.w.main();
+  const at = await s.x.until("the messages' place", 10_000, () => s.w.cdp.centerOf(page, ".messages"), 250);
+  // A few small turns of the wheel first (a person's), each left to settle, so the page under the eye can be compared.
+  const wheel = async (dy: number) => { await s.w.cdp.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: at.x, y: at.y, deltaX: 0, deltaY: dy }, page); };
+  const loadsOf = () => s.w.eval<{ loads: number[]; drift: number[]; older: string; top: string }>("({ loads: window.__mossLong.loads, drift: window.__mossLong.drift, older: document.querySelector('.messages')?.dataset.older ?? '', top: document.querySelector('.messages .bubble')?.textContent ?? '' })");
+  for (let i = 0; i < 60 && (await loadsOf()).loads.length < 3; i++) { await wheel(-400); await sleep(350); }
+  const small = await loadsOf();
+  if (small.loads.length < 3) s.x.fail(`scrolling up read ${small.loads.length} earlier page(s) after 60 turns of the wheel`);
+  if (small.drift.some((d) => Math.abs(d) > 450)) s.x.fail(`the message under the eye moved by ${small.drift.join(", ")} px when earlier pages went in above`);
+  // Then the wheel on, as fast as it reads, until the start.
+  const t0 = Date.now();
+  for (let i = 0; i < 2_000; i++) {
+    const now = await loadsOf();
+    if (now.older === "start") break;
+    if (Date.now() - t0 > 600_000) s.x.fail(`the start not reached in 10 minutes: ${now.loads.length} page(s) read, the top message "${now.top}"`);
+    await wheel(-6_000);
+    await sleep(80);
+  }
+  const done = await s.w.waitFor<{ top: string; count: number; start: string }>(`the oldest message (${oldest}) drawn at the start`, `(() => {
+    const b = document.querySelector('.messages .bubble');
+    const start = document.querySelector('[data-conversation-start]')?.textContent ?? '';
+    return b && b.textContent === ${JSON.stringify(oldest)} && start !== '' ? { top: b.textContent, count: document.querySelectorAll('.messages .bubble').length, start } : null;
+  })()`, 30_000);
+  const all = await loadsOf();
+  if (done.count !== LONG_EVENTS / 2) s.x.fail(`${done.count} bubbles drawn at the start, not the ${LONG_EVENTS / 2} messages of the conversation`);
+  const sorted = [...all.loads].sort((a, b) => a - b);
+  const pct = (p: number) => Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] ?? 0);
+  const last10 = all.loads.slice(-10);
+  return `${LONG_BOT.name} (${LONG_EVENTS} events seeded in the home): first paint ${Math.round(first.ms)} ms from the click (${first.count} bubbles, the latest page); ${all.loads.length} earlier pages read by the wheel to "${done.top}" at the start (${done.count} bubbles, each once), in ${Math.round((Date.now() - t0) / 1000)} s; a page load: median ${pct(0.5)} ms, 95th ${pct(0.95)} ms, max ${pct(1)} ms, the last ten (${done.count - 500}+ bubbles drawn) ${last10.map((x) => Math.round(x)).join("/")} ms; the message under the eye moved ${small.drift.join(", ")} px at the first loads`;
+}
+
+/** Opens Alpha's side panel and waits for her routine's row there; the row's selector. */
+async function routineRowInPanel(s: UnitState, id: string): Promise<string> {
+  await openBot(s, "alpha", "Alpha");
+  if (!(await s.w.eval<boolean>("!!document.querySelector('.panel')"))) await s.w.click(`button[aria-label="Open Alpha's screen and routines"]`);
+  const sel = `.panel [data-routine=${JSON.stringify(id)}]`;
+  await s.w.waitFor(`the routine ${id} in Alpha's side panel`, `!!document.querySelector(${JSON.stringify(sel)})`, 20_000);
+  return sel;
+}
+
+async function routineOf(s: UnitState, id: string): Promise<{ id: string; name: string; state: string; file: string; triggers: { type: string; summary: string }[] } | undefined> {
+  return (await s.c.request<{ routines: { id: string; name: string; state: string; file: string; triggers: { type: string; summary: string }[] }[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.id === id);
+}
+
+/** A routine's file on this computer, from its tree path (`home/<Computer>/.moss/routines/<bot>/<name>.md`). */
+const routineFile = (s: UnitState, tree: string) => join(s.x.home, "routines", ...tree.split("/").slice(4));
+
+async function routineRunRow(s: UnitState): Promise<string> {
+  const r = s.routine ?? s.x.fail("the panel row made no routine");
+  const sel = await routineRowInPanel(s, r.id);
+  const runsBefore = (await s.c.request<{ runs: unknown[] }>("routine.runs", { id: r.id })).runs.length;
+  await s.w.click(`${sel} [data-routine-run]`, "Run now");
+  const said = await s.w.waitFor<string>("MOSS's word on the run", `document.querySelector(${JSON.stringify(`${sel} [data-routine-said]`)})?.textContent ?? null`, 30_000);
+  if (!said.startsWith("Started")) s.x.fail(`Run now: "${said}"`);
+  const run = await s.x.until("the run in routine.runs, ended", 120_000, async () => {
+    const runs = (await s.c.request<{ runs: { outcome: string; summary?: string }[] }>("routine.runs", { id: r.id })).runs;
+    return runs.length > runsBefore && runs[0]!.outcome !== "running" ? runs[0] : undefined;
+  }, 500);
+  const note = await s.w.waitFor<string>("its result drawn in her conversation", `[...document.querySelectorAll('.messages [data-bubble=note]')].map((n) => n.textContent).find((t) => t.startsWith(${JSON.stringify(`Routine "${r.name}"`)})) ?? null`, 60_000);
+  return `Run now pressed on "${r.name}": "${said}"; routine.runs has the run (${run.outcome}${run.summary !== undefined ? `: ${run.summary.slice(0, 50)}` : ""}); her conversation shows "${note.slice(0, 90)}"`;
+}
+
+async function routinePauseRow(s: UnitState): Promise<string> {
+  const r = s.routine ?? s.x.fail("the panel row made no routine");
+  const sel = await routineRowInPanel(s, r.id);
+  await s.w.click(`${sel} [data-routine-pause]`, "Pause");
+  await s.w.waitFor("the routine shown paused", `document.querySelector(${JSON.stringify(sel)})?.dataset.state === 'paused' ? true : null`, 20_000)
+    .catch(async () => s.x.fail(`it didn't pause: ${await s.w.eval<string>(`document.querySelector(${JSON.stringify(`${sel} [data-routine-said]`)})?.textContent ?? 'nothing said'`)}`));
+  const paused = await routineOf(s, r.id);
+  if (paused?.state !== "paused") s.x.fail(`the engine lists it ${paused?.state ?? "not at all"} after Pause`);
+  const file = routineFile(s, paused.file);
+  if (!/^paused: true$/m.test(readFileSync(file, "utf8"))) s.x.fail(`its file (${paused.file}) doesn't say paused`);
+  const off = await s.w.eval<boolean>(`document.querySelector(${JSON.stringify(`${sel} [data-routine-run]`)})?.disabled === true`);
+  if (!off) s.x.fail("Run now is still on for a paused routine");
+  await s.w.click(`${sel} [data-routine-resume]`, "Resume");
+  await s.w.waitFor("the routine shown on again", `document.querySelector(${JSON.stringify(sel)})?.dataset.state === 'active' ? true : null`, 20_000);
+  const back = await routineOf(s, r.id);
+  if (back?.state !== "active") s.x.fail(`the engine lists it ${back?.state ?? "not at all"} after Resume`);
+  if (/^paused:/m.test(readFileSync(routineFile(s, back.file), "utf8"))) s.x.fail("its file still says paused after Resume");
+  const next = await s.w.eval<string>(`document.querySelector(${JSON.stringify(`${sel} .routine__when`)})?.textContent ?? ''`);
+  return `Pause pressed: the engine lists "${r.name}" paused, its file (${paused.file}) says paused: true, Run now is off; Resume pressed: active again, paused taken out of the file, "${next.slice(0, 60)}"`;
+}
+
+async function routineEditRow(s: UnitState): Promise<string> {
+  const r = s.routine ?? s.x.fail("the panel row made no routine");
+  let sel = await routineRowInPanel(s, r.id);
+  // Its name, schedule and what it does.
+  await s.w.click(`${sel} [data-routine-edit]`, "Edit");
+  const was = await s.w.waitFor<string>("what it does, as its file has it now", `(() => { const e = document.querySelector(${JSON.stringify(`${sel} [data-routine-instructions]`)}); return e ? e.value : null; })()`, 20_000);
+  if (!was.includes("ACCEPTANCE-TAG-MOSSROUTINE")) s.x.fail(`the edit form shows "${was.slice(0, 80)}", not the routine's instructions`);
+  const name = `${r.name} edited`;
+  const t = tag("ROUTINEEDIT");
+  await s.w.type(`${sel} [data-routine-name]`, name);
+  await s.w.type(`${sel} [data-routine-schedule]`, "every 12h");
+  await s.w.type(`${sel} [data-routine-instructions]`, t);
+  await s.w.click(`${sel} [data-routine-save]`, "Save");
+  const saved = await s.x.until("the engine's routine with the edit", 20_000, async () => {
+    const v = await routineOf(s, r.id);
+    return v !== undefined && v.name === name && v.triggers.some((x) => x.type === "schedule" && x.summary === "every 12h") ? v : undefined;
+  }, 300).catch(async () => s.x.fail(`the edit didn't reach the routine: ${await s.w.eval<string>(`document.querySelector(${JSON.stringify(`${sel} [data-routine-said]`)})?.textContent ?? 'nothing said'`)}`));
+  const text = readFileSync(routineFile(s, saved.file), "utf8");
+  if (!text.includes(t) || !text.includes(`id: ${r.id}`)) s.x.fail(`its file (${saved.file}) doesn't hold the new instructions under its own id`);
+  const got = await s.c.request<{ instructions: string }>("routine.get", { bot: "alpha", id: r.id });
+  if (!got.instructions.includes(t)) s.x.fail("routine.get doesn't give the new instructions");
+  s.routine = { id: r.id, name };
+  await s.w.waitFor("the panel showing the new name", `[...document.querySelectorAll('.panel .routine__name')].some((n) => n.textContent === ${JSON.stringify(name)}) ? true : null`, 20_000);
+  // A routine above this computer's level, written by hand as the bot or the person may: its OK card, pressed in MOSS.
+  const computers = (await s.c.request<{ computers: { name: string; level: string }[] }>("computer.list", {})).computers;
+  const here = computers[0] ?? s.x.fail("no computer listed");
+  const above = LEVELS[LEVELS.indexOf(here.level as (typeof LEVELS)[number]) + 1] ?? s.x.fail(`${here.name}'s level ${here.level} is the highest: nothing is above it`);
+  const before = await cardIds(s.c);
+  const rid = `r_accept${randomBytes(4).toString("hex")}`;
+  const hand = join(s.x.home, "routines", "alpha", "acceptance-raised.md");
+  writeFileSync(hand, `---\nid: ${rid}\nname: "Acceptance raised"\nlevel: ${above}\ntriggers:\n  - schedule: "every 24h"\n---\nACCEPTANCE-TAG-MOSSRAISED\n`);
+  const card1 = await newCard(s, before, "the raised level's OK card", (k) => k.kind === "change" || k.bot === "alpha", 60_000);
+  await s.w.pressApprove(card1.id);
+  await s.x.until("the raised routine active at its level", 30_000, async () => ((await routineOf(s, rid))?.state === "active" ? true : undefined), 300)
+    .catch(async () => s.x.fail(`after its OK the routine is ${(await routineOf(s, rid))?.state ?? "not listed"}`));
+  // An edit to it in MOSS raises the card again (the OK is bound to the file as it was), pressed in MOSS.
+  sel = await routineRowInPanel(s, rid);
+  const before2 = await cardIds(s.c);
+  await s.w.click(`${sel} [data-routine-edit]`, "Edit");
+  await s.w.waitFor("its edit form", `!!document.querySelector(${JSON.stringify(`${sel} [data-routine-instructions]`)}) || null`, 20_000);
+  await s.w.type(`${sel} [data-routine-instructions]`, "ACCEPTANCE-TAG-MOSSRAISEDAGAIN");
+  await s.w.click(`${sel} [data-routine-save]`, "Save");
+  const card2 = await newCard(s, before2, "the raised level's OK card again", (k) => k.kind === "change" || k.bot === "alpha", 60_000);
+  const waiting = (await routineOf(s, rid))?.state;
+  await s.w.pressApprove(card2.id);
+  await s.x.until("the edited raised routine active again", 30_000, async () => ((await routineOf(s, rid))?.state === "active" ? true : undefined), 300);
+  return `Edit on "${r.name}": the form showed its instructions as its file had them (routine.get); saved as "${name}", every 12h, new instructions: the engine and its file (${saved.file}, id ${r.id}) have them; a hand-written routine at ${above} (above ${here.name}'s ${here.level}) raised its OK card (${card1.kind}), pressed in MOSS, active; edited in MOSS it was ${waiting ?? "?"} on a new card (${card2.kind}), pressed in MOSS, active again`;
+}
+
+async function memoryRow(s: UnitState): Promise<string> {
+  // Alpha's memory folder as the upgrade's copy brings it: her index and a file it links to.
+  const t = tag("MEMORY");
+  const dir = join(s.x.home, "bots", "alpha", "memory");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "MEMORY.md"), `# Alpha's memory\n\n- [Plans](acceptance-plans.md): what we planned.\n${t} <b>stays text</b>\n`);
+  writeFileSync(join(dir, "acceptance-plans.md"), "Lisbon in March.\n");
+  const served = (await s.c.request<{ entries: { path: string }[] }>("memory.list", { bot: "alpha" })).entries.map((e) => e.path);
+  if (!served.includes("MEMORY.md") || !served.includes("acceptance-plans.md")) s.x.fail(`memory.list serves ${served.join(", ") || "nothing"}`);
+  await s.w.click(".list__bottom .nav-item.account");
+  await s.w.click(`[data-section="bot:alpha"]`);
+  const listed = await s.w.waitFor<string[]>("her memory's files on her page", `(() => { const l = [...document.querySelectorAll('[data-memory-file]')].map((e) => e.getAttribute('data-memory-file')); return l.includes('acceptance-plans.md') ? l : null; })()`, 20_000);
+  if (listed.join("|") !== served.join("|")) s.x.fail(`the page lists ${listed.join(", ")}, the engine serves ${served.join(", ")}`);
+  await s.w.click(`[data-memory-file="MEMORY.md"] button`);
+  const shown = await s.w.waitFor<{ text: string; markup: boolean; fields: number }>("MEMORY.md's text drawn", `(() => {
+    const e = document.querySelector('[data-memory-file="MEMORY.md"] [data-memory-text]');
+    return e ? { text: e.textContent, markup: !!e.querySelector('b'), fields: document.querySelectorAll('#memory textarea, #memory input, [data-memory-files] textarea, [data-memory-files] input, [data-memory-files] [contenteditable]').length } : null;
+  })()`, 20_000);
+  if (!shown.text.includes(t)) s.x.fail("the page's MEMORY.md isn't the file's text");
+  if (shown.markup || !shown.text.includes("<b>stays text</b>")) s.x.fail("the memory file's markup was drawn as markup");
+  if (shown.fields !== 0) s.x.fail(`the memory view has ${shown.fields} field(s) to edit with`);
+  return `memory.list serves ${served.join(", ")}; her page lists the same, read only; MEMORY.md opened shows its text, its markup as text`;
+}
 
 /** The last row: MOSS Code's own answer key registered on the same computer (as MOSS Code's window registers it,
  *  `device.answerKey.set`, from a MOSS Code connection), then a card MOSS draws: MOSS Code's connection can't answer it,
