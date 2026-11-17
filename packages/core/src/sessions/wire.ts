@@ -44,6 +44,16 @@ export const HOST_EVENT_TYPES: ReadonlySet<string> = new Set([
   "note", "plugin_message",
 ]);
 
+/** A call to an agent session's bridge (`mcp__moss_<16 hex>__<server>__<tool>`, the session's own server name), shown under
+ *  the tool's own name (`mcp__<server>__<tool>`), the name a bot's call to it has: a plugin's `tool.result` view and the
+ *  tool's phrases find it by that name. Its first word only (a runtime titles a call by its name, then a path or an
+ *  address from its input); any other title as it is. */
+export function bridgeToolName(title: string | undefined): string | undefined {
+  if (title === undefined) return undefined;
+  const m = /^mcp__moss_[0-9a-f]{16}__(\S+)/.exec(title);
+  return m === null ? title : `mcp__${m[1]}`;
+}
+
 /** How lane K's ACP driver's records read on the wire (item 90's live tab): its text as the assistant's message, a
  *  tool call as a tool call, a call's end as its result. Thoughts and usage stay in the daemon. */
 export function acpRecordEvent(event: { type: string; [key: string]: unknown }): { type: string; [key: string]: unknown } | undefined {
@@ -55,7 +65,7 @@ export function acpRecordEvent(event: { type: string; [key: string]: unknown }):
       return s("text") === undefined ? undefined : { type: "hook_notice", text: s("text"), level: "notice" };
     case "agent_tool_call": {
       const id = s("id");
-      const name = s("title") || s("kind");
+      const name = bridgeToolName(s("title")) || s("kind");
       if (!id || !name) return undefined;
       let argsJson = "{}";
       try {
@@ -69,7 +79,8 @@ export function acpRecordEvent(event: { type: string; [key: string]: unknown }):
       const id = s("id");
       const status = s("status");
       if (!id || (status !== "completed" && status !== "failed")) return undefined;
-      const output = status === "completed" ? "" : event["refused"] === true ? "Refused." : "Failed.";
+      const told = typeof event["output"] === "string" ? event["output"] : undefined;
+      const output = told ?? (status === "completed" ? "" : event["refused"] === true ? "Refused." : "Failed.");
       return { type: "tool_result", callId: id, output, isError: status === "failed" };
     }
     default:

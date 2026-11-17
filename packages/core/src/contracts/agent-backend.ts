@@ -176,7 +176,7 @@ export type AgentEvent =
   | { type: "text"; text: string }
   | { type: "thought"; text: string }
   | { type: "tool_call"; id: string; kind: string; title: string; status: "pending" | "in_progress" | "completed" | "failed"; rawInput?: unknown }
-  | { type: "tool_call_update"; id: string; status: "pending" | "in_progress" | "completed" | "failed"; refused?: boolean; closedByMoss?: boolean }
+  | { type: "tool_call_update"; id: string; status: "pending" | "in_progress" | "completed" | "failed"; refused?: boolean; closedByMoss?: boolean; /** The call's text output, once it has ended (its `content`'s text, cut at `AGENT_TOOL_OUTPUT_MAX`). */ output?: string }
   | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "progress" };
 

@@ -617,4 +617,20 @@ describe("an agent's live tab reads its ACP records as a code session's (item 90
     expect(acpRecordEvent({ type: "agent_text", text: "x" })).toEqual({ type: "assistant_message", text: "x" });
     expect(projectRecords([{ type: "driver", event: { type: "agent_text", text: "x" }, seq: 0, sessionId: "b_alpha", ts: 1 }], { kind: "bot" })).toEqual([]);
   });
+
+  test("a code session's call to a plugin's tool on its bridge reads under the tool's own name, with the output the agent told", () => {
+    // The session's bridge server (`moss_` and 16 hex digits) is taken off: the name a bot's call has, which a plugin's
+    // tool.result view is keyed by. A runtime's title after the name (an address, a path) is dropped from the name.
+    expect(acpRecordEvent({ type: "agent_tool_call", id: "c1", kind: "other", title: "mcp__moss_0123456789abcdef__acme-tools__Window", status: "pending", rawInput: { text: "hi" } }))
+      .toEqual({ type: "tool_call", callId: "c1", name: "mcp__acme-tools__Window", argsJson: "{\"text\":\"hi\"}" });
+    expect(acpRecordEvent({ type: "agent_tool_call", id: "c2", kind: "other", title: "mcp__moss_0123456789abcdef__web__WebFetch https://example.com/a", status: "pending" }))
+      .toMatchObject({ name: "mcp__web__WebFetch" });
+    // Any other title as it was; a server that only looks like the bridge's keeps its name.
+    expect(acpRecordEvent({ type: "agent_tool_call", id: "c3", kind: "execute", title: "bun test", status: "pending" })).toMatchObject({ name: "bun test" });
+    expect(acpRecordEvent({ type: "agent_tool_call", id: "c4", kind: "other", title: "mcp__moss_xyz__t", status: "pending" })).toMatchObject({ name: "mcp__moss_xyz__t" });
+    // The output the agent told reaches the result; without one, as before.
+    expect(acpRecordEvent({ type: "agent_tool_call_update", id: "c1", status: "completed", output: "acme-pong: hi" })).toEqual({ type: "tool_result", callId: "c1", output: "acme-pong: hi", isError: false });
+    expect(acpRecordEvent({ type: "agent_tool_call_update", id: "c1", status: "completed" })).toEqual({ type: "tool_result", callId: "c1", output: "", isError: false });
+    expect(acpRecordEvent({ type: "agent_tool_call_update", id: "c1", status: "failed", refused: true })).toMatchObject({ output: "Refused.", isError: true });
+  });
 });

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RpcError, RpcPeer, type JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
 import { UserSelections } from "../acp/selections";
-import { MAX_RAW_INPUT_CHARS, capRawInput, onceOnly } from "../acp/session";
+import { AGENT_TOOL_OUTPUT_MAX, MAX_RAW_INPUT_CHARS, capRawInput, onceOnly, toolOutputOf } from "../acp/session";
 import { isAuthRequired, pathsOf, readCaps, readConfigOptions } from "@waifucave/clover-agent-sdk/acp";
 import { AcpAgentBackend, versionSatisfies } from "../backend";
 import { BridgeTokens } from "../bridge/tokens";
@@ -635,5 +635,16 @@ describe("the MOSS home is out of agents' reach", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("an agent's tool output for the conversation (toolOutputOf)", () => {
+  test("the text of its content items; a diff or a terminal shows as its kind; nothing for no text; cut at the most kept", () => {
+    expect(toolOutputOf([{ type: "content", content: { type: "text", text: "pong: " } }, { type: "content", content: { type: "text", text: "hi" } }])).toBe("pong: hi");
+    expect(toolOutputOf([{ type: "diff", path: "/a", newText: "x" }, { type: "content", content: { type: "text", text: " done" } }])).toBe("[diff] done");
+    expect(toolOutputOf([{ type: "content", content: { type: "image", data: "…" } }])).toBeUndefined();
+    expect(toolOutputOf(undefined)).toBeUndefined();
+    expect(toolOutputOf("plain")).toBeUndefined();
+    expect(toolOutputOf([{ type: "content", content: { type: "text", text: "x".repeat(AGENT_TOOL_OUTPUT_MAX + 50) } }])).toHaveLength(AGENT_TOOL_OUTPUT_MAX);
   });
 });
