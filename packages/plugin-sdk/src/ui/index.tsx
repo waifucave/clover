@@ -784,12 +784,27 @@ function watcher<T>(mount: string, pluginId: string, area: string, type: string,
   };
 }
 
+/** How often, and how long apart, a call or watch refused for the page's calls-per-second cap is sent again. */
+const WATCH_BUSY_TRIES = 5;
+const WATCH_BUSY_RETRY_MS = 1_000;
+const BUSY = /calls this second/;
+const BUSY_CALL_RETRY_MS = 400;
+/** A call the core refused only for the page's calls-per-second cap (it ran nothing) is sent again a moment later, a few
+ *  times, so a read made in a busy first second (many parts mounting at once) isn't lost: a page that never hears the
+ *  value draws as if it had none. Any other refusal or failure is the caller's at once. */
+export function untilNotBusy<T>(send: () => Promise<T>, tries = 0): Promise<T> {
+  return send().catch((err: unknown) => {
+    if (tries < WATCH_BUSY_TRIES && BUSY.test(String((err as { message?: unknown } | null)?.message ?? err))) return new Promise<T>((resolve, reject) => setTimeout(() => untilNotBusy(send, tries + 1).then(resolve, reject), BUSY_CALL_RETRY_MS));
+    throw err;
+  });
+}
+
 /** A member called on the part's own plugin's connection (`plugin.layer.call`), its args and answer as the wire
  *  carries them (bytes as `{ $bytes }`, a `net.fetch` response as `{ $response }`). */
 function layerCall(mount: string, path: string, args: readonly unknown[]): Promise<unknown> {
   const sent = [...args];
   while (sent.length > 0 && sent[sent.length - 1] === undefined) sent.pop();
-  return (rt().bridge.api(mount, "plugin.layer.call", { call: path, args: toLayerWire(sent) }) as Promise<{ result: unknown }>).then((r) => fromLayerWire(r.result));
+  return untilNotBusy(() => rt().bridge.api(mount, "plugin.layer.call", { call: path, args: toLayerWire(sent) }) as Promise<{ result: unknown }>).then((r) => fromLayerWire(r.result));
 }
 
 /** What a component's watch returns: its unsubscribe, with `opened`, which settles once the core opened the watch (or
@@ -800,10 +815,6 @@ export type LayerUnsubscribe = Unsubscribe & { readonly opened: Promise<void>; r
 /** A member that takes a listener, watched on the part's own plugin's connection (`plugin.layer.watch`): the core puts
  *  its own listener in that place and each value comes back as `plugin_api_event` to this connection alone. Values
  *  that land before the watch's id is known wait for it. */
-/** How often, and how long apart, a watch refused for the page's calls-per-second cap is opened again. */
-const WATCH_BUSY_TRIES = 5;
-const WATCH_BUSY_RETRY_MS = 1_000;
-const BUSY = /calls this second/;
 function layerWatch(mount: string, pluginId: string, path: string, args: readonly unknown[], at: number): { stop: LayerUnsubscribe; opened: Promise<void> } {
   const listener = args[at];
   if (typeof listener !== "function") throw new Error(`${path} takes a listener`);
@@ -1212,11 +1223,11 @@ export function usePluginApi(): PluginApi {
         // value in effect at its scope, a `bot` field for the bot it names (F2: as the host half reads it), a `secret`
         // field only as `{ set }`.
         get: async <T,>(key: string, opts?: { bot?: string }) =>
-          (await call<{ result: T | undefined }>("plugin.layer.call", { call: "settings.get", args: opts?.bot !== undefined ? [key, { bot: opts.bot }] : [key] })).result,
+          (await untilNotBusy(() => call<{ result: T | undefined }>("plugin.layer.call", { call: "settings.get", args: opts?.bot !== undefined ? [key, { bot: opts.bot }] : [key] }))).result,
         // Its own plain settings, with no card (`plugin.layer.call`'s `settings.set`: never a secret or a setting written
         // into what the plugin runs), a `bot` field for the bot it names.
         set: async (key: string, value: unknown, opts?: { bot?: string }) => {
-          await call<unknown>("plugin.layer.call", { call: "settings.set", args: opts?.bot !== undefined ? [key, value ?? null, { bot: opts.bot }] : [key, value ?? null] });
+          await untilNotBusy(() => call<unknown>("plugin.layer.call", { call: "settings.set", args: opts?.bot !== undefined ? [key, value ?? null, { bot: opts.bot }] : [key, value ?? null] }));
         },
         // Its own plugin's settings only (`plugin_settings_changed`, which the core sends to that plugin's own layer):
         // the key that changed, never its value; `null` hears every key.

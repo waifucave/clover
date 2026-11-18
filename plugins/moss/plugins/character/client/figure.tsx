@@ -8,7 +8,7 @@
 //   can be. What the model has and where the figure stands go to the controllers as they change (`{ catalogue, box }`).
 // * The activity feed moves it (`mood.ts`): the session it is shown beside, or on the screen the most recent change
 //   among sessions (and bots, when the person lets it follow them).
-// * In a test or acceptance build its root carries what it follows (`data-activity`) and the last cue it sent.
+// * In a test or acceptance build its root carries which figure it shows (`data-figure`), what it follows (`data-activity`) and the last cue it sent.
 import type { HostMessageCall, PointMessage } from "@waifucave/moss-plugin-sdk";
 import { Spot, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -197,7 +197,7 @@ export function Figure({ place, session }: { place: "panel" | "screen"; session?
   if (!ready) return null;
   const portrait = shown?.portrait === undefined ? undefined : <img className="cl-figure__portrait" src={shown.portrait} alt="" />;
   return (
-    <div ref={setEl} className="cl-figure" data-place={place} data-format={shown?.format} data-activity={marked() ? (state ?? "") : undefined} data-figure-cue={marked() ? lastCue : undefined}>
+    <div ref={setEl} className="cl-figure" data-place={place} data-format={shown?.format} data-figure={marked() ? shown?.id : undefined} data-activity={marked() ? (state ?? "") : undefined} data-figure-cue={marked() ? lastCue : undefined}>
       {shown === undefined
         ? <p className="cl-figure__empty" role="status">{S.noFigure}</p>
         : <Spot name={RENDERER_SPOT} spotKey={shown.format} props={figureProps(mount, shown, framing)} fallback={portrait ?? <p className="cl-figure__empty" role="status">{S.noRenderer(shown.format)}</p>} fill />}

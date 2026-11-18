@@ -270,14 +270,15 @@ async function figureMigratedStep(f: FigureCtx): Promise<string> {
   const own = JSON.parse(typeof before.ownModels === "string" ? before.ownModels : "[]") as { file: string; format: string }[];
   if (!own.some((m) => m.file === live2dFile && m.format === "live2d") || !own.some((m) => m.file === vrmFile && m.format === "vrm")) fail(`the own models didn't come over: ${JSON.stringify(own)}`);
   /** The panel's figure drawn by `format`'s renderer, with the model fetched from the plugin's own shared files. */
-  const drawn = (what: string, format: string, canvas: string, file: string) => until(what, 90_000, async () => {
+  const drawn = (what: string, format: string, canvas: string, file: string, figure: string) => until(what, 90_000, async () => {
     for (const d of await treeDocs(f.cdp)) {
       // The renderer's own word: its model loaded (`data-state` ready) from the file the figure handed it, which for an own
       // model is the plugin's own shared file (`/_d/…`, nowhere else); an error state fails at once with its words.
-      const r = await f.cdp.evaluate(d.session, `(() => { const fig = document.querySelector('.cl-figure[data-place=panel]'); if (!fig) return null; const a = fig.querySelector(${JSON.stringify(canvas)}); return { format: fig.getAttribute('data-format'), state: a ? a.getAttribute('data-state') : null, text: a ? a.textContent.slice(0, 200) : null, refused: !!fig.querySelector('.cl-figure__empty') }; })()`).catch(() => null) as { format: string; state: string | null; text: string | null; refused: boolean } | null;
+      const r = await f.cdp.evaluate(d.session, `(() => { const fig = document.querySelector('.cl-figure[data-place=panel]'); if (!fig) return null; const a = fig.querySelector(${JSON.stringify(canvas)}); return { format: fig.getAttribute('data-format'), figure: fig.getAttribute('data-figure'), state: a ? a.getAttribute('data-state') : null, text: a ? a.textContent.slice(0, 200) : null, refused: !!fig.querySelector('.cl-figure__empty') }; })()`).catch(() => null) as { format: string; state: string | null; text: string | null; refused: boolean; figure: string | null } | null;
       if (r?.state === "error") fail(`the ${format} renderer couldn't load the moved model (${file}): ${r.text}`);
       if (r?.refused) fail(`the figure says the moved ${format} model can't be shown`);
-      if (r?.state === "ready" && r.format === format) return r;
+      // The figure shown is the moved own model itself, not the pack that stands in when the plugin has not (yet) read its own models.
+      if (r?.state === "ready" && r.format === format && r.figure === figure) return r;
     }
     return undefined;
   }, async () => {
@@ -288,9 +289,9 @@ async function figureMigratedStep(f: FigureCtx): Promise<string> {
   });
   try {
     const place = await figureBesideCode(f);
-    await drawn("the bundled 2D renderer drawing the moved Live2D model", "live2d", ".clvl-avatar", live2dFile);
+    await drawn("the bundled 2D renderer drawing the moved Live2D model", "live2d", ".clvl-avatar", live2dFile, `own:live2d:${live2dFile}`);
     await pick(f.rpc, `own:vrm:${vrmFile}`);
-    await drawn("the bundled 3D renderer drawing the moved VRM model", "vrm", ".clvr-avatar", vrmFile);
+    await drawn("the bundled 3D renderer drawing the moved VRM model", "vrm", ".clvr-avatar", vrmFile, `own:vrm:${vrmFile}`);
     return `the earlier MOSS's pick came over as the avatar plugin's figure (own:live2d:${live2dFile}) with both own models (${own.map((m) => m.format).join(", ")}); beside the coding session ${place.code} the bundled 2D renderer drew the Live2D one and, picked, the 3D renderer the VRM one, each loaded (its renderer ready) from the plugin's own shared files`;
   } finally {
     await backToBots(f).catch(() => undefined);
