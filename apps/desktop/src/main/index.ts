@@ -3459,22 +3459,50 @@ async function smoke(): Promise<void> {
             const visibleBeforeCover = cover === true && coverToken !== null && sealed.isTokenVisible(coverToken);
             const coverAt = Date.now();
             if (cover === true) {
-              await frame.executeJavaScript(`(() => {
-                const b = document.querySelector('.seal-button');
-                if (!b) return;
-                const c = document.createElement('div');
-                c.style.position = 'absolute';
-                c.style.inset = '0';
-                c.style.zIndex = '9999';
-                b.parentElement?.insertBefore(c, b);
-              })()`, true).catch(() => undefined);
+              // Once the page has its button (a frame found before it is parsed has none yet): said, so a cover that never went on shows.
+              const put = await frame.executeJavaScript(`new Promise((res) => {
+                const end = Date.now() + 5000;
+                const go = () => {
+                  const b = document.querySelector('.seal-button');
+                  if (!b) { if (Date.now() < end) setTimeout(go, 50); else res(false); return; }
+                  const c = document.createElement('div');
+                  c.style.position = 'absolute';
+                  c.style.inset = '0';
+                  c.style.zIndex = '9999';
+                  b.parentElement?.insertBefore(c, b);
+                  res(true);
+                };
+                go();
+              })`, true).catch(() => false);
+              log(`sealed-click: cover put over the button: ${put === true}`);
             }
+            // The dim, set on the page's button and read back (computed): a frame found before its button is parsed, or replaced or reloaded
+            // meanwhile, is looked for again, so the press below is never made on a page that was never dimmed (run 44297022845: the dim
+            // was set before the button existed, silently, and an undimmed button's press was answered).
+            const dimIn = async (f: Electron.WebFrameMain): Promise<{ held: boolean; why: string }> => {
+              try {
+                const r = await f.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); if (!b) return "no button yet"; b.style.opacity = ${JSON.stringify(String(Number(opacity)))}; return getComputedStyle(b).opacity === ${JSON.stringify(String(Number(opacity)))} ? "held" : "not held: " + getComputedStyle(b).opacity; })()`, true) as unknown;
+                return { held: r === "held", why: String(r) };
+              } catch (e) {
+                return { held: false, why: String((e as { message?: unknown } | null)?.message ?? e).split("\n")[0]!.slice(0, 160) };
+              }
+            };
+            const visibleBeforeDim = opacity !== undefined && coverToken !== null && sealed.isTokenVisible(coverToken);
             if (opacity !== undefined) {
-              await frame.executeJavaScript(`(() => {
-                const b = document.querySelector('.seal-button');
-                if (!b) return;
-                b.style.opacity = ${Number(opacity)};
-              })()`, true).catch(() => undefined);
+              const dimEnd = Date.now() + 15_000;
+              for (let tries = 1; ; tries++) {
+                const r = await dimIn(frame);
+                if (r.held) { log(`sealed-click: dimmed the button to opacity ${Number(opacity)} (read back; try ${tries})`); break; }
+                if (Date.now() >= dimEnd) { log(`sealed-click: the button couldn't be dimmed (${r.why})`); break; }
+                await new Promise((res) => setTimeout(res, 100));
+                frame = findSealedFrame() ?? frame;
+              }
+              // A verdict the page gave before the dim stands until its next reading: the press waits for the dim's own (never a delay).
+              if (visibleBeforeDim && coverToken !== null) {
+                const stop = Date.now() + 10_000;
+                while (sealed.isTokenVisible(coverToken) && Date.now() < stop) await new Promise((r) => setTimeout(r, 50));
+                log(`sealed-click: dim verdict ${sealed.isTokenVisible(coverToken) ? "never flipped" : "not visible"} after ${Date.now() - coverAt} ms (was visible before the dim)`);
+              }
             }
             // Let the layout settle, then wait for the button's own visibility verdict (its IOv2 report through the
             // sealed-visible channel) before the press: on a slow runner the first verdict lands after any fixed
@@ -3568,6 +3596,12 @@ async function smoke(): Promise<void> {
               const centerY = Math.round(offsetY + buttonRect.y + buttonRect.height / 2);
               log(`sealed-click: button rect=${buttonRect.x},${buttonRect.y} ${buttonRect.width}x${buttonRect.height} offset=${offsetX},${offsetY}`);
               log(`sealed-click: press sent at ${centerX},${centerY}`);
+              if (opacity !== undefined) {
+                // The page the press goes to is still dimmed: read now, on the frame as it is now.
+                const now = findSealedFrame() ?? frame;
+                const r = await now.executeJavaScript(`(() => { const b = document.querySelector('.seal-button'); return b ? getComputedStyle(b).opacity : "no button"; })()`, true).catch(() => "unread");
+                log(`sealed-click: the button's opacity at the press: ${String(r)}${now === frame ? "" : " (another frame than the one dimmed)"}`);
+              }
               const hit = await win.webContents.executeJavaScript(
                 `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 5).map((el) => { const tag = el.tagName; const src = el.tagName === "IFRAME" ? el.src.split("?")[0].slice(0, 60) : (el.className !== undefined ? String(el.className).slice(0, 40) : null); const r = el.getBoundingClientRect(); const pe = getComputedStyle(el).pointerEvents; return { tag, src, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), pe }; })); })()`, true).catch(() => null) as string | null;
               log(`sealed-click: root hit-test: ${String(hit ?? "failed").slice(0, 600)}`);
