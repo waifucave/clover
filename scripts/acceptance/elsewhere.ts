@@ -11,7 +11,6 @@
 //
 // The rows about a bot that need no window (the engine's bots as records, a bot's model plugins, its shell and its
 // agent) keep running on Alpha's record in this run: bots are the engine's data, whichever app is on top.
-import { UI_STEPS } from "./ui-steps";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { NOTIFY_STEP } from "./child-notify-step";
 import { LISTEN_STEP } from "./listen-step";
@@ -23,26 +22,28 @@ export { PARTS_ELSEWHERE, partElsewhere, type PartElsewhere } from "./elsewhere-
 
 export type Elsewhere = { owner: "MC2" | "MOSS" | "retired"; why: string };
 
-const ui = (i: number): string => `window: ${UI_STEPS[i]}`;
+/** A row by the start of its name (never by its number: rows are inserted, and a number written before an insertion marks the
+ *  wrong row). Exactly one row of the table starts with it, or this fails when the module loads. */
+const row = (start: string): string => {
+  const found = FULL_STEPS.filter((s) => s.startsWith(start));
+  if (found.length !== 1) throw new Error(`elsewhere.ts: ${found.length} rows start with "${start}"`);
+  return found[0]!;
+};
+const ui = (start: string): string => row(`window: ${start}`);
 
 export const ROWS_ELSEWHERE: ReadonlyMap<string, Elsewhere> = new Map<string, Elsewhere>([
-  [ui(5), { owner: "MOSS", why: "the Dispatch pill sends to a bot" }],
-  [ui(7), { owner: "retired", why: "Alpha's tab drawn by her own layout: her tab layout is retired with the bot tab (G8), and MOSS draws its bots in its own window" }],
-  [ui(14), { owner: "MOSS", why: "the bot editor, opened from a bot's tab and Settings › Bots" }],
-  [ui(15), { owner: "MC2", why: "a bot's avatar imported in the bot editor" }],
-  [ui(17), { owner: "MC2", why: "a bot plugin's Live2D figure on its stage" }],
-  [ui(18), { owner: "MC2", why: "a character renderer drawing a bot's figure" }],
-  [ui(19), { owner: "MC2", why: "a bot with a voice on its stage (the stage half MC2's; the voice half goes with it to the MOSS unit)" }],
-  [ui(20), { owner: "MC2", why: "Alpha's tab under Bots' plug: the stock sidebar, her top bar, her stage's fold" }],
-  [ui(21), { owner: "retired", why: "a bot plugin's own tab layout and another plugin's patch to it: the plug went with the bot tab (G8), and its fixtures (acceptance-layout-patch, acceptance-layout-mover) with it" }],
-  [ui(26), { owner: "retired", why: "a bot plugin's panel replacing a stock one on its bot's tab only: the plug went with the bot tab (G8)" }],
-  [ui(27), { owner: "MOSS", why: "panels a plugin adds on Alpha's tab and a bot plugin's panels inside its bot (its coding-tab half, Slides on a coding session, is the MOSS unit's to keep with the rest)" }],
+  [ui("the Dispatch pill sends"), { owner: "MOSS", why: "the Dispatch pill sends to a bot" }],
+  [ui("Alpha's tab is drawn by Alpha's own layout"), { owner: "retired", why: "Alpha's tab drawn by her own layout: her tab layout is retired with the bot tab (G8), and MOSS draws its bots in its own window" }],
+  [ui("the bot editor opens the user's way"), { owner: "MOSS", why: "the bot editor, opened from a bot's tab and Settings › Bots" }],
+  [ui("Alpha's tab shows the stock sidebar"), { owner: "MC2", why: "Alpha's tab under Bots' plug: the stock sidebar, her top bar, her stage's fold" }],
+  [ui("a bot plugin changes one thing in its tab"), { owner: "retired", why: "a bot plugin's own tab layout and another plugin's patch to it: the plug went with the bot tab (G8), and its fixtures (acceptance-layout-patch, acceptance-layout-mover) with it" }],
+  [ui("a plugin with a bot (the plug rule)"), { owner: "retired", why: "a bot plugin's panel replacing a stock one on its bot's tab only: the plug went with the bot tab (G8)" }],
+  [ui("a plugin adds a panel of its own on the right"), { owner: "MOSS", why: "panels a plugin adds on Alpha's tab and a bot plugin's panels inside its bot (its coding-tab half, Slides on a coding session, is the MOSS unit's to keep with the rest)" }],
   [SURFACE_COPY_STEP, { owner: "MOSS", why: "a copy of the Dispatch pill sending to a bot's conversation" }],
-  [FULL_STEPS[6], { owner: "MOSS", why: "a bot's level for writes, its card pressed where the bot's conversation is drawn (MOSS Code's window is told of code sessions' cards only)" }],
+  [row("a write to an ordinary folder lands with no card"), { owner: "MOSS", why: "a bot's level for writes, its card pressed where the bot's conversation is drawn (MOSS Code's window is told of code sessions' cards only)" }],
   [SHELL_STEP, { owner: "MOSS", why: "a bot's shell and RequestAccess, its card pressed where the bot's conversation is drawn" }],
   [OUTSIDE_STEP, { owner: "MOSS", why: "a command outside the sandbox, only in a bot's own conversation, its card pressed where that is drawn" }],
   [AGENT_STEP, { owner: "MOSS", why: "Alpha's study-buddy agent and its card, pressed where her conversation is drawn" }],
-  [ui(16), { owner: "MOSS", why: "Try again on a failed turn stays a bots' feature this round (the MOSS unit's own Try again row); a failed turn in a code session shows its error row, with no Try again" }],
   [TAB_FLASH_STEP, { owner: "MOSS", why: "Alpha's tab never flashing on the way back to it" }],
   [NOTIFY_STEP, { owner: "MOSS", why: "a turn a bot runs on its own reaching the notifier, from a bot's tab" }],
   [LISTEN_STEP, { owner: "MOSS", why: "push-to-talk where a bot's voice listens" }],
