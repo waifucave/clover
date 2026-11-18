@@ -1,4 +1,4 @@
-// MOSS's own copy of MOSS Code's sealed-pages.ts (apps/desktop/src/main/sealed-pages.ts), unchanged: the sealed pages MOSS's window places
+// MOSS's own copy of MOSS Code's sealed-pages.ts (apps/desktop/src/main/sealed-pages.ts), unchanged but for its own name in WINDOW_OVER_TEXTS.this: the sealed pages MOSS's window places
 // are the same core pages (spec §5.5); the spine's lane map gives MOSS its own copy so the two apps' lanes never meet.
 /** What a sealed frame's own page says. Each card's field and each button is a frame of its own from the app's sealed
  *  scheme (`moss-sealed://<card id>/<element>?<token>`, spec §5.5): the field inside it is the field's text in the
@@ -74,7 +74,9 @@ const FRESH_SCRIPT = `
       }
       finish(seen && !spoiled);
     };
-    timer = setTimeout(() => finish(false), ${FRESH_LIMIT_MS});
+    // No reading within the limit: the page was too busy to read the button (a renderer starved, layers loading again around the
+    // press), which is "not ready", never "covered": it resolves null, and the press is said as "late".
+    timer = setTimeout(() => { if (done) return; done = true; stop(); try { b.fresh?.(false, Math.round(performance.now() - t0)); } catch (e) { /* going */ } resolve(null); }, ${FRESH_LIMIT_MS});
     // Observed afresh, its first report is a new reading. The page's own observer reads the button where there is one (no second
     // observer watches the same button); otherwise one of its own.
     const look = () => {
@@ -608,7 +610,7 @@ export const NOT_CHECKED_REASON = "the press wasn't checked just now: press it a
 /** What the card says when a window of one of MOSS's programs lay over the button at the press (R12, the OS's own window list),
  *  by what covers it, each a thing the person can do (main says which: `covered`). */
 export const WINDOW_OVER_TEXTS: Readonly<Record<"this" | "moss" | "code" | "host" | "ours", string>> = {
-  this: "Another MOSS Code window is over this button — answer or close it, then press again.",
+  this: "Another MOSS window is over this button — answer or close it, then press again.",
   moss: "MOSS's window is over this button — move it aside or minimise it, then press again.",
   code: "MOSS Code's window is over this button — move it aside or minimise it, then press again.",
   host: "A plugin's on-screen part is over this button — it steps aside while a card waits, so press again in a moment.",

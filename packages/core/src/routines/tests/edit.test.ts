@@ -11,6 +11,7 @@ import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { SideThreadRun } from "../../bots/service";
 import { moveRoutineFile, RoutineEngine, routineFilePath } from "../engine";
+import { linkSync } from "node:fs";
 import { parseRoutine, patchRoutine, type RoutinePatch } from "../file";
 import { routineMethods } from "../rpc";
 
@@ -459,9 +460,19 @@ describe("routine.edit: a rename", () => {
     const view = await engine.edit("r_brief001", "alpha", { name: "Evening" });
     expect(view.file).toBe("home/Studio/.moss/routines/alpha/evening.md");
     expect(readdirSync(join(path, "..")).filter((f) => f.endsWith(".md"))).toEqual(["evening.md"]);
+    // Stopped between the hard link and the unlink: both names are one file; the next scan keeps the new name alone.
+    const half = routineFilePath(home, "alpha", "night");
+    writeFileSync(routineFilePath(home, "alpha", "evening"), readFileSync(routineFilePath(home, "alpha", "evening"), "utf8").replace('name: "Evening"', 'name: "Night"'));
+    linkSync(routineFilePath(home, "alpha", "evening"), half);
+    await engine.rescan();
+    expect(readdirSync(join(path, "..")).filter((f) => f.endsWith(".md"))).toEqual(["night.md"]);
+    expect(engine.list().map((v) => [v.id, v.state, v.file])).toEqual([["r_brief001", "active", "home/Studio/.moss/routines/alpha/night.md"]]);
     // A file at the new name is never written over.
     writeFileSync(join(path, "..", "taken.md"), "not a routine\n");
-    expect(() => moveRoutineFile(to, join(path, "..", "taken.md"), text)).toThrow("another file");
+    expect(() => moveRoutineFile(half, join(path, "..", "taken.md"), text)).toThrow("another file");
+    // One that appears between the check and the move (here: made in the step between) is refused, not written over.
+    expect(() => moveRoutineFile(half, join(path, "..", "late.md"), text, () => writeFileSync(join(path, "..", "late.md"), "someone else's\n"))).toThrow("appeared meanwhile");
+    expect(readFileSync(join(path, "..", "late.md"), "utf8")).toBe("someone else's\n");
     expect(readFileSync(join(path, "..", "taken.md"), "utf8")).toBe("not a routine\n");
     engine.stop();
   });

@@ -310,6 +310,99 @@ describe("placements: an event always wins over a snapshot", () => {
   });
 });
 
+describe("a bot's record: an event always wins over an answer taken before it", () => {
+  function heldRecords() {
+    const answers: ((v: unknown) => void)[] = [];
+    const nova = { id: "nova", name: "Nova", mainSession: "b_nova", madeBy: { kind: "user" }, createdAt: 1, instructionsBytes: 0 };
+    let holding = false;
+    const client = {
+      request: async <T,>(method: string): Promise<T> => {
+        if (method === "bot.records" && holding) return new Promise<T>((r) => answers.push(r as (v: unknown) => void));
+        const plain: Record<string, unknown> = { "events.subscribe": { ok: true }, "bot.records": { bots: [nova] }, "bot.summaries": { summaries: [] }, "activity.list": { activity: [] }, "card.list": { cards: [] }, "card.placement": { placements: [] }, "point.active.list": { points: [] }, "command.list": { commands: [] } };
+        return (plain[method] ?? {}) as T;
+      },
+    };
+    return { client, answers, nova, hold: () => { holding = true; } };
+  }
+
+  test("a Settings read answered after the bot was archived doesn't bring it back to the list (the archive row's flake)", async () => {
+    const { client, answers, nova, hold } = heldRecords();
+    const engine = new MossEngine(new SealedFrames("moss"));
+    await engine.attach(client);
+    expect(engine.view().bots.map((b) => b.id)).toEqual(["nova"]);
+    hold();
+    const page = engine.botRecord("nova");
+    await until(() => answers.length === 1);
+    // Archived while the page's read is on its way; then the read's answer, taken before, arrives.
+    engine.notification("core.event", { type: "bot_record_removed", id: "nova" });
+    answers[0]!({ bots: [nova] });
+    expect(await page).toEqual({ waiting: true });
+    expect(engine.view().bots).toEqual([]);
+  });
+
+  test("a read that fails (an engine too busy to answer in time) shows the record the events keep (the editor row's flake)", async () => {
+    const { client, nova } = heldRecords();
+    const engine = new MossEngine(new SealedFrames("moss"));
+    await engine.attach(client);
+    const failing = { request: async <T,>(method: string): Promise<T> => { if (method === "bot.records") throw new Error("timed out"); return client.request<T>(method); } };
+    (engine as unknown as { client: unknown }).client = failing;
+    expect(await engine.botRecord("nova")).toMatchObject({ id: "nova", name: nova.name });
+  });
+});
+
+describe("MOSS with the background host (lane HS)", () => {
+  test("Quit tells the engine pair.quit with no hand-over; a quit the engine asked for, or a closed window on macOS, tells nothing", async () => {
+    const { tellQuit, windowsClosedQuits } = await import("../src/main/quit");
+    const { e, client } = await setup();
+    const lines: string[] = [];
+    expect(await tellQuit({ client, engineAsked: false, log: (l) => lines.push(l) })).toBe("told");
+    expect(e.calls().filter((c) => c.method === "pair.quit").map((c) => c.params)).toEqual([{ handOver: false }]);
+    expect(await tellQuit({ client, engineAsked: true, log: (l) => lines.push(l) })).toBe("not-told");
+    expect(await tellQuit({ client: undefined, engineAsked: false, log: (l) => lines.push(l) })).toBe("not-told");
+    expect(e.calls().filter((c) => c.method === "pair.quit")).toHaveLength(1);
+    // Closing MOSS's last window on macOS keeps MOSS running: no quit, so nothing is told.
+    expect(windowsClosedQuits("darwin", false)).toBe(false);
+    expect(windowsClosedQuits("linux", false)).toBe(true);
+    expect(windowsClosedQuits("darwin", true)).toBe(true);
+  });
+
+  test("a host the engine gave up on is one plain notice in the window, from host.status at connect and from host_changed", async () => {
+    const { HOST_DOWN_NOTICE } = await import("../src/main/engine");
+    const { engine } = await setup();
+    expect(engine.view().notice).toBeUndefined();
+    engine.notification("core.event", { type: "host_changed", state: "absent", crashes: 3, since: 1, gaveUp: true });
+    expect(engine.view().notice).toBe(HOST_DOWN_NOTICE);
+    engine.notification("core.event", { type: "host_changed", state: "running", crashes: 0, since: 2 });
+    expect(engine.view().notice).toBeUndefined();
+    const h = mkdtempSync(join(tmpdir(), "ma-host-"));
+    homes.push(h);
+    const e2 = await startFakeEngine({ home: h, host: { state: "absent", crashes: 3, since: 1, gaveUp: true } });
+    closers.push(() => e2.close());
+    const c2 = (await dial(daemonEndpoint(h)))!;
+    closers.push(() => c2.close());
+    await c2.request("protocol.prove", { nonce: "n" });
+    await c2.request("protocol.hello", mossHello(e2.token, "0.124.0", 1));
+    const fresh = new MossEngine(new SealedFrames("moss"));
+    await fresh.attach(c2);
+    expect(fresh.view().notice).toBe(HOST_DOWN_NOTICE);
+  });
+
+  test("a card placed elsewhere (no window in front, no host) is told once; drawn again then elsewhere again, told again", async () => {
+    const { engine } = await setup();
+    const told: { id: string; bot?: string; botName?: string }[] = [];
+    engine.onElsewhere((c) => told.push(c));
+    engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "elsewhere" } });
+    engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "elsewhere" } });
+    expect(told).toEqual([{ id: "card_juniper_book", bot: "juniper", botName: "Juniper" }]);
+    engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "conversation", program: "moss", window: "main" } });
+    engine.notification("core.event", { type: "card_placed", card: "card_juniper_book", place: { kind: "elsewhere" } });
+    expect(told).toHaveLength(2);
+    // An unknown or answered card is never told.
+    engine.notification("core.event", { type: "card_placed", card: "card_nobody", place: { kind: "elsewhere" } });
+    expect(told).toHaveLength(2);
+  });
+});
+
 describe("the status line's inputs", () => {
   test("the open bot's running call gives its safe detail only; its result clears it; no message is made of either", async () => {
     const { engine } = await setup([], undefined, { running: { juniper: { name: "mcp__moss__Browser", argsJson: JSON.stringify({ url: "https://www.example.com/a?secret=1" }), displayTitle: "Page reader" } } });

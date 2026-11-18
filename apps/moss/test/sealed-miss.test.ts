@@ -66,3 +66,11 @@ describe("MOSS's side of a missed press (index.ts wires these)", () => {
     }
   });
 });
+
+describe("MOSS's words for a window over a button", () => {
+  test("another window of this program is MOSS's, never MOSS Code's", async () => {
+    const { WINDOW_OVER_TEXTS } = await import("../src/main/sealed-pages");
+    expect(WINDOW_OVER_TEXTS.this).toBe("Another MOSS window is over this button — answer or close it, then press again.");
+    expect(WINDOW_OVER_TEXTS.this).not.toContain("MOSS Code");
+  });
+});
