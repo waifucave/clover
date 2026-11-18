@@ -118,6 +118,8 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
     // Only a message the conversation did not hold yet is a reply (a replayed one is not).
     return bridge().onMessage((b, m) => { if (b === id && m.from === "bot" && !known.current.has(m.id)) setReplied(runKeyRef.current); });
   }, [id]);
+  // A reply hides the line only for the state it came in: once the feed moves on, the next turn shows its line again.
+  useEffect(() => { if (replied !== undefined && replied !== runKey) setReplied(undefined); }, [runKey, replied]);
   const phrase = replied === runKey ? undefined : statusPhrase({ state: bot.mood, ...(bot.tool !== undefined ? { tool: bot.tool } : {}), ...(bot.detail !== undefined ? { detail: bot.detail } : {}), ...(bot.title !== undefined ? { title: bot.title } : {}) });
   const showing = phrase !== undefined;
   useLayoutEffect(() => {
