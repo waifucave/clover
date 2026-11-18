@@ -85,7 +85,7 @@ import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { APP_EVENT_AREAS, mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PlacementBook, PresenceReporter, pressMayBeTaken, placeLine, showingOf, subscribeThenListCards, type CardPlace, type PressSource } from "./card-place";
 import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
-import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
+import { linuxSession, mainWindowPlan, surfaceDrawsOffscreen, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
 // around the daemon's check of who connects (debug-guard.ts).
@@ -2520,9 +2520,10 @@ function syncSurfaces(): void {
     const win = new BrowserWindow(surfaceWindowPlan({
       surface: { ...w.window, alwaysOnTop: floats && w.window.alwaysOnTop === true },
       title: `${identity.productName} ${w.id}`,
-      // A capture run (`--moss-capture`, headless) draws every window offscreen, the surfaces too: a hidden window gets no
-      // animation frames, so nothing that moves on frames (the island's morph, the pill's spring) would run under test.
-      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: headless && args.capture !== undefined }),
+      // A headless run draws its surfaces offscreen (window.ts `surfaceDrawsOffscreen`: a capture run's, and the background
+      // host's, whose never-shown island stopped drawing after a resize and read nothing for a press); a measuring run's are
+      // shown invisible instead, and a real build's are shown.
+      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: surfaceDrawsOffscreen({ headless, measuring: invisible !== undefined }) }),
       wayland,
     }));
     watchWindow(win);

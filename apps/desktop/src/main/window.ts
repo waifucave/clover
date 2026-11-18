@@ -39,6 +39,19 @@ export function webPreferences(input: { preload: string; partition: string; head
   };
 }
 
+/** Whether a surface's window (the island, the pill, a drawer, a plugin's on-screen part; the background host's as MOSS Code's)
+ *  draws offscreen: in every headless run but a measuring one (`MOSS_TEST_INVISIBLE`, whose windows are shown at opacity 0 and
+ *  composited as a person's are). A headless surface is never shown, and a never-shown window is not a sure place to draw: on
+ *  every GitHub macOS runner (and on a loaded Mac) the background host's never-shown island stopped producing frames for 10 s
+ *  and more after it was resized while holding a plugin's frames, while two never-shown windows of the same process (one made
+ *  with the island's own options) drew at 60 fps throughout (lane HV, run 44377956545); a press on its card then read
+ *  nothing in time. An offscreen window paints from its own frame clock, whatever the window server says of it: what every
+ *  window a headless run presses in already was (a `--moss-capture` run's main window and surfaces, the fallback card drawn
+ *  for a test's press). A real build, never headless, shows its surfaces and is not changed. */
+export function surfaceDrawsOffscreen(input: { headless: boolean; measuring: boolean }): boolean {
+  return input.headless && !input.measuring;
+}
+
 /** The main window: hidden until its page is ready, never shown in a headless run. */
 export function mainWindowPlan(input: {
   platform: NodeJS.Platform;
