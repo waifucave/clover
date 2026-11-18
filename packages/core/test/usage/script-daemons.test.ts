@@ -59,6 +59,7 @@ const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/release/lib.ts": "names the daemon's file and signing identifier for the release; runs nothing",
   "scripts/release/build.ts": "builds and stages the daemon for a release build and signs the file; never runs it",
   "scripts/release/release.test.ts": "checks the release's signing commands and plans against fixtures; runs no daemon",
+  "scripts/release/two-apps.test.ts": "checks the two apps' one-release payload (the daemon folder's files) against fixtures; runs no daemon",
   "scripts/build-daemon.test.ts": "tests the daemon build's helpers; compiles and boots none",
   "scripts/release/publish.ts": "finds the signed app's moss-core and has verify-sealed-core prove it; boots no daemon",
   "scripts/release/check-plugins-tarball.ts": "asks the built moss-core for its bundled-plugins manifest (`__bundled-manifest`, which prints and exits, no daemon) and checks the plugins tarball against it",
