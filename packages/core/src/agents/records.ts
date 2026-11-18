@@ -28,8 +28,16 @@ export interface DaemonAgentRecord {
   agentSessionId?: string;
   /** The plugin agent definition it started from, `<plugin>:<id>`. */
   definition?: string;
+  /** The name of the session's bridge server (`moss_` and 16 hex digits). It is the session's for good: the agent's own
+   *  history holds the tools it was offered under that name (`mcp__<server>__<tool>`, its frozen tool list and the tools it
+   *  loaded), so a reattach after a restart goes on under the same name, never a new one that leaves that history naming a
+   *  server the agent no longer has. */
+  bridge?: string;
   startedAt: number;
 }
+
+/** A bridge server name as the manager mints it: `moss_` and 16 hex digits. */
+export const BRIDGE_NAME_RE = /^moss_[0-9a-f]{16}$/;
 
 const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -51,6 +59,8 @@ export function readAgentRecord(home: string, sessionId: string): DaemonAgentRec
     const r = JSON.parse(readFileSync(agentRecordPath(home, sessionId), "utf8")) as Partial<DaemonAgentRecord>;
     if (r.v !== 1 || r.sessionId !== sessionId || typeof r.backend !== "string" || typeof r.root !== "string" || typeof r.computer !== "string") return undefined;
     if (r.level !== undefined && !(LEVELS as readonly string[]).includes(r.level)) return undefined;
+    // A name of any other shape is dropped, not trusted: the session then gets a new one.
+    if (r.bridge !== undefined && !(typeof r.bridge === "string" && BRIDGE_NAME_RE.test(r.bridge))) delete r.bridge;
     return r as DaemonAgentRecord;
   } catch {
     return undefined;

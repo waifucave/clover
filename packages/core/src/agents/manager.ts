@@ -389,8 +389,11 @@ export class AgentManager {
     return join(this.#o.home, "run", "agents", sessionId);
   }
 
-  #serverNameFor(): string {
-    return this.#o.bridge.serverName ?? `${BRIDGE_SERVER_PREFIX}${randomBytes(8).toString("hex")}`;
+  /** The name of a session's bridge server: the host's own when it fixes one, else the name the session already has (its
+   *  record: the agent's history holds the tools it was offered under it, so a session reattached after a restart must go
+   *  on under it), else a new random one, so no MCP server of the user's own can share it (review 14). */
+  #serverNameFor(daemon?: Pick<DaemonAgentRecord, "bridge">): string {
+    return this.#o.bridge.serverName ?? daemon?.bridge ?? `${BRIDGE_SERVER_PREFIX}${randomBytes(8).toString("hex")}`;
   }
 
   /** A root's real path: a folder in this computer's home that holds none of MOSS's own folders, resolved ONCE here
@@ -734,7 +737,7 @@ export class AgentManager {
     transcript.redact(token);
     const entry = {
       id, backend, transcript, record, daemon, token, rootPath, computer: daemon.computer, root: daemon.root,
-      held: 0, gone: new AbortController(), serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
+      held: 0, gone: new AbortController(), serverName: this.#serverNameFor(daemon), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
       shows: new AgentToolDisplays(),
       ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
       ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
@@ -969,7 +972,7 @@ export class AgentManager {
     e.session = session;
     const pid = (session as { pid?: number }).pid;
     if (pid) this.#o.tokens.bind(e.id, pid);
-    e.daemon = { ...e.daemon, agentSessionId: session.agentSessionId };
+    e.daemon = { ...e.daemon, agentSessionId: session.agentSessionId, bridge: e.serverName };
     // The computer that keeps the session keeps the record of an agent run for it.
     if (!e.peer) writeAgentRecord(this.#o.home, e.daemon);
     e.record = { ...e.record, agentSessionId: session.agentSessionId };
