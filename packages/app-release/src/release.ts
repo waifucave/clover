@@ -51,12 +51,20 @@ export function recordPath(home: string, program: Program): string {
   return join(home, "apps", `${program}.json`);
 }
 
-/** Writes this app's record under the home; false (and a line in the log) when it couldn't. */
-export function writeOwnRecord(home: string, o: { program: Program; bundlePath: string; release: string; build?: string; now?: number }, log: (line: string) => void): boolean {
+/** The host helper an app bundle carries on macOS (`<App>.app/Contents/Frameworks/MOSS Host[ Dev].app`): the engine's own
+ *  rule (packages/core/src/host/world.ts `hostHelperPath`; apps/moss's test holds the two equal). */
+export function hostHelperIn(bundlePath: string, profile: "dist" | "dev"): string {
+  return join(bundlePath, "Contents", "Frameworks", profile === "dev" ? "MOSS Host Dev.app" : "MOSS Host.app");
+}
+
+/** Writes this app's record under the home; false (and a line in the log) when it couldn't. `carries` says what this copy
+ *  holds (default: both, as every packaged app does since lane PK): the engine starts the host only from a record that
+ *  carries it. */
+export function writeOwnRecord(home: string, o: { program: Program; bundlePath: string; release: string; build?: string; now?: number; carries?: { engine: boolean; host: boolean } }, log: (line: string) => void): boolean {
   try {
     const record = AppInstallRecord.parse({
       record: 1, program: o.program, bundlePath: o.bundlePath, release: o.release, ...(o.build !== undefined ? { build: o.build } : {}),
-      carries: { engine: true, host: true }, seenAt: o.now ?? Date.now(),
+      carries: o.carries ?? { engine: true, host: true }, seenAt: o.now ?? Date.now(),
     });
     const path = recordPath(home, o.program);
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });

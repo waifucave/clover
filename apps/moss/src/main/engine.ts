@@ -26,7 +26,7 @@ export interface EngineClient {
 }
 
 /** The areas whose events MOSS follows. */
-export const MOSS_EVENT_AREAS = ["bots", "activity", "approvals", "surfaces", "plugins", "host"] as const;
+export const MOSS_EVENT_AREAS = ["bots", "activity", "approvals", "surfaces", "plugins", "host", "release"] as const;
 
 /** Whether an error is the engine's "not served yet" (a method with no handler). */
 export function notServed(err: unknown): boolean {
@@ -185,7 +185,7 @@ export class MossEngine {
       cards.push({ id: c.id, ...(c.bot !== undefined ? { bot: c.bot } : {}), kind: c.kind, place: p.kind });
     }
     const talk = "command" in this.talk ? { ready: true as const } : { ready: false as const, why: this.talk.why };
-    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
+    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.releaseNotice !== undefined ? { notice: this.releaseNotice } : this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
   }
 
   /** How many pending cards MOSS knows that the router hasn't placed yet (anywhere): the smoke run waits for none. */
@@ -245,6 +245,14 @@ export class MossEngine {
       const v = this.view();
       for (const l of this.viewListeners) l(v);
     }, 16);
+  }
+
+  /** One release's notice while connected (lane PK: a newer app brings a newer engine, and this MOSS updates itself), or none. */
+  private releaseNotice: string | undefined;
+  setReleaseNotice(text: string | undefined): void {
+    if (text === this.releaseNotice) return;
+    this.releaseNotice = text;
+    this.changed();
   }
 
   setConnection(kind: ConnectionKind, reason?: string, engine?: string): void {

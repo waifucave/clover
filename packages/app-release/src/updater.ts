@@ -27,6 +27,8 @@ import { GitHubProvider } from "electron-updater/out/providers/GitHubProvider";
 import type { UpdateOutcome } from "./release";
 import { verifyFeed, MOSS_APP_FEED_PREFIX, SIGNATURE_SUFFIX, type FeedVerdict } from "@waifucave/moss-update-feed";
 
+export { MOSS_APP_FEED_PREFIX };
+
 /** Whose update files an updater reads: MOSS Code's (no prefix) or MOSS's (`MOSS_APP_FEED_PREFIX`). */
 export type FeedPrefix = "" | typeof MOSS_APP_FEED_PREFIX;
 
