@@ -55,15 +55,15 @@ async function stampRun(ctx: ExampleCtx, session: string, input: { addon: string
   return { text: result!.text, asked };
 }
 
-export async function addonsStep(ctx: ExampleCtx, session: string, bot: string = session): Promise<string> {
+export async function addonsStep(ctx: ExampleCtx, session: string): Promise<string> {
   try {
-    return await run(ctx, session, bot);
+    return await run(ctx, session);
   } finally {
     await leave(ctx, ADDONS_ID);
   }
 }
 
-async function run(ctx: ExampleCtx, session: string, bot: string): Promise<string> {
+async function run(ctx: ExampleCtx, session: string): Promise<string> {
   const { rpc, home } = ctx;
   const done: string[] = [];
 
@@ -78,9 +78,8 @@ async function run(ctx: ExampleCtx, session: string, bot: string): Promise<strin
   if (!okText.includes("It loads add-ons of its own, which MOSS doesn't check.")) fail(`its OK card doesn't say it loads add-ons of its own: ${okText.slice(0, 500)}`);
   await ctx.pressCard(`${ADDONS_ID}'s OK card`, (c) => c.id === ok.id);
   await until(`${ADDONS_ID} running after its OK`, 60_000, async () => ((await stateOf(ctx, ADDONS_ID)) === "running" ? true : undefined));
-  // A bot's Glossary lists and loads a plugin by its id (its add-ons line); the code session's bridge Glossary serves skills and agent
-  // definitions only. No card is raised, so the bot's conversation does it; the stamps below run in the code session the window shows.
-  const g = await callTurn(ctx, bot, "Glossary", { load: ADDONS_ID });
+  // The code session's Glossary is a bot's: it lists and loads a plugin by its id, and names what its add-ons are.
+  const g = await callTurn(ctx, session, "Glossary", { load: ADDONS_ID });
   if (!g.result.text.includes("It takes add-ons: Stamps")) fail(`Alpha's Glossary load of ${ADDONS_ID} doesn't name its add-ons: "${g.result.text.slice(0, 400)}"`);
   done.push("1 its OK card says it loads add-ons MOSS doesn't check, pressed; Glossary names them");
 

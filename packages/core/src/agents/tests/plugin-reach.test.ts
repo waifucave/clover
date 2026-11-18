@@ -555,6 +555,34 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     expect(kinds(r.sessionId)).toEqual(["tool"]);
   });
 
+  test("on demand in a moss-code session: the tool is refused by name before a load, and a Glossary load makes the next call run, under the name the request lists", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "automatic", availability: () => "on-demand" });
+    const send = (id: string, text: string, n: number) => w.host.sendUser(id, { text, device: "d".repeat(16), clientMessageId: `m-od-${n}`, sentAt: w.clock.now() });
+    const ends = (id: string) => w.host.history(id).filter((x) => x.type === "turn_ended").length;
+    // Before any load: called by its exact name, it does not run.
+    const r = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":1}`);
+    await waitFor(() => ends(r.sessionId) >= 1, "the first turn's end", 60_000);
+    expect(wire(w, r.transcript)).not.toContain(`${tool} ran with`);
+    expect(wire(w, r.transcript)).toContain("has not been loaded");
+    // The load: Glossary names the tool by its bridge name.
+    await send(r.sessionId, `CALL mcp__${CODE_BRIDGE}__Glossary {"load":${JSON.stringify(short)}}`, 2);
+    await waitFor(() => ends(r.sessionId) >= 2, "the load turn's end", 60_000);
+    // After it, the same name runs.
+    await send(r.sessionId, `CALL mcp__${CODE_BRIDGE}__${short} {"n":3}`, 3);
+    await waitFor(() => ends(r.sessionId) >= 3, "the call turn's end", 60_000);
+    const text = wire(w, r.transcript);
+    expect([text.includes(`${tool} ran with`), text.slice(text.lastIndexOf("has not been loaded") - 200, text.lastIndexOf("has not been loaded") + 80)]).toEqual([true, expect.anything()]);
+  });
+
+  test("on demand in a moss-code session, ONE turn: a Glossary load, then in the same turn the call by name runs the plugin", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "automatic", availability: () => "on-demand" });
+    // Two rounds of one turn: the model loads, then (its next step) calls what it loaded.
+    const r = await code(w, `mcp__${CODE_BRIDGE}__Glossary {"load":${JSON.stringify(short)}}\nCALL mcp__${CODE_BRIDGE}__${short} {"n":2}`);
+    await waitFor(() => w.host.history(r.sessionId).some((x) => x.type === "turn_ended"), "the turn's end", 60_000);
+    const text = wire(w, r.transcript);
+    expect([text.includes("has not been loaded"), text.includes(`${tool} ran with`)]).toEqual([false, true]);
+  });
+
   test("a plugin enabled while the session runs: its tool is called in the next turn of the same session, and set off, the call after is not run", async () => {
     const off = new Set<string>();
     const { w, p, changed } = await setup({ ...codeBackend(spawn), level: "automatic", availability: (_s, t) => (off.has(t) ? "off" : "always") });

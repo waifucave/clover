@@ -10,7 +10,7 @@
 // the run already has is switched off and on again; one it hasn't is installed from its folder behind its OK card).
 import { BRIDGE_ECHO } from "./fake-anthropic";
 import { ensurePlugin, installed } from "./tool-setting-step";
-import { fail, until, type ExampleCtx } from "./example-steps";
+import { callTurn, fail, until, type ExampleCtx } from "./example-steps";
 
 export const CODE_TOOLS_STEP = "a plugin installed while a coding session on MOSS's own agent is running: its next turn, in the same session, is offered the tool and calls it; set off in the user's Tools settings, the turn after is offered none and the plugin never runs; back on, it is called again";
 
@@ -82,16 +82,37 @@ export async function codeToolsStep(ctx: ExampleCtx): Promise<string> {
     if (!mine2.some((r) => /ACCEPTANCE-CHILD-NO-ECHO/.test(JSON.stringify(r.body ?? "")) || r.toolResult === undefined)) fail("the turn with the tool off was not a model finding no echo tool");
     done.push("set off, the next turn was offered none and nothing ran");
 
-    // On demand: the tool setting the user can pick instead of always. A coding session's agent has no deferral of its own
-    // (the runtime's Tool Search is not on for it), so the tool is offered up front, whatever its availability.
+    // On demand (the owner, 2026-11-18: "Code sessions will also have the glossary"): MOSS's own agent holds the tool back until the
+    // session loads it through the bridge's Glossary, which finds it, loads it so the same turn can call it, and the call is
+    // judged as an always-on tool's is (the same cards as the call above).
     await ctx.rpc.request("tool.setAvailability", { server, tool: "Echo", availability: "on-demand" });
     const fromD = seen();
     await ctx.turn(session, ASK, 150_000);
     const mineD = ctx.requests().slice(fromD);
-    const calledD = mineD.find((r) => r.toolUse !== undefined && BRIDGE_ECHO.test(r.toolUse));
-    const answerD = mineD.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);
-    if (calledD === undefined || answerD === undefined || answerD.isError || !answerD.text.includes(PONG)) fail(`set on demand, the echo tool was not offered up front and run in the coding session (${calledD?.toolUse ?? "no call"}: ${(answerD?.text ?? "no result").slice(0, 200)})`);
-    done.push("set on demand, a coding session is still offered it up front and it runs (no deferral there)");
+    if (mineD.some((r) => r.tools.some((t) => BRIDGE_ECHO.test(t)))) fail("the echo tool set on demand was offered to the coding session before any load");
+    if (!mineD.some((r) => r.tools.includes("Glossary"))) fail(`the coding session was not offered Glossary, which loads an on-demand tool (it was offered ${[...new Set(mineD.flatMap((r) => r.tools.filter((t) => /Glossary/.test(t))))].join(", ") || "none of it"})`);
+    if (!mineD.some((r) => /ACCEPTANCE-CHILD-NO-ECHO/.test(JSON.stringify(r.body ?? "")) || r.toolResult === undefined)) fail("the first turn with the tool on demand was not a model finding no echo tool");
+    done.push("set on demand, the turn is not offered it, and is offered Glossary");
+    const ECHO_NAME = "acceptance-echo-echo__Echo";
+    const found = await callTurn(ctx, session, "Glossary", { query: "echo" });
+    if (!found.result.text.includes(ECHO_NAME)) fail(`Glossary did not find the on-demand echo tool by ${ECHO_NAME}: ${found.result.text.slice(0, 300)}`);
+    // Called by its exact name before any load, as a model that guessed it would: the runtime does not run it.
+    const fullName = called.toolUse!;
+    const fromF = seen();
+    await ctx.turn(session, `ACCEPTANCE-FORCE ${fullName} ${JSON.stringify({ text: "acceptance-early" })}`, 150_000);
+    const mineF = ctx.requests().slice(fromF);
+    const earlyAnswer = mineF.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);
+    if (earlyAnswer === undefined || earlyAnswer.text.includes(PONG) || !/not been loaded[\s\S]*Glossary/.test(earlyAnswer.text)) fail(`a call to the on-demand echo tool by name before any load ran, or was not answered "not loaded, use Glossary" (${JSON.stringify(earlyAnswer ?? "no result").slice(0, 300)})`);
+    done.push(`called by name before a load it was refused ("${earlyAnswer!.text.slice(0, 80)}")`);
+    // The load and the call in ONE turn, as a model does: Glossary loads it, and the model's next step (same turn) calls it by name.
+    const fromC = seen();
+    const called2 = await ctx.turn(session, `ACCEPTANCE-FORCE-LOADED ${fullName} ${ECHO_NAME} ${JSON.stringify({ text: "acceptance-child-ping" })}`, 150_000);
+    const mineC = ctx.requests().slice(fromC);
+    const callC = mineC.find((r) => r.toolUse === fullName);
+    const answerC = mineC.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);
+    if (callC === undefined || answerC === undefined || answerC.isError || !answerC.text.includes(PONG)) fail(`the loaded echo tool was not called to its answer (${callC?.toolUse ?? "no call"}: ${(answerC?.text ?? "no result").slice(0, 200)})`);
+    if (JSON.stringify(called2.cards) !== JSON.stringify(second.cards)) fail(`the loaded tool's call raised ${JSON.stringify(called2.cards)}, not what the always-on call did (${JSON.stringify(second.cards)})`);
+    done.push(`on demand: Glossary found it; a load and the call in ONE turn ran the plugin with the cards an always-on call has (the request's tool list ${mineC.some((r) => r.tools.includes(fullName)) ? "showed" : "did not show"} it)`);
 
     // Back on: offered again, and it runs.
     await ctx.rpc.request("tool.setAvailability", { server, tool: "Echo", availability: "always" });

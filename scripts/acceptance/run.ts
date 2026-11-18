@@ -3987,7 +3987,7 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
     // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3, 3.26).
-    [ADDONS_STEP, () => addonsStep(ctx, session, bot)],
+    [ADDONS_STEP, () => addonsStep(ctx, session)],
     // The previous app's session, read on the Archive page (checklist 4.14).
     [ARCHIVE_STEP, () => archiveStep(ctx)],
     // An agent backend a plugin brings (ACP), on a fake agent in place of a vendor's CLI (checklist 1.51, 4.25).
