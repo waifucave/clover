@@ -114,12 +114,13 @@ export async function codeToolsStep(ctx: ExampleCtx): Promise<string> {
     if (JSON.stringify(called2.cards) !== JSON.stringify(second.cards)) fail(`the loaded tool's call raised ${JSON.stringify(called2.cards)}, not what the always-on call did (${JSON.stringify(second.cards)})`);
     done.push(`on demand: Glossary found it; a load and the call in ONE turn ran the plugin with the cards an always-on call has (the request's tool list ${mineC.some((r) => r.tools.includes(fullName)) ? "showed" : "did not show"} it)`);
 
-    // Back on: offered again, and it runs.
+    // Back on: it runs again. The tool was loaded in this session a moment ago, so the runtime already holds it and does not
+    // list it again: the call by its name is the proof (the model's own list is not).
     await ctx.rpc.request("tool.setAvailability", { server, tool: "Echo", availability: "always" });
     const from3 = seen();
-    await ctx.turn(session, ASK, 150_000);
+    await ctx.turn(session, `ACCEPTANCE-FORCE ${fullName} ${JSON.stringify({ text: "acceptance-child-ping" })}`, 150_000);
     const mine3 = ctx.requests().slice(from3);
-    const again = mine3.find((r) => r.toolUse !== undefined && BRIDGE_ECHO.test(r.toolUse));
+    const again = mine3.find((r) => r.toolUse === fullName);
     const answer = mine3.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);
     if (again === undefined || answer === undefined || answer.isError || !answer.text.includes(PONG)) fail(`set back on, the echo tool was not called to its answer (${again?.toolUse ?? "no call"}: ${(answer?.text ?? "no result").slice(0, 200)})`);
     done.push("back on, it ran again");
