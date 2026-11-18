@@ -224,3 +224,24 @@ describe("the Review on the app's own card page (the owner's ruling, 2026-11-13)
     expect(p).toContain('addEventListener("DOMContentLoaded", wireReview)');
   });
 });
+
+describe("the reading's limit", () => {
+  test("a press waits for its two readings (the second a settle after the press) with room to spare, and gives the reading up well inside the age the app accepts it at", async () => {
+    const { FRESH_LIMIT_MS, FRESH_SETTLE_MS } = await import("../src/main/sealed-pages");
+    const { FRESH_MAX_AGE_MS } = await import("../src/main/sealed");
+    // Measured on the GitHub macOS runners (608 presses, three runs): 5 to 373 ms, median about 140, p95 about 210.
+    expect(FRESH_LIMIT_MS).toBeGreaterThanOrEqual(2 * 373);
+    expect(FRESH_LIMIT_MS).toBeGreaterThan(FRESH_SETTLE_MS * 4);
+    expect(FRESH_LIMIT_MS).toBeLessThanOrEqual(FRESH_MAX_AGE_MS / 1.5);
+  });
+
+  test("the page gives its reading up at the limit, as a 'late' that refuses nothing and answers nothing, and the readings are the same two as before", async () => {
+    const { buttonPage, FRESH_LIMIT_MS, FRESH_SETTLE_MS } = await import("../src/main/sealed-pages");
+    const b = buttonPage({ cardId: "card_x", token: "t".repeat(43), option: "allow_once", label: "Allow", kind: "approve" });
+    expect(b).toContain(`resolve(null); }, ${FRESH_LIMIT_MS})`);
+    expect(b).toContain(`t0 + ${FRESH_SETTLE_MS} - performance.now()`);
+    // A cover that comes during the wait spoils the press whatever the limit is: an entry that says the button doesn't show between the readings, or a last one that doesn't.
+    expect(b).toContain("if (after.some((x) => !shows(x))) spoiled = true");
+    expect(b).toContain("finish(seen && !spoiled)");
+  });
+});

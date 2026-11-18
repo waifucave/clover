@@ -189,7 +189,14 @@ export async function installFromPage(ctx: ExampleCtx, folder: string, id: strin
     if (chosen) break;
   }
   await clickTree(cdp, `Install ${name}`, "button", `Install ${name}`);
-  const card = await until(`${id}'s OK card`, 60_000, async () => (await rpc.request<{ cards: Card[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === id));
+  const card = await until(`${id}'s OK card`, 60_000, async () => (await rpc.request<{ cards: Card[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === id)).catch(async (err: unknown) => {
+    // A card that never came (`cards` row 57: run 44210338753 twice, run 44219354846 once): say what the core held at the end of the wait, which names
+    // the cause: the plugin's record, whether its folder is in the plugins folder, the pending cards. In run 44219354846 it held none of the three: the
+    // press on Install never reached the core, a lost press on the Plugins page (not a slow install), which is not retried here.
+    const said = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).then((r) => `plugin.get says ${r.plugin.state}`, (e: unknown) => `plugin.get: ${String((e as Error).message).slice(0, 120)}`);
+    const cards = await rpc.request<{ cards: Card[] }>("card.list").then((r) => r.cards.map((c) => `${c.kind}${c.pluginId ? `:${c.pluginId}` : ""}`).join(", ") || "none", () => "card.list failed");
+    throw new Error(`${(err as Error).message} (at the end of the wait: ${said}; its folder ${existsSync(join(ctx.home, "plugins", id)) ? "is" : "is not"} in the plugins folder; pending cards: ${cards})`);
+  });
   const text = JSON.stringify((await rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
   await ctx.pressCard(`${id}'s OK card`, (c) => c.id === card.id);
   await until(`${id} running after its OK`, 60_000, async () => ((await stateOf(rpc, id)) === "running" ? true : undefined));

@@ -238,14 +238,18 @@ class MossWindow {
   }
 
   /** Presses the card's Approve in MOSS's window for real: the pointer comes in, the page's own gate says ready (its
-   *  visibility reading, its second), then a trusted click; MOSS's main process judges and signs. What MOSS logged. */
+   *  visibility reading, its second), then a trusted click; MOSS's main process judges and signs. What MOSS logged.
+   *  A person who is told "Not ready yet, press again" (the page's `late`: no reading within its limit; the missed-press notice: the
+   *  press reached no sealed page; `no-pointer` / `opening`: it wasn't taking a press yet) presses once more, and so does this: ONE
+   *  more press, logged as "landed on retry"; a second miss fails the row. A press refused for cause (`covered`, a refused answer)
+   *  is never made again. Every press says how it went (`acceptance: sealed press (MOSS): …`), so the rate stays visible. */
   async pressApprove(cardId: string): Promise<string> {
     const doc = await this.cardFrame(cardId);
     const sel = ".seal-button[data-kind=approve]:not([data-remember])";
     const tried: string[] = [];
     // A card grows to its own height once its frame draws, and a list that scrolls may move under it: the person waits
-    // for it to settle, scrolls the button into view and presses; a press the page read as covered is made again.
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // for it to settle, scrolls the button into view and presses.
+    for (let attempt = 0; attempt < 2; attempt++) {
       let last = -1;
       await this.x.until("the card's frame at its own height", 10_000, async () => {
         const h = await this.eval<number>(`document.querySelector('iframe[data-card-frame=${JSON.stringify(cardId)}]')?.getBoundingClientRect().height ?? -1`);
@@ -274,14 +278,25 @@ class MossWindow {
       const said = await this.x.until(`MOSS's answer for the card ${cardId}`, 15_000, () => {
         const text = this.x.readLog(this.log).slice(from);
         if (text.includes(`sealed: answer accepted for ${cardId}`)) return "accepted";
-        if (new RegExp(`sealed: press on ${cardId}: (covered|no-pointer|opening)`).test(text)) return /sealed: press on \S+: (\S+)/.exec(text.split("\n").reverse().find((l) => l.includes(`press on ${cardId}`)) ?? "")?.[1] ?? "again";
+        const word = /sealed: press on \S+: (covered|no-pointer|opening|late)\b/.exec(text.split("\n").filter((l) => l.includes(`press on ${cardId}`)).join("\n"))?.[1];
+        if (word !== undefined) return word;
+        if (new RegExp(`sealed: a press over ${cardId} [^\\n]*reached no sealed page`).test(text)) return "missed";
         return /sealed: answer refused \([^\n]*/.exec(text)?.[0];
       }, 200);
-      if (said === "accepted") return "accepted";
-      if (said === "covered" || said === "no-pointer" || said === "opening") { tried.push(said); continue; }
+      if (said === "accepted") {
+        console.error(`acceptance: sealed press (MOSS): ${attempt === 0 ? "landed first try" : `landed on retry (the first press said ${tried.join(", ")})`}`);
+        return "accepted";
+      }
+      if (attempt === 0 && (said === "late" || said === "missed" || said === "no-pointer" || said === "opening")) {
+        tried.push(said);
+        console.error(`acceptance: sealed press (MOSS): the card said press again (${said}); one more press`);
+        continue;
+      }
+      if (said === "covered") this.x.fail(`the press on the card's Approve in MOSS was read as covered (never pressed again)${tried.length > 0 ? `; the press before it said ${tried.join(", ")}` : ""}`);
+      if (tried.length > 0) this.x.fail(`the card's Approve in MOSS said press again twice (${tried.join(", ")}, then ${said}): ${said}`);
       this.x.fail(`the press on the card's Approve in MOSS: ${said}`);
     }
-    return this.x.fail(`the card's Approve in MOSS read as ${tried.join(", ")} at each of 3 presses`);
+    return this.x.fail(`the card's Approve in MOSS was not answered at 2 presses (${tried.join(", ")})`);
   }
 }
 

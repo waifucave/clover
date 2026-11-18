@@ -6277,9 +6277,16 @@ try {
     if (shown !== undefined) { console.error(`acceptance: FAIL: a window was shown during a headless run (${f}): ${shown.slice(0, 300)}`); code = code === 0 ? 1 : code; break; }
   }
   // The run's own presses on a sealed button are legitimate (the cover tests live in the desktop suite, never here): one the app refused as
-  // covered, or whose fresh visibility report never came, is a button the person could not have pressed either, and fails the run.
+  // covered is a button the person could not have pressed either, and fails the run. A press whose fresh visibility report did not come in time
+  // ("none in time": the page was too busy to read the button, so the card said "press again") is pressed again by pressApprove, as a person
+  // would; it fails only when that card was never answered (a press that landed on the next try is counted, not failed).
   {
-    const refused = ["app.log.1", "app.log"].flatMap((f) => readLog(join(home, "logs", f)).split("\n")).filter((l) => !(/^\d{4}-\d\d-\d\dT/.test(l) && l.slice(0, 24) < runStartedAt)).filter((l) => /sealed: press on .*: fresh report (covered|none in time) after/.test(l) || /sealed: answer refused \((the button was covered|no visibility report)/.test(l));
+    const all = ["app.log.1", "app.log"].flatMap((f) => readLog(join(home, "logs", f)).split("\n")).filter((l) => !(/^\d{4}-\d\d-\d\dT/.test(l) && l.slice(0, 24) < runStartedAt));
+    const answered = (l: string): boolean => { const id = /sealed: press on (\S+) /.exec(l)?.[1]; return id !== undefined && all.some((x) => x.includes(`sealed: answer accepted for ${id}`)); };
+    const late = all.filter((l) => /sealed: press on .*: fresh report none in time after/.test(l));
+    const retried = late.filter(answered);
+    const refused = all.filter((l) => /sealed: press on .*: fresh report covered after/.test(l) || /sealed: answer refused \((the button was covered|no visibility report)/.test(l) || (/sealed: press on .*: fresh report none in time after/.test(l) && !answered(l)));
+    console.error(`acceptance: sealed presses with no fresh report in time, landed on the next press: ${retried.length}`);
     if (refused.length > 0) { console.error(`acceptance: FAIL: ${refused.length} of the run's own presses on a sealed button were refused as covered or unchecked, e.g. ${refused[0]!.slice(0, 260)}`); code = code === 0 ? 1 : code; }
     else console.error("acceptance: sealed presses refused as covered or unchecked: 0");
   }

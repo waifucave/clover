@@ -24,7 +24,7 @@ import { buttonAt, inWindow, MISS_BOUND_MS, MissWatch, type Box } from "./sealed
 import { watchSealedDraw, type RedrawDeps } from "./sealed-redraw";
 import { coverOfPress, loadWindowList, windowIdOfMediaSource, type WindowList } from "./overlap";
 import { OWN_ELEMENT, SealedFrames } from "./sealed";
-import { ownCardPage } from "./sealed-pages";
+import { FRESH_LIMIT_MS, ownCardPage } from "./sealed-pages";
 import { alwaysSentence, summarize as summarizeCard } from "./card-summary";
 import { isTalkKey, Talk } from "./voice";
 import { runSmoke, runRender } from "./test-runs";
@@ -778,9 +778,13 @@ function wireSealed(): void {
       if (sealedEverSeen.size > 512) sealedEverSeen.delete(sealedEverSeen.values().next().value!);
     }
   });
-  ipcMain.on("moss:sealed-fresh", (event, a: { token?: unknown; seen?: unknown }) => {
+  ipcMain.on("moss:sealed-fresh", (event, a: { token?: unknown; seen?: unknown; ms?: unknown }) => {
     const s = sealedSender(event, a?.token);
-    if (s !== undefined && typeof a.seen === "boolean") sealed.noteFresh(s.token, a.seen);
+    if (s === undefined || typeof a.seen !== "boolean") return;
+    sealed.noteFresh(s.token, a.seen);
+    // How long the page took for the reading a press asked for, as the island's copy logs it: a limit that is too short shows in the log.
+    const ms = typeof a.ms === "number" && Number.isFinite(a.ms) ? Math.max(0, Math.min(60_000, Math.round(a.ms))) : undefined;
+    if (ms !== undefined) log(`sealed: press on ${sealed.cardOf(s.token) ?? "?"}: fresh report ${a.seen ? "uncovered" : ms >= FRESH_LIMIT_MS ? "none in time" : "covered"} after ${ms} ms`);
   });
   ipcMain.on("moss:sealed-press", (event, a: { token?: unknown; what?: unknown }) => {
     const s = sealedSender(event, a?.token);

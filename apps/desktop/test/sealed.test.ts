@@ -293,10 +293,10 @@ describe("a fresh reading that never came in time is 'late', not 'covered' (lane
   });
 
   test("the page reads a reading that didn't come within the limit as 'late' and shows 'press again', never a cover", async () => {
-    const { buttonPage, PRESS_AGAIN_TEXT } = await import("../src/main/sealed-pages");
+    const { buttonPage, PRESS_AGAIN_TEXT, FRESH_LIMIT_MS } = await import("../src/main/sealed-pages");
     const b = buttonPage({ cardId: "card_x", token: "t".repeat(43), option: "allow_once", label: "Allow", kind: "approve" });
     expect(b).toContain('say(ok === null ? "late" : "covered")');
-    expect(b).toContain("resolve(null); }, 400)");
+    expect(b).toContain(`resolve(null); }, ${FRESH_LIMIT_MS})`);
     expect(b).toContain(JSON.stringify(PRESS_AGAIN_TEXT));
   });
 });
