@@ -591,6 +591,31 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     expect([text.includes("has not been loaded"), text.includes(`${tool} ran with`)]).toEqual([false, true]);
   });
 
+  test("a turn the runtime ends with no word, no event and no tokens (no model call) ends as the failure it is, said in words, not a silent end_turn", async () => {
+    let opened = 0;
+    const query = ((args: { prompt: AsyncIterable<string> }) => {
+      const mine = ++opened;
+      async function* run() {
+        yield { type: "system", subtype: "init", model: CODE_MODEL, permissionMode: "default" };
+        for await (const _ of args.prompt) {
+          // The first agent answers the message with the end of something else: a `result` and nothing before it.
+          if (mine === 1) yield { type: "result", subtype: "success", is_error: false };
+          else {
+            yield { type: "assistant", message: { content: [{ type: "text", text: "Here you are." }] } };
+            yield { type: "result", subtype: "success", is_error: false, usage: { input_tokens: 3, output_tokens: 2 } };
+          }
+        }
+      }
+      return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
+    }) as unknown as MossCodeDeps["query"];
+    const { w } = await setup({ ...codeBackend(spawn, query), long: true, level: "automatic" });
+    const r = await code(w, "say hello");
+    const ended = () => w.host.history(r.sessionId).filter((x) => x.type === "turn_ended") as unknown as { end: { reason: string; failure?: string; text?: string } }[];
+    await waitFor(() => ended().length >= 1, "the first turn's end", 60_000);
+    expect(ended()[0]!.end).toMatchObject({ reason: "failed", failure: "error" });
+    expect(String(ended()[0]!.end.text)).toContain("without answering");
+  });
+
   test("a plugin enabled while the session runs: its tool is called in the next turn of the same session, and set off, the call after is not run", async () => {
     const off = new Set<string>();
     const { w, p, changed } = await setup({ ...codeBackend(spawn), level: "automatic", availability: (_s, t) => (off.has(t) ? "off" : "always") });

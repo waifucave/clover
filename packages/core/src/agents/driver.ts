@@ -196,7 +196,8 @@ export class AgentDriver implements SessionDriver {
     const notice = this.#opts.noticeBeforeTurn?.();
     if (notice !== undefined) this.#record(ctl, { type: "agent_notice", text: notice });
     const flusher = new TextRuns((e) => this.#record(ctl, e), this.#opts.coalesceMs ?? 250);
-    const off = session.onEvent((e) => flusher.push(e));
+    let heard = false;
+    const off = session.onEvent((e) => { heard = true; flusher.push(e); });
     const onAbort = () => {
       if (!this.#stopping) void session.cancel();
     };
@@ -216,6 +217,13 @@ export class AgentDriver implements SessionDriver {
           await this.#shutdown();
           return { reason: "failed", failure: "error", text: end.text };
         default:
+          // A turn that ends with no word, no event of any kind and no tokens never reached the model (an end the agent
+          // took from something else than this message): the person typed and nothing came back. It is said, and the agent
+          // starts afresh for the next message, instead of a silent end.
+          if (!heard && end.text === "" && end.usage === undefined) {
+            await this.#shutdown();
+            return { reason: "failed", failure: "error", text: "The agent ended the turn without answering. Send your message again." };
+          }
           return { reason: "end_turn", text: end.text, ...usageOf(end) };
       }
     } catch (err) {
