@@ -4618,6 +4618,9 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
     // tab is never drawn there), started the app's way. With bots as records a fresh home's Alpha has no model until
     // `bot.edit` gives her one, so waiting for "the bot on the keyed model" here could never end.
     const session = await keyedCodeSession(c);
+    // The pill sends to Alpha (a bot's conversation, the pill's own default target), so the copy row reads her conversation, not
+    // the code session's: the words the pill sends are in hers.
+    const alphaConversation = o.row === "surface-copy" ? (await until("Alpha's conversation", 60_000, async () => (await c!.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.mainSession, 500)) : undefined;
     c.close();
     c = undefined;
     // Her tab, not the welcome guide (stageLevelsStep's reason): the guide is marked done, as the app marks it once it is.
@@ -4639,6 +4642,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
     c = rpc;
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
+    if (alphaConversation !== undefined) await rpc.request("session.attach", { id: alphaConversation });
     const log = proc.log;
     // Where the router put a card (the window's log): the host's island takes its press there, the window elsewhere.
     let hostPresses = 0;
@@ -4669,7 +4673,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
       history: (s2) => history(rpc, s2),
       setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back"),
     };
-    record(n, "PASS", `${o.row === "surface-copy" ? await surfaceCopyStep(ctx, session) : await browserStep(ctx, session, browserFixture, panelOpener(rpc))}${o.withHost === true ? `; with the host running: ${hostPresses} card(s) pressed on the host's island, ${windowPresses} in the window, the pages in the host` : ""}`);
+    record(n, "PASS", `${o.row === "surface-copy" ? await surfaceCopyStep(ctx, alphaConversation ?? session) : await browserStep(ctx, session, browserFixture, panelOpener(rpc))}${o.withHost === true ? `; with the host running: ${hostPresses} card(s) pressed on the host's island, ${windowPresses} in the window, the pages in the host` : ""}`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
