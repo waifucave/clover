@@ -35,6 +35,7 @@
     "@waifucave/moss-plugin-panel-terminal": "workspace:*",
     "@waifucave/moss-plugin-pill": "workspace:*",
     "@waifucave/moss-plugin-plugin-index": "workspace:*",
+    "@waifucave/moss-app-release": "workspace:*",
     "@waifucave/moss-plugin-sdk": "workspace:*",
     "@waifucave/moss-plugin-settings": "workspace:*",
     "@waifucave/moss-plugin-shell": "workspace:*",

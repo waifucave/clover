@@ -75,12 +75,18 @@ export function pluginsTarballFile(version: string, target: CoreTarget): string 
 }
 
 /**
- * The names a signature may cover: the app's update files (a channel and an OS, scripts/release/lib.ts's `feedFile`),
+ * The names a signature may cover: the apps' update files (a channel and an OS, scripts/release/lib.ts's `feedFile`:
+ * MOSS Code's as electron-builder names them, MOSS's with `MOSS_APP_FEED_PREFIX` in front, so neither app's file passes as
+ * the other's: the signed message carries the name),
  * the daemon's (`coreFeedFile`), plugin Bun's (`pluginBunFeedFile`) and the bundled plugins' (`pluginsFeedFile`), and
  * the files they name (`coreBinaryFile`, `pluginBunBinaryFile`, `pluginsTarballFile`), which a server checks before
  * it trusts their bytes.
  */
-export const FEED_NAME = /^(?:(latest|beta)(-mac|-linux|-linux-arm64|-(?:core|plugin-bun|plugins)-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml|moss-(?:core|plugin-bun)-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64\.exe)|moss-plugins-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64)\.tar\.gz)$/;
+export const FEED_NAME = /^(?:(?:moss-)?(?:latest|beta)(?:-mac|-linux|-linux-arm64)?\.yml|(?:latest|beta)-(?:core|plugin-bun|plugins)-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64)\.yml|moss-(?:core|plugin-bun)-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64\.exe)|moss-plugins-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64)\.tar\.gz)$/;
+
+/** What MOSS's own update files start with (`moss-latest-mac.yml`, …): MOSS and MOSS Code are two artifacts of the same
+ *  release, each with its own feed in it (spec item 120). MOSS Code's carry no prefix. */
+export const MOSS_APP_FEED_PREFIX = "moss-";
 
 /** The daemon's update file (`coreFeedFile`): one binary, its version, SHA-512 (base64) and size. */
 export interface CoreFeed {

@@ -23,6 +23,7 @@
         "@types/node": "25.9.3",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
+        "@waifucave/moss-app-release": "workspace:*",
         "@waifucave/moss-plugin-archive": "workspace:*",
         "@waifucave/moss-plugin-browser-view": "workspace:*",
         "@waifucave/moss-plugin-character": "workspace:*",
@@ -63,6 +64,7 @@
         "@types/node": "25.9.3",
         "@types/react": "19.3.0",
         "@types/react-dom": "19.3.0",
+        "@waifucave/moss-app-release": "workspace:*",
         "@waifucave/moss-core": "workspace:*",
         "@waifucave/moss-plugin-sdk": "workspace:*",
         "@waifucave/moss-protocol": "workspace:*",
@@ -82,6 +84,18 @@
       "name": "sample-echo",
       "dependencies": {
         "@waifucave/moss-plugin-sdk": "workspace:*",
+      },
+    },
+    "packages/app-release": {
+      "name": "@waifucave/moss-app-release",
+      "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/moss-protocol": "workspace:*",
+        "@waifucave/moss-update-feed": "workspace:*",
+        "electron-updater": "6.8.11",
+      },
+      "devDependencies": {
+        "@types/node": "25.9.3",
       },
     },
     "packages/cli": {
@@ -1390,6 +1404,8 @@
     "@waifucave/clover-web": ["@waifucave/clover-web@0.0.77", "https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.77/45e008f020edd0547eb93b91c29fd28ee9b34785", {}, "sha512-QOrYwmwwihfyMuvWEWmhkbhJogEPtHzIrWP2TQ6BmsZ10maGLyCdmgdE51XlXbRhGzky4X/Y+hM6yq5Vuo3/Aw=="],
 
     "@waifucave/mochi2d": ["@waifucave/mochi2d@0.13.0", "https://npm.pkg.github.com/download/@waifucave/mochi2d/0.13.0/ea0d786b6ad5f8a5b2f268a836a92e489b6c74e5", { "peerDependencies": { "pixi.js": "^8.12.0", "playwright": ">=1.40.0" }, "bin": { "mochi2d": "dist/tools/mochi2d.js", "mochi2d-mcp": "dist/tools/mochi2d-mcp.js" } }, "sha512-xqE+nfqxkTmgVkwgi9cV+A886choH4xRvZ5V5ZiYqzMk5q5xoz4s7QVPKSH8fNopCCgr26GMzExEl76+vRPNhw=="],
+
+    "@waifucave/moss-app-release": ["@waifucave/moss-app-release@workspace:packages/app-release"],
 
     "@waifucave/moss-cli": ["@waifucave/moss-cli@workspace:packages/cli"],
 

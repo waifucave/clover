@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- MOSS's PLACEHOLDER app icon (lane PK): the owner has not chosen MOSS's icon (spec item 110). Drawn from the living-bots
+       kit's own rules and colours (apps/moss/src/window/faces/living-bots.js: one flat shape, one flat colour, two ink ovals
+       for eyes; COLORS.paper, PALETTE gold, COLORS.ink), on macOS's icon grid. Replace it when he picks one. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#F6F4EE"/>
+  <circle cx="512" cy="540" r="270" fill="#E5A72E"/>
+  <ellipse cx="430" cy="500" rx="34" ry="52" fill="#1B1D2B"/>
+  <ellipse cx="594" cy="500" rx="34" ry="52" fill="#1B1D2B"/>
+</svg>

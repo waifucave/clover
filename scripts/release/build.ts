@@ -1,6 +1,10 @@
-// A release build for macOS or Windows (plan §4 M-M2): the app with the daemon and its link sidecar inside, its
-// installers and its update files for a channel, in apps/desktop/out/dist/. Linux's release build is
-// scripts/build-packages.ts with the same --channel.
+// A release build for macOS or Windows (plan §4 M-M2): BOTH apps of one release (lane PK; spec §3.1 "One release for
+// everything", R4), MOSS Code and MOSS, each with the same daemon, link sidecar, bundled tree and (macOS) host helper inside,
+// their installers and their update files for a channel, in apps/desktop/out/dist/ (MOSS's beside MOSS Code's, its update
+// files under MOSS's own names, `moss-latest-mac.yml`: scripts/release/two-apps.ts). There is no flag that builds one app
+// alone: both package.json versions must be VERSION's before anything is built, and after packaging the two apps' engine,
+// tree and host helper are checked byte for byte the same. Linux's release build is scripts/build-packages.ts with the same
+// --channel (MOSS Code only, so far).
 //
 //   bun scripts/release/build.ts [--channel latest|beta] [--sign [--no-notarize] | --sign-dev | --test-build] [--dry-run]
 //
@@ -81,7 +85,9 @@ import { asarFiles, asarMarkerProblems, releaseMarkerProblems, testBuildMarkerPr
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { MOSS_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
-import { MOSS_APP_IDENTIFIER as MOSS_APP_IDENTIFIERS, appRequirement } from "../../packages/core/src/bundled-identities";
+import { MOSS_APP_IDENTIFIER as MOSS_APP_IDENTIFIERS, MOSS_PROGRAM_IDENTIFIERS, appRequirement } from "../../packages/core/src/bundled-identities";
+import { hostRequirement } from "../../packages/core/src/host/world";
+import { CODE_APP, HOST_HELPER, HOST_HELPER_STASH, MOSS_APP as MOSS_BOTS_APP, MOSS_TEST_BUILD_ARTIFACT_ARGS, mossArtifacts, mossFeedFile, mossInstallers, mossServedCopies, mossTestBuildArtifacts, moveMossOutputs, oneVersionProblems, samePayloadProblems, type ReleaseApp } from "./two-apps";
 import { LINK_BUILD, LINK_OUTPUT, linkBuildEnv } from "../build-packages";
 import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
 import { sealProblems } from "../seal-bun-doors";
@@ -106,6 +112,14 @@ export const MOSS_APP_IDENTIFIER = MOSS_APP_IDENTIFIERS.dist;
 export const MOSS_APP_REQUIREMENT = appRequirement("dist", MOSS_TEAM_ID);
 /** The --sign-dev alpha's app: the dist identifier, Apple's chain and MOSS's team (an Apple Development identity). */
 export const MOSS_APP_DEV_SIGNED_REQUIREMENT = appRequirement("dist", MOSS_TEAM_ID, false);
+/** MOSS's (the bots app's, `com.waifucave.moss`): the same rule under its own identifier, the one the engine checks MOSS's
+ *  `app` hello against (`appPeerRequirement(…, "moss")`). */
+export const MOSS_BOTS_REQUIREMENT = appRequirement("dist", MOSS_TEAM_ID, true, "moss");
+export const MOSS_BOTS_DEV_SIGNED_REQUIREMENT = appRequirement("dist", MOSS_TEAM_ID, false, "moss");
+/** The requirement an app is checked against after it is signed. */
+function requirementOf(app: ReleaseApp, dev: boolean): string {
+  return app.program === "moss" ? (dev ? MOSS_BOTS_DEV_SIGNED_REQUIREMENT : MOSS_BOTS_REQUIREMENT) : (dev ? MOSS_APP_DEV_SIGNED_REQUIREMENT : MOSS_APP_REQUIREMENT);
+}
 
 export interface ReleaseBuildArgs {
   os: BuildOs;
@@ -240,10 +254,13 @@ export function signingInputs(os: BuildOs, env: Record<string, string | undefine
 export const DAEMON_TARGET: Readonly<Record<BuildOs, DaemonTarget>> = { mac: "darwin-arm64", win: "windows-x64" };
 
 /** The daemon inside the built app (the one the release ships, signed with the app on a signed build). */
-export function daemonInApp(outDir: string, os: BuildOs): string {
-  return os === "mac"
-    ? join(outDir, "mac-arm64", "MOSS Code.app", "Contents", "Resources", "daemon", "moss-core")
-    : join(outDir, "win-unpacked", "resources", "daemon", "moss-core.exe");
+export function daemonInApp(outDir: string, os: BuildOs, app: ReleaseApp = CODE_APP): string {
+  return join(resourcesIn(outDir, os, app), "daemon", os === "mac" ? "moss-core" : "moss-core.exe");
+}
+
+/** A built app's resources folder: `<out>/mac-arm64/<App>.app/Contents/Resources`, or `<out>/win-unpacked/resources`. */
+export function resourcesIn(outDir: string, os: BuildOs, app: ReleaseApp = CODE_APP): string {
+  return os === "mac" ? join(outDir, "mac-arm64", `${app.product}.app`, "Contents", "Resources") : join(outDir, "win-unpacked", "resources");
 }
 
 /** The identity as electron-builder's `mac.identity` takes it: the full name less "Developer ID Application: ". */
@@ -255,7 +272,7 @@ export function builderIdentity(identity: string): string {
 
 /** electron-builder's command for the OS's release, run in apps/desktop. Secrets reach it through its environment only.
  *  --sign-dev names the identity by its SHA-1 (`devIdentity`), with no timestamp and no notarization. */
-export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, string | undefined>, devIdentity?: string): string[] {
+export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, string | undefined>, devIdentity?: string, app: ReleaseApp = CODE_APP): string[] {
   const base = a.os === "mac" ? ["electron-builder", "--mac", "dmg", "zip", "--arm64"] : ["electron-builder", "--win", "nsis", "--x64"];
   const out = [...base, "--publish", "never", ...channelArgs(a.channel)];
   if (a.signDev) {
@@ -266,7 +283,7 @@ export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, stri
   // electron-builder takes the identity without its "Developer ID Application: " prefix (it refuses one that has it,
   // and picks the certificate type itself); codesign takes the full name.
   // A test build: the Developer ID, never notarized, into its own folder.
-  if (a.os === "mac" && a.testBuild) return [...out, `-c.mac.identity=${builderIdentity(env.MOSS_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${TEST_BUILD_OUT}`, ...TEST_BUILD_ARTIFACT_ARGS];
+  if (a.os === "mac" && a.testBuild) return [...out, `-c.mac.identity=${builderIdentity(env.MOSS_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${TEST_BUILD_OUT}`, ...(app.program === "moss" ? MOSS_TEST_BUILD_ARTIFACT_ARGS : TEST_BUILD_ARTIFACT_ARGS)];
   // A sign-only build: the Developer ID, never notarized, into its own folder.
   if (a.os === "mac" && a.signOnly) return [...out, `-c.mac.identity=${builderIdentity(env.MOSS_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${SIGN_ONLY_OUT}`];
   if (a.os === "mac") return [...out, `-c.mac.identity=${builderIdentity(env.MOSS_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=true"];
@@ -299,8 +316,8 @@ export function testBuildArtifacts(version: string): { dmg: string; zip: string 
 export const NOTARIZE_ENV = ["APPLE_KEYCHAIN_PROFILE", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"] as const;
 
 /** The app's main process bundle inside a built app (`app.asar`, which carries out/main/index.js uncompressed). */
-export function appAsar(outDir: string, os: BuildOs): string {
-  return os === "mac" ? join(outDir, "mac-arm64", "MOSS Code.app", "Contents", "Resources", "app.asar") : join(outDir, "win-unpacked", "resources", "app.asar");
+export function appAsar(outDir: string, os: BuildOs, app: ReleaseApp = CODE_APP): string {
+  return join(resourcesIn(outDir, os, app), "app.asar");
 }
 
 /** The environment electron-builder runs with: an unsigned build never looks for an identity or a certificate, and a
@@ -368,7 +385,7 @@ export function nativeIdentifier(rel: string): string {
 }
 
 /** One signed app's checks: its signatures, the resources' entitlements, its seal, Gatekeeper's verdict and its staple. */
-function verifyMacApp(label: string, app: string, teamId: string, root: string, cwd: string, dev = false, notarized = !dev): string[] {
+function verifyMacApp(label: string, app: string, teamId: string, root: string, cwd: string, dev = false, notarized = !dev, requirement: string = dev ? MOSS_APP_DEV_SIGNED_REQUIREMENT : MOSS_APP_REQUIREMENT): string[] {
   const problems: string[] = [];
   const display = (path: string) => parseCodesignDisplay(run(["codesign", "-dvvv", path], cwd).out);
   problems.push(...signatureProblems(label, display(app), teamId, undefined, { dev }));
@@ -407,8 +424,16 @@ function verifyMacApp(label: string, app: string, teamId: string, root: string, 
   if (existsSync(unpacked)) {
     for (const rel of machOFiles(unpacked)) problems.push(...signatureProblems(`${label}'s app.asar.unpacked/${rel}`, display(join(unpacked, rel)), teamId, undefined, { dev }));
   }
-  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${dev ? MOSS_APP_DEV_SIGNED_REQUIREMENT : MOSS_APP_REQUIREMENT}`, app], cwd);
+  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${requirement}`, app], cwd);
   if (deep.status !== 0) problems.push(`codesign --verify --deep --strict against MOSS's requirement refuses ${label}: ${deep.out.trim().slice(0, 400)}`);
+  // The host helper the engine starts from this app: the very check the engine makes before it starts it (packages/core/src/host/
+  // world.ts `hostRequirement`: the host's fixed identifier, Apple's chain, MOSS's team, a Developer ID leaf unless dev-signed).
+  const helper = join(app, "Contents", "Frameworks", HOST_HELPER);
+  if (!existsSync(helper)) problems.push(`${label} carries no host helper (${HOST_HELPER})`);
+  else {
+    const host = run(["codesign", "--verify", "--strict", "--verbose=2", `-R=${hostRequirement("dist", teamId, !dev)}`, helper], cwd);
+    if (host.status !== 0) problems.push(`${label}'s host helper fails the engine's host requirement: ${host.out.trim().slice(0, 400)}`);
+  }
   // Nothing notarizes a dev-signed alpha or a test build: no staple, and Gatekeeper would refuse a downloaded copy.
   if (!notarized) return problems;
   const gate = run(["spctl", "--assess", "--type", "execute", "--verbose=2", app], cwd);
@@ -422,20 +447,23 @@ function verifyMacApp(label: string, app: string, teamId: string, root: string, 
  * (its signature, its staple, and Gatekeeper's verdict on opening it).
  */
 function verifyMac(outDir: string, version: string, teamId: string, root: string): string[] {
-  const dmg = join(outDir, `MOSS-Code-${version}.dmg`);
-  const problems = verifyMacApp("MOSS Code.app", join(outDir, "mac-arm64", "MOSS Code.app"), teamId, root, outDir);
-  const unzipped = mkdtempSync(join(tmpdir(), "moss-release-zip-"));
-  try {
-    if (run(["ditto", "-x", "-k", join(outDir, `MOSS-Code-${version}-mac.zip`), unzipped], outDir).status !== 0) problems.push("the update zip doesn't unpack");
-    else problems.push(...verifyMacApp("the update zip's MOSS Code.app", join(unzipped, "MOSS Code.app"), teamId, root, outDir));
-  } finally {
-    rmSync(unzipped, { recursive: true, force: true });
+  const problems: string[] = [];
+  for (const app of [CODE_APP, MOSS_BOTS_APP]) {
+    const dmg = join(outDir, `${app.artifact}-${version}.dmg`);
+    problems.push(...verifyMacApp(`${app.product}.app`, join(outDir, "mac-arm64", `${app.product}.app`), teamId, root, outDir, false, true, requirementOf(app, false)));
+    const unzipped = mkdtempSync(join(tmpdir(), "moss-release-zip-"));
+    try {
+      if (run(["ditto", "-x", "-k", join(outDir, `${app.artifact}-${version}-mac.zip`), unzipped], outDir).status !== 0) problems.push(`${app.product}'s update zip doesn't unpack`);
+      else problems.push(...verifyMacApp(`the update zip's ${app.product}.app`, join(unzipped, `${app.product}.app`), teamId, root, outDir, false, true, requirementOf(app, false)));
+    } finally {
+      rmSync(unzipped, { recursive: true, force: true });
+    }
+    const dmgSig = parseCodesignDisplay(run(["codesign", "-dvvv", dmg], outDir).out);
+    if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`${app.product}'s dmg is not signed by team ${teamId}`);
+    if (run(["xcrun", "stapler", "validate", dmg], outDir).status !== 0) problems.push(`${app.product}'s dmg has no notarization staple`);
+    const open = run(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", dmg], outDir);
+    if (open.status !== 0 || !/source=Notarized Developer ID/.test(open.out)) problems.push(`Gatekeeper doesn't accept ${app.product}'s dmg as notarized: ${open.out.trim().slice(0, 400)}`);
   }
-  const dmgSig = parseCodesignDisplay(run(["codesign", "-dvvv", dmg], outDir).out);
-  if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`the dmg is not signed by team ${teamId}`);
-  if (run(["xcrun", "stapler", "validate", dmg], outDir).status !== 0) problems.push("the dmg has no notarization staple");
-  const open = run(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", dmg], outDir);
-  if (open.status !== 0 || !/source=Notarized Developer ID/.test(open.out)) problems.push(`Gatekeeper doesn't accept the dmg as notarized: ${open.out.trim().slice(0, 400)}`);
   return problems;
 }
 
@@ -443,35 +471,43 @@ function verifyMac(outDir: string, version: string, teamId: string, root: string
  *  for notarization (it is never notarized: no Gatekeeper verdict, no staple); a sign-only build's dmg too, by its
  *  signature. */
 function verifyMacTest(outDir: string, version: string, teamId: string, root: string, signOnly = false): string[] {
-  const problems = verifyMacApp("MOSS Code.app", join(outDir, "mac-arm64", "MOSS Code.app"), teamId, root, outDir, false, false);
-  const unzipped = mkdtempSync(join(tmpdir(), "moss-release-zip-"));
-  try {
-    const zip = signOnly ? `MOSS-Code-${version}-mac.zip` : testBuildArtifacts(version).zip;
-    if (run(["ditto", "-x", "-k", join(outDir, zip), unzipped], outDir).status !== 0) problems.push(`${zip} doesn't unpack`);
-    else problems.push(...verifyMacApp("the zip's MOSS Code.app", join(unzipped, "MOSS Code.app"), teamId, root, outDir, false, false));
-  } finally {
-    rmSync(unzipped, { recursive: true, force: true });
+  const problems: string[] = [];
+  for (const app of [CODE_APP, MOSS_BOTS_APP]) {
+    problems.push(...verifyMacApp(`${app.product}.app`, join(outDir, "mac-arm64", `${app.product}.app`), teamId, root, outDir, false, false, requirementOf(app, false)));
+    const unzipped = mkdtempSync(join(tmpdir(), "moss-release-zip-"));
+    try {
+      const zip = signOnly ? `${app.artifact}-${version}-mac.zip` : app.program === "moss" ? mossTestBuildArtifacts(version).zip : testBuildArtifacts(version).zip;
+      if (run(["ditto", "-x", "-k", join(outDir, zip), unzipped], outDir).status !== 0) problems.push(`${zip} doesn't unpack`);
+      else problems.push(...verifyMacApp(`the zip's ${app.product}.app`, join(unzipped, `${app.product}.app`), teamId, root, outDir, false, false, requirementOf(app, false)));
+    } finally {
+      rmSync(unzipped, { recursive: true, force: true });
+    }
   }
   return problems;
 }
 
-/** The dev-signed alpha's checks: the app and the app inside the update zip, each as `verifyMacApp` in dev mode. */
+/** The dev-signed alpha's checks: each app and the app inside its update zip, each as `verifyMacApp` in dev mode. */
 function verifyMacDev(outDir: string, version: string, teamId: string, root: string): string[] {
-  const problems = verifyMacApp("MOSS Code.app", join(outDir, "mac-arm64", "MOSS Code.app"), teamId, root, outDir, true);
-  const unzipped = mkdtempSync(join(tmpdir(), "moss-release-zip-"));
-  try {
-    if (run(["ditto", "-x", "-k", join(outDir, `MOSS-Code-${version}-mac.zip`), unzipped], outDir).status !== 0) problems.push("the update zip doesn't unpack");
-    else problems.push(...verifyMacApp("the update zip's MOSS Code.app", join(unzipped, "MOSS Code.app"), teamId, root, outDir, true));
-  } finally {
-    rmSync(unzipped, { recursive: true, force: true });
+  const problems: string[] = [];
+  for (const app of [CODE_APP, MOSS_BOTS_APP]) {
+    problems.push(...verifyMacApp(`${app.product}.app`, join(outDir, "mac-arm64", `${app.product}.app`), teamId, root, outDir, true, false, requirementOf(app, true)));
+    const unzipped = mkdtempSync(join(tmpdir(), "moss-release-zip-"));
+    try {
+      if (run(["ditto", "-x", "-k", join(outDir, `${app.artifact}-${version}-mac.zip`), unzipped], outDir).status !== 0) problems.push(`${app.product}'s update zip doesn't unpack`);
+      else problems.push(...verifyMacApp(`the update zip's ${app.product}.app`, join(unzipped, `${app.product}.app`), teamId, root, outDir, true, false, requirementOf(app, true)));
+    } finally {
+      rmSync(unzipped, { recursive: true, force: true });
+    }
   }
   return problems;
 }
 
 /** The signed Windows release's checks: the installer, the app, and the daemon and sidecar beside it. */
-function verifyWin(outDir: string, version: string, publisher: string): string[] {
+function verifyWin(outDir: string, version: string, publisher: string, mossUnpacked?: string): string[] {
   const unpacked = join(outDir, "win-unpacked");
   const files = [
+    [`MOSS-Setup-${version}.exe`, join(outDir, `MOSS-Setup-${version}.exe`)],
+    ...(mossUnpacked !== undefined ? [["MOSS.exe", join(mossUnpacked, "MOSS.exe")] as const] : []),
     [`MOSS-Code-Setup-${version}.exe`, join(outDir, `MOSS-Code-Setup-${version}.exe`)],
     ["MOSS Code.exe", join(unpacked, "MOSS Code.exe")],
     ["moss-core.exe", join(unpacked, "resources", "daemon", "moss-core.exe")],
@@ -505,10 +541,20 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     }
   }
   const desktop = join(root, "apps", "desktop");
+  const mossDir = join(root, ...MOSS_BOTS_APP.dir.split("/"));
   const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
+  // One release (R4): both apps' package.json say VERSION's release, or nothing is built.
+  {
+    const release = readFileSync(join(root, "VERSION"), "utf8").trim();
+    const versionOf = (dir: string) => { try { return (JSON.parse(readFileSync(join(root, dir, "package.json"), "utf8")) as { version?: string }).version; } catch { return undefined; } };
+    const problems = oneVersionProblems(release, { [CODE_APP.dir]: versionOf(CODE_APP.dir), [MOSS_BOTS_APP.dir]: versionOf(MOSS_BOTS_APP.dir) });
+    for (const p of problems) console.error(`release/build: ${p}`);
+    if (problems.length > 0) return 2;
+  }
   const target = DAEMON_TARGET[a.os];
   const exe = a.os === "win" ? ".exe" : "";
   const builder = ["bun", "x", ...releaseBuilderArgs(a, process.env, dev?.hash)];
+  const mossBuilder = ["bun", "x", ...releaseBuilderArgs(a, process.env, dev?.hash, MOSS_BOTS_APP)];
   const kind = a.testBuild ? "a test-marked build (Developer ID signed, never notarized: for the acceptance script)" : a.signOnly ? "signed, not notarized: for this Mac" : a.signDev ? "dev-signed (not notarized: for this Mac)" : a.sign ? "signed" : "unsigned";
   // Every build but the test twin compiles the app's main process as a release (the release define; its gate below).
   const appBuild = a.testBuild ? ["bun", "scripts/build.ts", "--test-build"] : ["bun", "scripts/build.ts", "--release"];
@@ -517,7 +563,9 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     // The identity's name is not a secret, but a dry run has no need to print it.
     const shown = builder.map((c) => (c.startsWith("-c.mac.identity=") ? `-c.mac.identity=<${a.signDev ? "the Apple Development identity's SHA-1" : "MOSS_MAC_IDENTITY"}>` : c.startsWith("-c.win.signtoolOptions.publisherName=") ? "-c.win.signtoolOptions.publisherName=<MOSS_WIN_PUBLISHER>" : c));
     console.log(`release/build: ${a.os} ${version} on ${a.channel}, ${kind}`);
+    console.log(`release/build: one release ${version}: apps/desktop and apps/moss both at VERSION's, or nothing is built`);
     console.log(`release/build: the app: (in apps/desktop) ${appBuild.join(" ")}`);
+    console.log(`release/build: MOSS: (in apps/moss) ${appBuild.join(" ")}`);
     console.log(`release/build: the bundled plugins: plugins/ at HEAD built for ${target} into apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target} --plugins-manifest apps/desktop/out/${BUNDLED_MANIFEST_FILE}${testFlag}`);
     console.log(`release/build: the link sidecar: ${LINK_BUILD.join(" ")}`);
@@ -525,7 +573,9 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<MOSS_MAC_IDENTITY>", b.identifier, b.entitlements, { restrict: b.restrict }).join(" ")}`);
     if (a.signDev) console.log(`release/build: sign each Mach-O file of the staged plugins (their native addons) before measuring: ${codesignDevArgs("out/plugins/<file>", dev!.hash, nativeIdentifier("<file>"), MOSS_TEAM_ID).join(" ").replace(dev!.hash, "<SHA-1>")}`);
     if (a.signDev) for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignDevArgs(`out/daemon/${b.file}`, dev!.hash, b.identifier, MOSS_TEAM_ID, b.entitlements, undefined, { restrict: b.restrict }).join(" ").replace(dev!.hash, "<SHA-1>")}`);
-    console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
+    console.log(`release/build: package: (in apps/desktop, MOSS_HOST_HELPER_STASH=apps/desktop/${HOST_HELPER_STASH}) ${shown.join(" ")}`);
+    console.log(`release/build: package MOSS from the same stage (the daemon, the tree, MOSS Code's host helper): (in apps/moss, MOSS_HOST_HELPER_STASH=apps/desktop/${HOST_HELPER_STASH}) ${mossBuilder.map((c) => (c.startsWith("-c.mac.identity=") ? "-c.mac.identity=<identity>" : c.startsWith("-c.win.signtoolOptions.publisherName=") ? "-c.win.signtoolOptions.publisherName=<MOSS_WIN_PUBLISHER>" : c)).join(" ")}`);
+    console.log(`release/build: MOSS's outputs moved beside MOSS Code's (its update files as ${mossFeedFile(a.channel, a.os)}…); then the two apps' daemon/, plugins/ and ${a.os === "mac" ? `${HOST_HELPER}'s code are` : "are"} checked byte for byte the same`);
     if (a.testBuild) {
       console.log(`release/build: the dmg: sign; never notarized or stapled; no update files (electron-builder's removed); in apps/desktop/${TEST_BUILD_OUT}`);
       return 0;
@@ -534,18 +584,25 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       console.log(`release/build: the dmg: sign; never notarized or stapled; no update files (electron-builder's removed); in apps/desktop/${SIGN_ONLY_OUT}`);
       return 0;
     }
-    if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`MOSS-Code-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
+    if (a.sign && a.os === "mac") for (const app of [CODE_APP, MOSS_BOTS_APP]) console.log(`release/build: ${app.product}'s dmg: sign, ${notarizeArgs(`${app.artifact}-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
     console.log(`release/build: the daemon's own update: ${daemonInApp("out/dist", a.os)} as its release file, with its update files`);
-    console.log(`release/build: expects ${expectedArtifacts(version, a.os, a.channel).join(", ")}`);
+    console.log(`release/build: expects ${[...expectedArtifacts(version, a.os, a.channel), ...mossArtifacts(version, a.os, a.channel)].join(", ")}`);
     return 0;
   }
   try {
-    const outDir = a.testBuild ? join(desktop, ...TEST_BUILD_OUT.split("/")) : a.signOnly ? join(desktop, ...SIGN_ONLY_OUT.split("/")) : join(desktop, "out", "dist");
+    const outRel = a.testBuild ? TEST_BUILD_OUT : a.signOnly ? SIGN_ONLY_OUT : "out/dist";
+    const outDir = join(desktop, ...outRel.split("/"));
+    // MOSS's own electron-builder output (its update files carry MOSS Code's names until they are moved and renamed).
+    const mossOut = join(mossDir, ...outRel.split("/"));
     const staged = join(desktop, "out", "daemon");
+    const stash = join(desktop, ...HOST_HELPER_STASH.split("/"));
     // A release is of one commit, from a fully clean checkout of it (the build reads the whole tree).
     const commit = checkoutCommit(root);
     rmSync(outDir, { recursive: true, force: true });
+    rmSync(mossOut, { recursive: true, force: true });
+    rmSync(stash, { recursive: true, force: true });
     must("the app", appBuild, desktop);
+    must("MOSS", appBuild, mossDir);
     // The bundled plugins' stage (the committed files only), its manifest, and the daemon's stage, where
     // electron-builder.yml packs them; all removed however the build ends (a stale stage would go into a later plain
     // `bun run dist`). The daemon is built after the plugins are staged: it carries their manifest.
@@ -605,34 +662,59 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       // each under its own identifier — a packaged build never falls back to process-group tracking.
       const staging = bundledBinaryProblems(staged, target, { kind: "dist" });
       if (staging.length > 0) throw new Error(`the package gate: ${staging.join("; ")}`);
-      must(`${a.os === "mac" ? "the dmg and the zip" : "the installer"} on ${a.channel}`, builder, desktop, builderEnv(a, process.env));
-      const inApp = bundledBinaryProblems(dirname(daemonInApp(outDir, a.os)), target, { kind: "dist" });
-      if (inApp.length > 0) throw new Error(`the package gate, in the built app: ${inApp.join("; ")}`);
-      // The marker gate on the app's own code (its app.asar) and on the core as the app carries it.
-      const appMarker = [
-        ...asarMarkerProblems("the app's app.asar", new Uint8Array(readFileSync(appAsar(outDir, a.os))), a.testBuild === true),
-        ...releaseMarkerProblems("the app's app.asar", new Uint8Array(readFileSync(appAsar(outDir, a.os))), a.testBuild !== true),
-        ...testBuildMarkerProblems("the app's moss-core", new Uint8Array(readFileSync(daemonInApp(outDir, a.os))), a.testBuild === true),
-      ];
-      if (appMarker.length > 0) throw new Error(appMarker.join("; "));
+      // MOSS Code first: its afterPack makes the host helper and stashes a copy (apps/desktop/scripts/host-helper.mjs), which
+      // MOSS's afterPack carries into MOSS.app before MOSS is signed (apps/moss/scripts/host-helper.mjs).
+      const withStash = { ...builderEnv(a, process.env), MOSS_HOST_HELPER_STASH: stash };
+      must(`${a.os === "mac" ? "the dmg and the zip" : "the installer"} on ${a.channel}`, builder, desktop, withStash);
+      // MOSS, from the very same stage (apps/moss/electron-builder.yml packs apps/desktop/out/daemon and out/plugins).
+      must(`MOSS's ${a.os === "mac" ? "dmg and zip" : "installer"} on ${a.channel}`, mossBuilder, mossDir, withStash);
+      // MOSS's outputs beside MOSS Code's, its update files under MOSS's names; on Windows its unpacked app stays in its folder.
+      const moved = moveMossOutputs(mossOut, outDir, a.os);
+      console.log(`release/build: MOSS's ${moved.join(", ")} into ${outDir}`);
+      // On macOS everything of MOSS's is in the release's folder now; on Windows its unpacked app stays (the signed checks read it).
+      if (a.os === "mac") rmSync(mossOut, { recursive: true, force: true });
+      const mossResources = a.os === "mac" ? resourcesIn(outDir, a.os, MOSS_BOTS_APP) : join(mossOut, "win-unpacked", "resources");
+      for (const [label, resources] of [["the built app", resourcesIn(outDir, a.os)], ["the built MOSS", mossResources]] as const) {
+        const inApp = bundledBinaryProblems(join(resources, "daemon"), target, { kind: "dist" });
+        if (inApp.length > 0) throw new Error(`the package gate, in ${label}: ${inApp.join("; ")}`);
+        // The marker gate on the app's own code (its app.asar) and on the core as the app carries it.
+        const asar = new Uint8Array(readFileSync(join(resources, "app.asar")));
+        const appMarker = [
+          ...asarMarkerProblems(`${label}'s app.asar`, asar, a.testBuild === true),
+          ...releaseMarkerProblems(`${label}'s app.asar`, asar, a.testBuild !== true),
+          ...testBuildMarkerProblems(`${label}'s moss-core`, new Uint8Array(readFileSync(join(resources, "daemon", `moss-core${exe}`))), a.testBuild === true),
+        ];
+        if (appMarker.length > 0) throw new Error(appMarker.join("; "));
+      }
+      // One release in both apps: the same engine, tree and host helper (scripts/release/two-apps.ts).
+      const same = samePayloadProblems({
+        codeResources: resourcesIn(outDir, a.os), mossResources,
+        ...(a.os === "mac" ? { codeBundle: join(outDir, "mac-arm64", `${CODE_APP.product}.app`), mossBundle: join(outDir, "mac-arm64", `${MOSS_BOTS_APP.product}.app`), hostIdentifier: MOSS_PROGRAM_IDENTIFIERS.host.dist } : {}),
+      });
+      if (same.length > 0) throw new Error(`one release, two apps: ${same.join("; ")}`);
+      console.log("release/build: MOSS Code and MOSS carry the same engine, tree and host helper");
     } finally {
       rmSync(staged, { recursive: true, force: true });
       rmSync(stagedPlugins, { recursive: true, force: true });
       rmSync(manifestFile, { force: true });
+      rmSync(stash, { recursive: true, force: true });
     }
     {
-      // The bundled plugins, where the core looks for them (resources/plugins beside resources/daemon).
-      const resources = a.os === "mac" ? join(outDir, "mac-arm64", "MOSS Code.app", "Contents", "Resources") : join(outDir, "win-unpacked", "resources");
-      const plugins = bundledPluginsProblems(resources, manifest, existsSync, walkTree);
-      for (const p of plugins) console.error(`release/build: ${p}`);
-      if (plugins.length > 0) return 1;
+      // The bundled plugins, where the core looks for them (resources/plugins beside resources/daemon), in both apps.
+      for (const resources of [resourcesIn(outDir, a.os), a.os === "mac" ? resourcesIn(outDir, a.os, MOSS_BOTS_APP) : join(mossOut, "win-unpacked", "resources")]) {
+        const plugins = bundledPluginsProblems(resources, manifest, existsSync, walkTree);
+        for (const p of plugins) console.error(`release/build: ${p}`);
+        if (plugins.length > 0) return 1;
+      }
     }
 
     if (a.testBuild) {
       // Signed with the Developer ID, never notarized or stapled, and no update files: nothing here can feed an update.
       const names = testBuildArtifacts(version);
-      for (const n of [names.dmg, names.zip]) if (!existsSync(join(outDir, n))) throw new Error(`${n} is missing from ${outDir}`);
+      const mossNames = mossTestBuildArtifacts(version);
+      for (const n of [names.dmg, names.zip, mossNames.dmg, mossNames.zip]) if (!existsSync(join(outDir, n))) throw new Error(`${n} is missing from ${outDir}`);
       must("sign the dmg", codesignDmgArgs(join(outDir, names.dmg), process.env.MOSS_MAC_IDENTITY!), outDir);
+      must("sign MOSS's dmg", codesignDmgArgs(join(outDir, mossNames.dmg), process.env.MOSS_MAC_IDENTITY!), outDir);
       for (const f of readdirSync(outDir).filter((n) => n.endsWith(".yml") || n.endsWith(".blockmap"))) rmSync(join(outDir, f), { force: true });
       const problems = verifyMacTest(outDir, version, identityTeam(process.env.MOSS_MAC_IDENTITY!), root);
       for (const p of problems) console.error(`release/build: ${p}`);
@@ -649,36 +731,42 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       // Signed with the Developer ID, never notarized or stapled, and no update files: nothing here can feed an update,
       // and publish refuses it (no stapled dmg, no update files).
       const dmgName = `MOSS-Code-${version}.dmg`;
-      for (const n of [dmgName, `MOSS-Code-${version}-mac.zip`]) if (!existsSync(join(outDir, n))) throw new Error(`${n} is missing from ${outDir}`);
+      const mossDmg = `MOSS-${version}.dmg`;
+      for (const n of [dmgName, `MOSS-Code-${version}-mac.zip`, mossDmg, `MOSS-${version}-mac.zip`]) if (!existsSync(join(outDir, n))) throw new Error(`${n} is missing from ${outDir}`);
       must("sign the dmg", codesignDmgArgs(join(outDir, dmgName), process.env.MOSS_MAC_IDENTITY!), outDir);
+      must("sign MOSS's dmg", codesignDmgArgs(join(outDir, mossDmg), process.env.MOSS_MAC_IDENTITY!), outDir);
       for (const f of readdirSync(outDir).filter((n) => n.endsWith(".yml") || n.endsWith(".blockmap"))) rmSync(join(outDir, f), { force: true });
       const teamId = identityTeam(process.env.MOSS_MAC_IDENTITY!);
       const problems = verifyMacTest(outDir, version, teamId, root, true);
-      const dmgSig = parseCodesignDisplay(run(["codesign", "-dvvv", join(outDir, dmgName)], outDir).out);
-      if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`the dmg is not signed by team ${teamId}`);
+      for (const d of [dmgName, mossDmg]) {
+        const dmgSig = parseCodesignDisplay(run(["codesign", "-dvvv", join(outDir, d)], outDir).out);
+        if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`${d} is not signed by team ${teamId}`);
+      }
       for (const p of problems) console.error(`release/build: ${p}`);
       if (problems.length > 0) return 1;
       writeBuildCommit(outDir, a.os, commit, "sign-only");
       const scan = runNameScan(outDir, { required: true });
       console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason})`);
-      const shipped = signOnlyOutputs(version).filter((n) => /\.(dmg|zip)$/.test(n));
+      const shipped = [...signOnlyOutputs(version), ...mossInstallers(version, "mac")].filter((n) => /\.(dmg|zip)$/.test(n));
       writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
       console.log(`release/build: ${shipped.join(", ")} in ${outDir} (${kind})`);
       return 0;
     }
     if (a.sign && a.os === "mac") {
-      const dmgName = `MOSS-Code-${version}.dmg`;
-      const dmg = join(outDir, dmgName);
-      must("sign the dmg", codesignDmgArgs(dmg, process.env.MOSS_MAC_IDENTITY!), outDir);
-      must("notarize the dmg", notarizeArgs(dmg, process.env.APPLE_KEYCHAIN_PROFILE!), outDir);
-      must("staple the dmg", ["xcrun", "stapler", "staple", dmg], outDir);
-      // The staple changed the dmg's bytes: its entry in each update file is measured again.
-      for (const f of readdirSync(outDir).filter((n) => n.endsWith("-mac.yml"))) {
-        const path = join(outDir, f);
-        const info = parseUpdateInfo(readFileSync(path, "utf8"));
-        if (info.files.some((e) => e.url === dmgName)) writeFileSync(path, formatUpdateInfo(refreshEntry(info, dmgName, readFileSync(dmg))));
+      for (const app of [CODE_APP, MOSS_BOTS_APP]) {
+        const dmgName = `${app.artifact}-${version}.dmg`;
+        const dmg = join(outDir, dmgName);
+        must(`sign ${app.product}'s dmg`, codesignDmgArgs(dmg, process.env.MOSS_MAC_IDENTITY!), outDir);
+        must(`notarize ${app.product}'s dmg`, notarizeArgs(dmg, process.env.APPLE_KEYCHAIN_PROFILE!), outDir);
+        must(`staple ${app.product}'s dmg`, ["xcrun", "stapler", "staple", dmg], outDir);
+        // The staple changed the dmg's bytes: its entry in each update file is measured again.
+        for (const f of readdirSync(outDir).filter((n) => n.endsWith("-mac.yml"))) {
+          const path = join(outDir, f);
+          const info = parseUpdateInfo(readFileSync(path, "utf8"));
+          if (info.files.some((e) => e.url === dmgName)) writeFileSync(path, formatUpdateInfo(refreshEntry(info, dmgName, readFileSync(dmg))));
+        }
+        rmSync(`${dmg}.blockmap`, { force: true });
       }
-      rmSync(`${dmg}.blockmap`, { force: true });
       const problems = verifyMac(outDir, version, identityTeam(process.env.MOSS_MAC_IDENTITY!), root);
       for (const p of problems) console.error(`release/build: ${p}`);
       if (problems.length > 0) return 1;
@@ -689,7 +777,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       if (problems.length > 0) return 1;
     }
     if (a.sign && a.os === "win") {
-      const problems = verifyWin(outDir, version, process.env.MOSS_WIN_PUBLISHER!);
+      const problems = verifyWin(outDir, version, process.env.MOSS_WIN_PUBLISHER!, join(mossOut, "win-unpacked"));
       for (const p of problems) console.error(`release/build: ${p}`);
       if (problems.length > 0) return 1;
     }
@@ -699,14 +787,22 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     writePluginsAssets(outDir, version, a.os, a.channel, join(dirname(dirname(daemonInApp(outDir, a.os))), "plugins"));
     writeBuildCommit(outDir, a.os, commit);
     writeServedCopies(outDir, a.channel, [a.os]);
+    mossServedCopies(outDir, a.channel, a.os, copyFileSync);
 
     const problems: string[] = [];
-    for (const name of expectedArtifacts(version, a.os, a.channel)) if (!existsSync(join(outDir, name))) problems.push(`${name} is missing from ${outDir}`);
+    for (const name of [...expectedArtifacts(version, a.os, a.channel), ...mossArtifacts(version, a.os, a.channel)]) if (!existsSync(join(outDir, name))) problems.push(`${name} is missing from ${outDir}`);
     for (const ch of a.channel === "latest" ? (["latest", "beta"] as const) : (["beta"] as const)) {
       const path = join(outDir, feedFile(ch, a.os));
       if (!existsSync(path)) continue;
       const read = (n: string) => (existsSync(join(outDir, n)) ? new Uint8Array(readFileSync(join(outDir, n))) : undefined);
       problems.push(...checkUpdateInfo(parseUpdateInfo(readFileSync(path, "utf8")), version, read).map((p) => `${feedFile(ch, a.os)}: ${p}`));
+      // MOSS's own update file: its own artifacts, of the same release.
+      const mossFeed = join(outDir, mossFeedFile(ch, a.os));
+      if (existsSync(mossFeed)) {
+        const info = parseUpdateInfo(readFileSync(mossFeed, "utf8"));
+        problems.push(...checkUpdateInfo(info, version, read).map((p) => `${mossFeedFile(ch, a.os)}: ${p}`));
+        if (info.files.some((e) => !e.url.startsWith("MOSS-") || e.url.startsWith("MOSS-Code-"))) problems.push(`${mossFeedFile(ch, a.os)} names a file that isn't MOSS's`);
+      }
       const core = coreFeedFile(ch, CORE_TARGET[a.os]);
       if (existsSync(join(outDir, core))) problems.push(...checkCoreFeed(readFileSync(join(outDir, core), "utf8"), version, read).map((p) => `${core}: ${p}`));
       const bun = pluginBunFeedFile(ch, CORE_TARGET[a.os]);

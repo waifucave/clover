@@ -128,6 +128,21 @@ if (process.argv[2] === "make-dev" && process.argv.length === 5) {
   console.log(`  • dev host helper  ${host}`);
 }
 
+/** Where the release build (scripts/release/build.ts) asks for a copy of the finished helper, for MOSS to carry the very same
+ *  one (lane PK; R7: one fixed identity, the same in both apps). MOSS's own afterPack (apps/moss/scripts/host-helper.mjs) takes
+ *  it from there. Unset: no copy (a plain `bun run dist`). */
+export const HOST_HELPER_STASH_ENV = "MOSS_HOST_HELPER_STASH";
+
+/** Copies the finished helper (laid out, fuses flipped, not yet signed: each app's own build signs it with the app) into the
+ *  stash folder, replacing what was there. */
+export function stashHostHelper(host, stash) {
+  const name = host.split("/").pop();
+  mkdirSync(stash, { recursive: true });
+  rmSync(join(stash, name), { recursive: true, force: true });
+  cpSync(host, join(stash, name), { recursive: true, verbatimSymlinks: true });
+  return join(stash, name);
+}
+
 /** electron-builder's `afterPack`. */
 export default async function afterPack(context) {
   if (context.electronPlatformName !== "darwin" && context.electronPlatformName !== "mas") return;
@@ -144,4 +159,6 @@ export default async function afterPack(context) {
     await flipFuses(host, fuses);
   }
   console.log(`  • host helper  ${host}`);
+  const stash = process.env[HOST_HELPER_STASH_ENV];
+  if (stash) console.log(`  • host helper stashed for MOSS  ${stashHostHelper(host, stash)}`);
 }

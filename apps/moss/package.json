@@ -23,6 +23,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@waifucave/moss-core": "workspace:*",
+    "@waifucave/moss-app-release": "workspace:*",
     "@waifucave/moss-plugin-sdk": "workspace:*",
     "@waifucave/moss-protocol": "workspace:*",
     "electron": "45.2.3",

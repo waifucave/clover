@@ -11,7 +11,7 @@ import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
 import {
-  encodeLine, LineDecoder, programCardAnswerSigningInput, SURFACE_MOUNTS, MOSS_ERR,
+  encodeLine, LineDecoder, programCardAnswerSigningInput, RELEASE_DOOR_METHODS, releaseStanding, SURFACE_MOUNTS, MOSS_ERR,
   type ActivityState, type Card, type CardPlacement, type RoutineView, type Surface,
 } from "@waifucave/moss-protocol";
 import { FakeActivityFeed, FakeBotRecords, FakeCardRouter, FakeLivePictures, FakeProgramAnswerKeys, FakeToolSettings } from "@waifucave/moss-core/contracts/fakes";
@@ -39,8 +39,13 @@ export interface FakeEngineOptions {
   home: string;
   /** Pieces this engine doesn't serve (their methods answer "not served yet"). */
   drop?: readonly FakePiece[];
-  /** The engine's release; a hello naming another is refused as behind. Default: the hello's own. */
+  /** The engine's release: a hello naming an older one is refused as behind, a newer one is served the release door only
+   *  (`ahead`, as the real engine's hello is). Default: the hello's own. */
   release?: string;
+  /** Whether the engine is idle for an update (`update.status`, `update.apply`, `pair.exiting {update}`); default idle. */
+  updateIdle?: () => boolean;
+  /** What `release.bring` answers (default: `waiting`, or `switching` with `now`). */
+  bring?: (p: { release: string; bundlePath: string; now?: boolean }) => "waiting" | "switching";
   /** A PNG for the live picture's frames; none: no picture. */
   picturePng?: Uint8Array;
   /** How often a followed picture sends a frame. */
@@ -63,6 +68,8 @@ interface Conn {
   authed: boolean;
   surface?: Surface;
   areas: Set<string>;
+  /** Served as `ahead`: the release door only. */
+  ahead?: boolean;
   attached: Set<string>;
   streams: Map<string, ReturnType<typeof setInterval>>;
 }
@@ -94,6 +101,10 @@ export interface FakeEngine {
   beforeCardList(fn: () => void): void;
   /** Asks every app connection a request of the engine's own (`app.ping`, `app.quit`). */
   ask(method: string, params?: unknown): Promise<unknown[]>;
+  /** A `release_changed` event to every connection that follows `release`. */
+  releaseChanged(e: { state: "current" | "waiting" | "switching"; incoming?: string; waitingFor?: { turns: number; agents: number } }): void;
+  /** Ends every connection (the engine went away, as a release switch does). */
+  dropAll(): void;
   close(): Promise<void>;
 }
 
@@ -196,15 +207,32 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
       const surface = (params.surface ?? "code") as Surface;
       if (params.role !== "app") throw new RpcError(MOSS_ERR.SURFACE_REFUSED, "surface refused", { reason: "not-app", surface });
       const release = typeof params.release === "string" ? params.release : undefined;
-      if (o.release !== undefined && release !== undefined && release !== o.release) throw new RpcError(MOSS_ERR.RELEASE_REFUSED, "release refused", { standing: "behind", engine: o.release, client: release, needs: o.release });
+      const standing = o.release !== undefined && release !== undefined ? releaseStanding(o.release, release) : "same";
+      if (standing === "behind") throw new RpcError(MOSS_ERR.RELEASE_REFUSED, "release refused", { standing: "behind", engine: o.release, client: release, needs: o.release });
       c.authed = true;
       c.surface = surface;
+      c.ahead = standing === "ahead";
       return {
         ok: true, serverVersion: "0.124.0", protocolVersion: 1, caller: { kind: "user", client: "app" }, device: FAKE_DEVICE, features: [],
-        surface, mount: SURFACE_MOUNTS[surface], ...(release !== undefined ? { release: { standing: "same", engine: o.release ?? release } } : {}),
+        surface, mount: SURFACE_MOUNTS[surface], ...(release !== undefined ? { release: { standing, engine: o.release ?? release } } : {}),
       };
     }
     if (!c.authed) throw new RpcError(-32002, "say hello first");
+    // An app ahead of the engine: the release door and nothing else (the real engine's rule, RELEASE_DOOR_METHODS).
+    if (c.ahead === true && !(RELEASE_DOOR_METHODS as readonly string[]).includes(method)) throw new RpcError(MOSS_ERR.RELEASE_REFUSED, `${method}: an app ahead of the engine has the release door only`);
+    if (method === "update.status") {
+      const idle = o.updateIdle?.() ?? true;
+      return { idle, busy: idle ? [] : ["a turn"] };
+    }
+    if (method === "update.apply") return { at: (o.updateIdle?.() ?? true) ? "now" : "when-idle" };
+    if (method === "pair.exiting") {
+      if ((params as { reason?: string }).reason === "update" && !(o.updateIdle?.() ?? true)) throw new RpcError(-32010, "not idle for the update", { code: "update_not_ready" });
+      return { ok: true };
+    }
+    if (method === "release.bring") {
+      const p = params as { release: string; bundlePath: string; now?: boolean };
+      return { state: o.bring?.(p) ?? (p.now === true ? "switching" : "waiting") };
+    }
     switch (method) {
       case "events.subscribe":
         for (const a of (params.areas as string[]) ?? []) c.areas.add(a);
@@ -529,6 +557,8 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
       event("approvals", { type: "card_requested", card });
     },
     beforeCardList: (fn) => { beforeList = fn; },
+    releaseChanged: (e) => event("release", { type: "release_changed", engine: o.release ?? "0.124.0", ...e }),
+    dropAll: () => { for (const c of conns.values()) c.socket.destroy(); },
     ask: async (method, params = {}) => Promise.all([...conns.values()].filter((c) => c.authed).map((c) => new Promise((resolve) => {
       const id = nextReq++;
       waiting.set(id, resolve);

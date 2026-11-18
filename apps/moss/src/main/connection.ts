@@ -10,6 +10,9 @@
 //   * The engine went away: keep the window as it is, redial every 500 ms, slowing to 5 s, and ask the OS again once
 //     nothing has answered for 3 s.
 //   * Refusals are said as they are: a release behind the engine's (the app must update first), a refused surface.
+//   * A release AHEAD of the engine's (lane PK): the engine serves the release door only (`release.status`, `release.bring`,
+//     the events), so MOSS is not connected: `onAhead` runs instead of `onConnected` (release.ts's `BringWatch` asks the engine
+//     to bring MOSS's release in), and the connection is kept for that door until the engine goes away for the switch.
 //   * Quitting MOSS never stops the engine or any work (§3.1, item 112): no `pair.quit`, no hand-over. The engine's own
 //     `app.quit` (it is stopping, or updating) is answered, then MOSS leaves.
 //
@@ -25,6 +28,8 @@ export type ConnectionState =
   | { kind: "connecting" }
   | { kind: "starting-engine" }
   | { kind: "connected"; hello: MossHelloResult }
+  /** MOSS is newer than the engine: served the release door only, until the engine brings MOSS's release in (§3.1). */
+  | { kind: "ahead"; hello: MossHelloResult }
   | { kind: "reconnecting"; since: number }
   /** The engine is on another release: MOSS must update to `needs` before it connects (§3.1). */
   | { kind: "behind"; needs: string }
@@ -51,6 +56,8 @@ export interface ConnectionOptions {
   sleep?: (ms: number) => Promise<void>;
   log?: (line: string) => void;
   onConnected?: (client: DaemonClient, hello: MossHelloResult) => void | Promise<void>;
+  /** The hello was served as `ahead` (the release door only): `onConnected` isn't called; this is, instead. */
+  onAhead?: (client: DaemonClient, hello: MossHelloResult) => void | Promise<void>;
   onState?: (state: ConnectionState) => void;
   /** The engine asked MOSS to leave (`app.quit`): it is stopping, or bringing a newer release. */
   onEngineQuit?: (reason: "quit" | "update") => void;
@@ -133,6 +140,14 @@ export class EngineConnection {
     return this.stateValue;
   }
 
+  /** Lets a stopped connection dial again (a release switch's "Try again", or after the app was told it is behind and the
+   *  person asks once more). Does nothing while it runs. */
+  resume(): void {
+    if (!this.stopped || this.current !== undefined) return;
+    this.stopped = false;
+    void this.start();
+  }
+
   get client(): DaemonClient | undefined {
     return this.current !== undefined && !this.current.isClosed ? this.current : undefined;
   }
@@ -205,6 +220,16 @@ export class EngineConnection {
     }
     this.current = client;
     client.onClose(() => this.lost(client));
+    if (hello.release?.standing === "ahead") {
+      this.log(`connection: MOSS is ahead of the engine (${hello.release.engine}); only the release door is open`);
+      this.setState({ kind: "ahead", hello });
+      try {
+        await this.opts.onAhead?.(client, hello);
+      } catch (err) {
+        this.log(`connection: the release door failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return true;
+    }
     this.log(`connection: connected as surface ${hello.surface ?? "?"} (mount: ${hello.mount?.points.length ?? "?"} points)`);
     this.setState({ kind: "connected", hello });
     try {

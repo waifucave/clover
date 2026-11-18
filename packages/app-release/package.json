@@ -1,0 +1,25 @@
+{
+  "name": "@waifucave/moss-app-release",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "The apps' side of one release (spec §3.1): each app's install record, putting its engine under the home and starting it, the catch-up of an app behind the engine and the watch of one ahead, and the app's own updater. Shared by MOSS and MOSS Code; Node only (it runs in Electron's main process), and it imports the protocol and the update feed, never the core.",
+  "type": "module",
+  "exports": {
+    "./release": "./src/release.ts",
+    "./engine-launch": "./src/engine-launch.ts",
+    "./updater": "./src/updater.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@waifucave/moss-protocol": "workspace:*",
+    "@waifucave/moss-update-feed": "workspace:*",
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3"
+  }
+}

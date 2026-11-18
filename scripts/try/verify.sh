@@ -1,6 +1,8 @@
 #!/bin/bash
 # A try build's static checks, read-only on its artifact folder (a copy of apps/desktop/out/sign-only, or of out/dist
-# for a notarized build). Never launches the app; the dmg is mounted read-only with nobrowse and detached again; the
+# for a notarized build), which holds BOTH apps of the release (lane PK): MOSS Code's checks, then MOSS's and the pair's
+# (one release: the same engine, tree and host helper in both; each app's own requirement; each helper meets the engine's
+# host requirement). Never launches the app; the dmg is mounted read-only with nobrowse and detached again; the
 # core runs only its probes, on a temp home. Prints no secret and no identity name (only the team id).
 #
 # Usage: scripts/try/verify.sh <artifact folder> <checkout the build came from> [--sign-only]
@@ -14,6 +16,7 @@ set -u
 T="$(cd "$1" && pwd -P)" || exit 2; W="$(cd "$2" && pwd -P)" || exit 2; A="$T/mac-arm64/MOSS Code.app"; R="$A/Contents/Resources"; fail=0
 SIGN_ONLY=false; [ "${3:-}" = "--sign-only" ] && SIGN_ONLY=true; [ -n "${3:-}" ] && [ "$SIGN_ONLY" = false ] && { echo "unknown option ${3}"; exit 2; }
 note() { echo "$1"; }
+LSR_U="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u"
 bad() { echo "FAIL: $1"; fail=1; }
 cd "$T" || exit 2
 note "commit: $(head -1 BUILD-COMMIT-mac.txt)"
@@ -29,7 +32,7 @@ else
   for f in MOSS-*.dmg MOSS-*-mac.zip moss-core-*-darwin-arm64 moss-plugin-bun-*-darwin-arm64 moss-plugins-*.tar.gz; do note "  $f $(shasum -a 256 "$f" | cut -d' ' -f1)"; done
 fi
 gk() { o=$(spctl -a -vvv "$@" 2>&1); echo "$o" | grep -q "source=Notarized Developer ID" && note "gatekeeper $(basename "${@: -1}"): Notarized Developer ID" || bad "gatekeeper $(basename "${@: -1}"): $(echo "$o" | tail -1)"; }
-DMG="$(ls MOSS-*.dmg)"
+DMG="$(ls MOSS-Code-*.dmg)"
 if [ "$SIGN_ONLY" = true ]; then
   for p in "$A" "$DMG"; do note "gatekeeper $(basename "$p"): not applicable: not notarized"; done
   for p in "$A" "$DMG"; do
@@ -45,7 +48,7 @@ for f in "$R"/daemon/* "$A"; do o=$(codesign -dvvv "$f" 2>&1)
   note "  $(basename "$f") | $(echo "$o" | sed -n 's/^Identifier=//p') | $(echo "$o" | grep -oE 'flags=0x[0-9a-f]+\([^)]*\)' | head -1) | team $(echo "$o" | sed -n 's/^TeamIdentifier=//p') | timestamp $(echo "$o" | grep -c '^Timestamp=') | $(codesign -d --entitlements - --xml "$f" 2>/dev/null | grep -oE 'cs\.[a-z-]+' | tr '\n' ' ')"
 done
 M=$(mktemp -d "${TMPDIR:-/tmp}/moss-try-mnt.XXXX")
-if hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$M" "$(ls MOSS-*.dmg)" >/dev/null; then
+if hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$M" "$DMG" >/dev/null; then
   [ -L "$M/Applications" ] && note "dmg: Applications link present" || bad "dmg: no Applications link"
   a=$(codesign -dvvv "$M/MOSS Code.app" 2>&1 | grep ^CDHash=); b=$(codesign -dvvv "$A" 2>&1 | grep ^CDHash=)
   [ "$a" = "$b" ] && note "dmg app == built app ($a)" || bad "dmg app differs from built app"
@@ -128,10 +131,58 @@ EOT
   RJ=$("$W/scripts/pinned-bun" "$RH/m.ts" 2>&1 | tail -1); rm -rf "$RH"
   echo "$RJ" | grep -q '"envSet":true,"dyldRemoved":true,"fetch":true,"ffi":true,"envReadable":false,"exit":0' && note "restrict measured, packaged plugin Bun: $RJ" || bad "restrict measured, packaged plugin Bun: $RJ"
 else bad "no restrict-probe.ts in $W (#422 missing)"; fi
+# ── MOSS, and the pair as one release (lane PK) ──────────────────────────────────────────────────────────────────────
+MA="$T/mac-arm64/MOSS.app"; MR="$MA/Contents/Resources"; MDMG="$(ls MOSS-[0-9]*.dmg 2>/dev/null | head -1)"
+if [ ! -d "$MA" ] || [ -z "$MDMG" ]; then bad "MOSS: the build holds no MOSS.app or no MOSS dmg (one release builds both apps)"
+else
+  for f in "$MDMG" "$(ls MOSS-[0-9]*-mac.zip 2>/dev/null | head -1)"; do [ -n "$f" ] && note "  $f $(shasum -a 256 "$f" | cut -d' ' -f1)"; done
+  if [ "$SIGN_ONLY" = true ]; then
+    for p in "$MA" "$MDMG"; do xcrun stapler validate "$p" >/dev/null 2>&1 && bad "sign-only: $(basename "$p") carries a notarization staple" || note "sign-only: $(basename "$p") has no staple (really not notarized)"; done
+  else
+    gk -t exec "$MA"; gk -t open --context context:primary-signature "$MDMG"
+    for p in "$MA" "$MDMG"; do xcrun stapler validate "$p" >/dev/null 2>&1 && note "staple $(basename "$p"): valid" || bad "staple $(basename "$p")"; done
+  fi
+  codesign --verify --deep --strict "$MA" 2>/dev/null && note "MOSS: codesign deep strict: valid" || bad "MOSS: codesign deep strict"
+  MREQ=$(cd "$W" && scripts/pinned-bun -e 'const b = await import("./packages/core/src/bundled-identities.ts"); console.log(b.appRequirement("dist", undefined, true, "moss"))')
+  codesign --verify -R="$MREQ" "$MA" 2>/dev/null && note "appPeer: MOSS satisfies the daemon's dist requirement for MOSS" || bad "appPeer: MOSS does not satisfy: $MREQ"
+  codesign -dvvv "$MA" 2>&1 | grep -qE 'flags=0x[0-9a-f]+\([^)]*runtime' && note "appPeer: MOSS is hardened" || bad "appPeer: MOSS is not hardened"
+  [ "$(codesign -d --entitlements - --xml "$MA" 2>/dev/null | grep -cE 'get-task-allow|allow-dyld-environment-variables|disable-library-validation')" = 0 ] && note "appPeer: MOSS has none of OPENING_ENTITLEMENTS" || bad "appPeer: MOSS carries an opening entitlement"
+  if [ -n "$F" ]; then
+    MFU=$("$W/scripts/pinned-bun" "$F" read --app "$MA" 2>&1)
+    for want in "RunAsNode is Disabled" "EnableNodeOptionsEnvironmentVariable is Disabled" "EnableNodeCliInspectArguments is Disabled" "EnableEmbeddedAsarIntegrityValidation is Enabled" "OnlyLoadAppFromAsar is Enabled"; do
+      echo "$MFU" | grep -q "$want" && note "MOSS fuse ok: $want" || bad "MOSS fuse: wanted '$want'"
+    done
+  fi
+  MM=$(mktemp -d "${TMPDIR:-/tmp}/moss-try-mnt.XXXX")
+  if hdiutil attach -nobrowse -readonly -noautoopen -mountpoint "$MM" "$MDMG" >/dev/null; then
+    a=$(codesign -dvvv "$MM/MOSS.app" 2>&1 | grep ^CDHash=); b=$(codesign -dvvv "$MA" 2>&1 | grep ^CDHash=)
+    [ "$a" = "$b" ] && note "MOSS: dmg app == built app ($a)" || bad "MOSS: dmg app differs from built app"
+    $LSR_U "$MM/MOSS.app" 2>/dev/null; hdiutil detach -quiet "$MM"
+  else bad "MOSS: dmg mount"; fi
+  rmdir "$MM" 2>/dev/null
+  # One release: the same version, engine, sidecars and tree in both apps, and the host helper of the same code in both.
+  v1=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$A/Contents/Info.plist" 2>/dev/null); v2=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$MA/Contents/Info.plist" 2>/dev/null)
+  [ -n "$v1" ] && [ "$v1" = "$v2" ] && note "one release: both apps are $v1" || bad "one release: MOSS Code is $v1, MOSS is $v2"
+  diff -rq "$R/daemon" "$MR/daemon" >/dev/null 2>&1 && note "one release: the same engine and sidecars in both apps" || bad "one release: the two apps' daemon/ differ"
+  diff -rq "$R/plugins" "$MR/plugins" >/dev/null 2>&1 && note "one release: the same bundled tree in both apps" || bad "one release: the two apps' plugins/ differ"
+  HREQ=$(cd "$W" && scripts/pinned-bun -e 'const w = await import("./packages/core/src/host/world.ts"); console.log(w.hostRequirement("dist"))')
+  for app in "$A" "$MA"; do
+    h="$app/Contents/Frameworks/MOSS Host.app"
+    codesign --verify --strict -R="$HREQ" "$h" 2>/dev/null && note "host: $(basename "$app")'s helper meets the engine's host requirement" || bad "host: $(basename "$app")'s helper fails the engine's host requirement ($HREQ)"
+  done
+  cmp -s "$A/Contents/Frameworks/MOSS Host.app/Contents/Resources/app.asar" "$MA/Contents/Frameworks/MOSS Host.app/Contents/Resources/app.asar" && note "host: both helpers run the same code (app.asar)" || bad "host: the two helpers' app.asar differ"
+  cmp -s "$A/Contents/Frameworks/MOSS Host.app/Contents/Resources/app.asar" "$R/app.asar" && note "host: the helper runs MOSS Code's own app.asar (the host's code)" || bad "host: the helper's app.asar isn't MOSS Code's"
+  mu=0
+  while IFS= read -r f; do
+    file "$f" | grep -q Mach-O || continue; mu=$((mu+1))
+    codesign --verify -R='anchor apple generic and certificate leaf[subject.OU] = "37N77U9RSZ"' "$f" 2>/dev/null && note "MOSS native: ${f#$MR/} signed by team 37N77U9RSZ" || bad "MOSS native: ${f#$MR/} isn't signed by the team"
+  done < <(find "$MR/app.asar.unpacked" -type f 2>/dev/null)
+  [ "$mu" -gt 0 ] && note "MOSS native: $mu unpacked add-on(s)" || bad "MOSS native: no unpacked add-on (the screen add-on should be in app.asar.unpacked)"
+fi
 # Launch Services: every MOSS Code.app this script assessed (the built copy, and the dmg's, mounted and gone) is
 # unregistered, and so is every app under MOSS_TRY_WORK; none may stay registered under the dist bundle id.
 LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-$LSR -u "$A" 2>/dev/null; [ -n "${M:-}" ] && $LSR -u "$M/MOSS Code.app" 2>/dev/null
+$LSR -u "$A" 2>/dev/null; [ -n "${M:-}" ] && $LSR -u "$M/MOSS Code.app" 2>/dev/null; $LSR -u "$MA" 2>/dev/null
 ROOTS=("$(pwd -P)"); [ -n "${MOSS_TRY_WORK:-}" ] && ROOTS+=("$(cd "$MOSS_TRY_WORK" 2>/dev/null && pwd -P)")
 left=0
 for root in "${ROOTS[@]}"; do

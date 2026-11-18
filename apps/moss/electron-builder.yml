@@ -1,8 +1,10 @@
 # MOSS, the app for bots, packaged by electron-builder (lane MA). `bun run dist` builds the unsigned, unpacked app
 # (`--dir`). It is a second build of the product, with its own identity (spec §2, item 120: `com.waifucave.moss`, named
 # "MOSS"), its own fixed window and no plugin UI runtime. Like MOSS Code it carries the engine (spec §3.1: each app carries
-# a copy of the engine and runs alone), staged by the release scripts in out/daemon and out/plugins; a plain `bun run dist`
-# stages none and packages the app alone. Nothing here holds a secret, and nothing is ever published from a build.
+# a copy of the engine and runs alone), and the background host (lane PK). One release for everything (R4): MOSS is built only
+# beside MOSS Code, by the one release build (scripts/release/build.ts), from the SAME stage: the engine and its sidecars
+# (apps/desktop/out/daemon), the bundled tree (apps/desktop/out/plugins) and MOSS Code's host helper (afterPack below). A plain
+# `bun run dist` stages none and packages the app alone. Nothing here holds a secret, and nothing is ever published from a build.
 appId: com.waifucave.moss
 productName: MOSS
 copyright: Copyright © 2026 waifucave
@@ -14,6 +16,11 @@ files:
   - out/renderer/**
   - package.json
 asar: true
+# The screen add-on (the overlap check's window list, apps/moss/scripts/build.ts) stays OUT of the asar, so it is signed with the
+# app (a Mach-O packed inside is loaded from a temporary copy with its build-time signature, which library validation refuses);
+# the release build refuses a MOSS with any Mach-O left inside the asar, as MOSS Code's.
+asarUnpack:
+  - out/main/native/*.node
 # The same fuses as MOSS Code's (spec §3.1, the apps' peer image): the engine takes MOSS's `app` hello only from the signed
 # program, which is worth something only while that binary runs nothing but its own sealed code.
 electronFuses:
@@ -23,8 +30,10 @@ electronFuses:
   onlyLoadAppFromAsar: true
   enableEmbeddedAsarIntegrityValidation: true
   grantFileProtocolExtraPrivileges: false
+# The engine and its sidecars, and the bundled tree: MOSS Code's stage, the very files MOSS Code packs (one release: the same
+# engine binary and the same tree in both apps; the release build checks they are byte for byte the same after packaging).
 extraResources:
-  - from: out/daemon
+  - from: ../desktop/out/daemon
     to: daemon
     filter:
       - moss-core
@@ -34,13 +43,16 @@ extraResources:
       - moss-plugin-bun
       - moss-plugin-bun.exe
       - moss-process-holder
-  - from: out/plugins
+  - from: ../desktop/out/plugins
     to: plugins
     filter:
       - "**/*"
       - "!**/.env"
       - "!**/.env.*"
       - "!**/.DS_Store"
+# The background host's helper, MOSS Code's own (apps/moss/scripts/host-helper.mjs): put in before MOSS is signed, so it is
+# sealed with MOSS; the engine starts the host from it when MOSS is the newest app that carries one (or the only one).
+afterPack: scripts/host-helper.mjs
 npmRebuild: false
 nodeGypRebuild: false
 buildDependenciesFromSource: false
@@ -56,8 +68,9 @@ mac:
       arch: arm64
   category: public.app-category.productivity
   artifactName: MOSS-${version}-mac.${ext}
-  # MOSS's own icon is not drawn yet (the living-bots kit carries no app icon; the Shards kit's is MOSS Code's): Electron's
-  # default stands in until the owner says which (spec item 110).
+  # A PLACEHOLDER icon (lane PK): the owner hasn't chosen MOSS's (spec item 110). build/icon-placeholder.svg, drawn from the
+  # living-bots kit's own rules and colours (one flat shape, one colour, two ink eyes), is its source; replace both when he does.
+  icon: build/icon.icns
   identity: null
   notarize: false
   hardenedRuntime: true
@@ -66,6 +79,12 @@ mac:
   signIgnore:
     - Contents/Resources/daemon/
     - Contents/Resources/plugins/
+  # Unlike MOSS Code, MOSS keeps its Dock icon while it runs (no LSUIElement): it has no menu-bar icon of its own (the host owns
+  # the one, spec item 112), and macOS keeps MOSS running when its window closes (quit.ts), so without the Dock icon and its
+  # menu a MOSS whose window was closed could be neither reopened nor quit when no host runs. It adds nothing to the Dock and
+  # registers no login item of its own: the engine's (`moss-core autostart`) is the only one, and at login no app window opens
+  # by itself (§3.1). It opens no microphone (its talk key runs the voice plugin's command on the host, voice.ts), so it asks
+  # no entitlement beyond MOSS Code's shared file.
 win:
   target:
     - target: nsis
