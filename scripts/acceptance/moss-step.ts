@@ -1010,7 +1010,7 @@ async function statusRow(s: UnitState): Promise<string> {
   const during = await s.w.eval<{ rows: number; text: string }>("({ rows: document.querySelectorAll('.messages [data-bubble]').length, text: document.querySelector('.messages')?.innerText ?? '' })");
   if (during.rows !== rowsBefore + 1) s.x.fail(`the conversation drew ${during.rows - rowsBefore} new rows for the turn, want 1 (the person's message)`);
   if (/Used |mcp__/.test(during.text)) s.x.fail("a tool row or a \"Used\" line is in her conversation");
-  await s.c.request("session.interrupt", { sessionId: a.mainSession });
+  await s.c.request("session.interrupt", { id: a.mainSession });
   await s.w.waitFor("the line gone once the turn ended", "!document.querySelector('.messages [data-status-line]') ? 'gone' : null", 60_000);
   const after = await s.w.eval<{ text: string; tools: number }>("({ text: document.querySelector('.messages')?.innerText ?? '', tools: document.querySelectorAll('.messages [data-tool], .messages [data-tool-row]').length })");
   if (/Used |mcp__/.test(after.text) || after.tools !== 0) s.x.fail("a tool row is in her conversation after the turn");
