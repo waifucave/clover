@@ -69,7 +69,7 @@ What each step proves:
 | `scripts/try/verify.sh <copy> <checkout> --sign-only` (step 2) | Statically, for each app: its signature, fuses and opening entitlements, the unpacked screen add-on signed by the team, the dmg's app equal to the built app, and both apps on one release (version, `daemon/` and `plugins/` the same, both helpers the same code and meeting the host requirement). |
 | `release/build.ts --test-build` (step 3) | The test twin pair (`MOSS-Code-<v>-TEST.*`, `MOSS-<v>-TEST.*`). |
 | `scripts/acceptance/run.ts --app <MOSS Code.app> --moss-app <MOSS.app>` (step 4, under `watch.sh`) | MOSS Code's chain, `release` and the other units, packaged. The `moss` unit runs the packaged MOSS. Its driver says hello as the CLI on a packaged core, so a row that needs an `app` hello from the run says what the packaged core answered. `--moss-app` must be the same release as `--app`, or the run stops. |
-| `--upgrade-from 3a3e247e3` (step 5) | From the last Clover build: its twin runs with `--keep-state`, then this MOSS Code twin offers the copy of the old home at first start. The old app and home are never touched. |
+| `--upgrade-from 3a3e247e3` (step 5) | From the last build before the rename: its twin runs with `--keep-state`, then this MOSS Code twin offers the copy of the old home at first start. The old app and home are never touched. |
 
 What only this signed run proves, and no unit test can:
 - the host helper's signature against `hostRequirement`;
