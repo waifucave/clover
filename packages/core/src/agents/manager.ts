@@ -744,8 +744,30 @@ export class AgentManager {
       ...(daemon.level === undefined ? {} : { level: daemon.level }),
       ...(peer === undefined ? {} : { peer }),
     } as Entry;
+    let started = false;
     entry.driver = new AgentDriver({
-      start: () => this.#startAgent(entry, reattach),
+      start: async () => {
+        if (started) {
+          // Started again after a turn failed: the old process's token went with it, so a fresh one; and the agent takes up its
+          // session by its history if it has said anything, afresh if not (`#reattachOf`).
+          entry.token = this.#o.tokens.mint(id);
+          entry.transcript.redact(entry.token);
+          const before = entry.daemon.agentSessionId;
+          return this.#startAgent(entry, before === undefined ? undefined : this.#reattachOf(entry, before));
+        }
+        started = true;
+        return this.#startAgent(entry, reattach);
+      },
+      // A turn failed and its agent's process was stopped; the session stays open and its next turn starts the agent again.
+      released: () => {
+        entry.unwatch?.();
+        entry.unwatch = undefined;
+        this.#o.tokens.revoke(id);
+        rmSync(this.setupDir(id), { recursive: true, force: true });
+        // A card the failed turn left pending has no turn left to answer (the broker's rule 7).
+        this.#o.approvals.cancelSession(id);
+        entry.session = undefined;
+      },
       turnStarted: (input, origin) => this.#o.turnStarted?.(id, input, origin),
       toolShows: entry.shows,
       // A turn another computer sent carries the prompt it built there (its images read there).
@@ -1270,6 +1292,9 @@ export class AgentManager {
     const e = this.#entries.get(sessionId);
     if (!e) throw new ContractError("not_found", `no agent ${sessionId} on this computer`);
     await e.driver.setModel(model, effort);
+    // The agent started again after a failed turn starts on it.
+    e.model = model;
+    if (effort !== undefined) e.effort = effort;
     e.record = { ...e.record, model, ...(effort === undefined ? {} : { effort }) };
     e.transcript.writeRecord(e.record);
   }

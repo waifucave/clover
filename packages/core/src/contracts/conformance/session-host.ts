@@ -180,7 +180,8 @@ export function runSessionHostConformance(make: SessionHostFactory): void {
       await flush();
       agent.end({ reason: "failed", failure: "sign-in", text: "sign in to Claude Code yourself" });
       await flush();
-      expect(host.get("s_agent")).toMatchObject({ status: "failed", failure: "sign-in" });
+      // The agent's session stays open (the person may sign in and send again); its view keeps why the turn failed.
+      expect(host.get("s_agent")).toMatchObject({ status: "idle", failure: "sign-in" });
       expect(botDriver.turns[0]!.input).toMatchObject({ from: "task-notification", stopReason: "sign-in" });
     });
 

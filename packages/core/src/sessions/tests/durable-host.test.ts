@@ -634,6 +634,68 @@ describe("DurableSessionHost when things go wrong", () => {
   });
 });
 
+describe("a coding session whose turn failed stays open", () => {
+  test("every failure kind: the session is idle with the failure on its view, the queue is cleared, and the next message runs a turn; a turn that ends well clears the failure; and it reads open after a restart", async () => {
+    const t = durable();
+    for (const failure of ["error", "sign-in", "stalled", "crashed"] as const) {
+      const d = new FakeSessionDriver();
+      const id = `agent_${failure}`;
+      t.host.open({ id, kind: "coding", computer: "Studio", backend: "moss-code" }, d);
+      await t.host.sendUser(id, user("first"));
+      await t.host.sendUser(id, user("second, queued"));
+      await flush();
+      d.end({ reason: "failed", failure, text: "why" });
+      await flush();
+      expect(t.host.get(id)).toMatchObject({ status: "idle", failure });
+      // The queued message went with the failed turn (it was never answered; the person sends again).
+      expect(d.turns).toHaveLength(1);
+      await t.host.sendUser(id, user("again"));
+      await flush();
+      expect(d.turns).toHaveLength(2);
+      d.end({ reason: "end_turn", text: "ok" });
+      await flush();
+      expect(t.host.get(id)!.status).toBe("idle");
+      expect(t.host.get(id)!.failure).toBeUndefined();
+    }
+  });
+
+  test("a failed turn, then a restart: the session is open (not ended on disk), and still answers; one the person stopped stays stopped", async () => {
+    const t = durable();
+    const d = new FakeSessionDriver();
+    t.host.open({ id: "agent_a", kind: "coding", computer: "Studio", backend: "moss-code" }, d);
+    t.host.open({ id: "agent_b", kind: "coding", computer: "Studio", backend: "moss-code" }, new FakeSessionDriver());
+    await t.host.sendUser("agent_a", user("go"));
+    await flush();
+    d.end({ reason: "failed", failure: "crashed" });
+    await flush();
+    await t.host.stop("agent_b");
+    await t.host.close();
+    const again = new DurableSessionHost({ home: t.home, clock: t.clock });
+    expect(again.get("agent_a")!.status).not.toBe("failed");
+    expect(again.get("agent_a")!.status).not.toBe("stopped");
+    expect(again.get("agent_b")!.status).toBe("stopped");
+    const d2 = new FakeSessionDriver();
+    again.open({ id: "agent_a", kind: "coding", computer: "Studio", backend: "moss-code" }, d2);
+    await again.sendUser("agent_a", user("hello again"));
+    await flush();
+    expect(d2.turns).toHaveLength(1);
+    expect(isContractError(await again.sendUser("agent_b", user("x")).catch((e: unknown) => e), "closed")).toBe(true);
+  });
+
+  test("a card pending when the turn fails is cancelled, never orphaned", async () => {
+    const cancelled: string[] = [];
+    const host = new DurableSessionHost({ home: tempHome(), clock: new FakeClock(), approvals: { withdrawSession: () => 0, cancelSession: (id: string) => (cancelled.push(id), 1) } });
+    const d = new FakeSessionDriver();
+    host.open({ id: "agent_c", kind: "coding", computer: "Studio", backend: "moss-code" }, d);
+    await host.sendUser("agent_c", user("go"));
+    await flush();
+    d.end({ reason: "failed", failure: "crashed" });
+    await flush();
+    expect(cancelled).toEqual(["agent_c"]);
+    expect(host.get("agent_c")!.status).toBe("idle");
+  });
+});
+
 describe("Try again: resendFailedTurn", () => {
   const by = { device: "app0000000000000000" };
   async function failed(first: (host: DurableSessionHost) => Promise<unknown>) {

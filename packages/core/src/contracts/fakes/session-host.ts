@@ -213,11 +213,13 @@ export class FakeSessionHost implements SessionHost {
     if (s.view.status === "stopped") return;
     if (end.reason === "failed") {
       s.queue = [];
-      this.#setStatus(s, "failed", end.failure ?? "error");
+      // A coding session or an agent stays open when its turn fails (idle, the failure on its view); the rest end.
+      const open = s.view.kind === "agent" || s.view.kind === "coding";
+      this.#setStatus(s, open ? "idle" : "failed", end.failure ?? "error");
       if (s.view.kind === "agent") this.#notifyParent(s, stopReasonOf(end), end);
       return;
     }
-    this.#setStatus(s, "idle");
+    this.#setStatus(s, "idle", s.view.failure === undefined ? undefined : null);
     if (s.queue.length > 0) {
       this.#pump(s);
       return;
@@ -242,10 +244,12 @@ export class FakeSessionHost implements SessionHost {
     });
   }
 
-  #setStatus(s: Hosted, status: SessionStatus, failure?: SessionView["failure"]): void {
+  /** `null` clears the failure (a turn that ended well after a failed one). */
+  #setStatus(s: Hosted, status: SessionStatus, failure?: SessionView["failure"] | null): void {
     if (s.view.status === status && failure === undefined) return;
-    s.view = { ...s.view, status, updatedAt: this.#clock.now(), ...(failure === undefined ? {} : { failure }) };
-    this.#record(s, { type: "status", status, ...(failure === undefined ? {} : { failure }) });
+    const { failure: _was, ...rest } = s.view;
+    s.view = { ...(failure === null ? rest : s.view), status, updatedAt: this.#clock.now(), ...(failure === undefined || failure === null ? {} : { failure }) };
+    this.#record(s, { type: "status", status, ...(failure === undefined || failure === null ? {} : { failure }) });
     this.#watchers.emit({ ...s.view });
   }
 

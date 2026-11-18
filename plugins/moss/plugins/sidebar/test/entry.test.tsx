@@ -55,6 +55,10 @@ describe("the sidebar entry", () => {
   test("states: what waits for the user comes first", () => {
     expect(agentStatus(s("x", { status: "prompting", needsYou: { cards: 0, questions: 1 } }))).toBe("needs-you");
     expect(agentStatus(s("x", { status: "failed", failure: "stalled" }))).toBe("stalled");
+    // A coding session whose turn failed stays open (idle) and reads failed, not done, until a turn ends well.
+    expect(agentStatus(s("x", { status: "idle", failure: "error" }))).toBe("failed");
+    expect(agentStatus(s("x", { status: "idle", failure: "stalled" }))).toBe("stalled");
+    expect(agentStatus(s("x", { status: "idle" }))).toBe("completed");
   });
 
   test("a coding session started outside the window shows without a remount, and a change to it is followed", async () => {

@@ -72,7 +72,8 @@ export function agentStatus(s: SessionView): AgentStatus {
     case "stopped":
       return "stopped";
     case "idle":
-      return "completed";
+      // A coding session whose last turn failed stays open (idle), and reads failed until a turn ends well.
+      return s.failure !== undefined ? "failed" : "completed";
   }
 }
 
@@ -132,7 +133,7 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
     project.sessions.push({
       id: s.id,
       title: s.title ?? s.id,
-      status: s.status === "idle" ? "idle" : agentStatus(s),
+      status: s.status === "idle" && s.failure === undefined ? "idle" : agentStatus(s),
       ...(s.needsYou ? { needsYou: s.needsYou } : {}),
       ...(s.backend ? { backend: s.backend } : {}),
       computer: s.computer,

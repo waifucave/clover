@@ -138,7 +138,8 @@ export class ActivityTracker {
   #stateOf(t: Tracked): { state: ActivityState; tool?: string } {
     const v = t.view;
     if ((v.needsYou?.cards ?? 0) + (v.needsYou?.questions ?? 0) > 0) return { state: "asking" };
-    if (v.status === "failed") return { state: "stuck" };
+    // A session that failed (ended), or whose last turn failed and which stays open (a coding session): stuck until a turn ends well.
+    if (v.status === "failed" || (v.failure !== undefined && v.status === "idle")) return { state: "stuck" };
     if (v.status === "stopped") return { state: "done" };
     const tool = [...t.running.values()].find((n) => n !== undefined);
     if (t.running.size > 0) return { state: "working", ...(tool !== undefined ? { tool } : {}) };
