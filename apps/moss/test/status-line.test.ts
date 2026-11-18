@@ -17,7 +17,7 @@ describe("statusPhrase", () => {
     ["a web search", "working", "WebSearch", undefined, undefined, "Searching the web"],
     ["a web search by a plugin's name", "working", "mcp__search__search", undefined, undefined, "Searching the web"],
     ["a fetch with its host", "working", "WebFetch", "example.com", undefined, "Reading example.com"],
-    ["a fetch without one", "working", "WebFetch", undefined, undefined, "Reading a web page"],
+    ["a fetch without one", "working", "WebFetch", undefined, undefined, "Reading a page"],
     ["a shell", "working", "Bash", undefined, undefined, "Running commands"],
     ["a file read", "working", "Read", "notes.txt", undefined, "Reading notes.txt"],
     ["a file read, no name", "working", "Read", undefined, undefined, "Reading a file"],

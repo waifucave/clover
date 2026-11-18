@@ -29,11 +29,13 @@ function view(over: Partial<MossView> = {}): MossView {
 }
 
 let retried: string[] = [];
+let messageTo: ((bot: string, m: import("../src/shared/view").Message) => void)[] = [];
+let viewTo: ((v: MossView) => void)[] = [];
 let saidTo: ((cardId: string, words: string) => void)[] = [];
 function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBridge {
   const none = () => () => {};
   return {
-    view: async () => v, onView: none, showing: () => {}, conversation: async () => page, onMessage: none,
+    view: async () => v, onView: (fn) => { viewTo.push(fn); return () => {}; }, showing: () => {}, conversation: async () => page, onMessage: (fn) => { messageTo.push(fn); return () => {}; },
     send: async () => ({ ok: true }), pickImages: async () => [], createBot: async () => ({ ok: false, why: "no" }), markRead: () => {},
     routines: async () => [], routineInstructions: async () => ({ ok: false, why: "no" }), runRoutine: async () => ({ ok: false, why: "no" }),
     editRoutine: async () => ({ ok: false, why: "no" }), memory: async () => ({ waiting: true }), memoryFile: async () => ({ ok: false, why: "no" }),
@@ -76,7 +78,7 @@ describe("MOSS's window", () => {
       expect(row.querySelector("[data-mood-words]")?.textContent?.length).toBeGreaterThan(0);
     }
     expect(r.container.querySelector("[data-bot-row=kite] [data-mood-words]")?.textContent).toBe("Needs you");
-    expect(r.container.querySelector("[data-bot-row=juniper] [data-mood-words]")?.textContent).toBe("Working · Browser");
+    expect(r.container.querySelector("[data-bot-row=juniper] [data-mood-words]")?.textContent).toBe("Using the browser");
     r.unmount();
   });
 
@@ -95,6 +97,21 @@ describe("MOSS's window", () => {
     const idle = await draw(view({ bots: [{ id: "juniper", name: "Juniper", mood: "idle", unread: false }] }), page);
     expect(idle.container.querySelector("[data-status-line]")).toBeNull();
     idle.unmount();
+  });
+
+  test("a reply hides the status line for that state only; the next turn's line shows again", async () => {
+    messageTo = []; viewTo = [];
+    const page = { bot: "juniper", hasMore: false, messages: [] };
+    const running = (mood: "thinking" | "idle") => view({ bots: [{ id: "juniper", name: "Juniper", mood, unread: false }] });
+    const r = await draw(running("thinking"), page);
+    expect(r.container.querySelector("[data-status-text]")?.textContent).toBe("Thinking");
+    await act(async () => { for (const f of messageTo) f("juniper", { id: "m1", from: "bot", text: "Here you go.", at: Date.now() }); });
+    expect(r.container.querySelector("[data-status-line]")).toBeNull();
+    await act(async () => { for (const f of viewTo) f(running("idle")); });
+    expect(r.container.querySelector("[data-status-line]")).toBeNull();
+    await act(async () => { for (const f of viewTo) f(running("thinking")); });
+    expect(r.container.querySelector("[data-status-text]")?.textContent).toBe("Thinking");
+    r.unmount();
   });
 
   test("a conversation the engine doesn't serve yet says so", async () => {

@@ -770,8 +770,7 @@ body:has(.seal-button.glyph) .state { display: none }
 .own { box-sizing: border-box; min-height: 100vh; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 0; background: var(--seal-surface); border: 1px solid var(--seal-hairline); border-radius: 18px; overflow: clip }
 .own-head { -webkit-app-region: drag }
 .own-head { display: flex; gap: 10px; align-items: flex-start }
-.own-head .shield { flex: none; margin-top: 2px; color: #C27C00 }
-@media (prefers-color-scheme: dark) { .own-head .shield { color: #ECD575 } }
+.own-head .shield { flex: none; margin-top: 2px; color: var(--seal-text) }
 .own-words { min-width: 0 }
 .own .ask { font-size: 1.07em }
 .own .sub { margin: 2px 0 0; color: var(--seal-muted); font-size: 0.9em }

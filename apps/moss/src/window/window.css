@@ -235,7 +235,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
 .chip--paused { background: var(--chip-off); color: var(--muted); }
 
 /* ---- Pages: Plugins and Settings ---- */
-.page__body { flex: 1; overflow-y: auto; padding: 18px 22px 28px; display: grid; gap: 14px; align-content: start; max-width: 760px; }
+.page__body { flex: 1; overflow-y: auto; padding: 18px 22px 28px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; max-width: 760px; }
 .page__body h2 { margin: 0 0 8px; font-size: 14px; font-weight: 650; display: flex; align-items: center; }
 .add, .plugin, .settings-section { padding: 14px 16px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .add p { margin: 0 0 10px; }
@@ -263,9 +263,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round
   .rows { padding: 0 6px; }
   .row { grid-template-columns: 1fr; justify-items: center; gap: 3px; padding: 8px 0 6px; }
   .row__text { justify-items: center; }
-  .row__line { justify-content: center; }
-  .row__line .mood { font-size: 10px; }
-  .row__line .mood__tool { display: none; }
+  .row__line { justify-content: center; white-space: normal; text-align: center; }
+  .row__line .mood { font-size: 10px; line-height: 1.2; flex: 0 1 auto; min-width: 0; }
   .row__line .mood::after { content: "" !important; }
   .row.is-unread::after { content: ""; position: absolute; top: 8px; right: 10px; width: 9px; height: 9px; border-radius: 50%; background: var(--unread); border: 2px solid var(--list-bg); }
   .new-bot { grid-template-columns: auto; justify-content: center; }
