@@ -69,6 +69,19 @@ const NOT_SERVED = /not served on this computer|ContractError|isn't available ye
 class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
 
+/** For a failure message: each `mcp__<server>__` prefix the requests declared (`body.tools`, with how many deferred) and offered
+ *  callable (`tools`, the declared list with the conversation's additions and removals applied), per request, newest last. */
+function serverShapes(ctx: ExampleCtx): string {
+  const out: string[] = [];
+  for (const [i, r] of ctx.requests().entries()) {
+    const declared = ((r.body as { tools?: { name: string; defer_loading?: boolean }[] } | undefined)?.tools ?? []).filter((t) => t.name.startsWith("mcp__moss_"));
+    const servers = [...new Set(declared.map((t) => t.name.split("__")[1]!))];
+    const part = servers.map((k) => `${k.slice(5, 9)}: declared ${declared.filter((t) => t.name.startsWith(`mcp__${k}__`)).length} (${declared.filter((t) => t.name.startsWith(`mcp__${k}__`) && t.defer_loading === true).length} deferred), callable ${r.tools.filter((t) => t.startsWith(`mcp__${k}__`)).length}`);
+    if (part.length > 0) out.push(`#${i} ${part.join(" / ")}`);
+  }
+  return out.slice(-6).join(" | ");
+}
+
 /** Every bundled manifest's MCP servers, as `<plugin>/<server>`, each with whether its plugin carries lane B's mark
  *  (`availability.status: "not-yet"`: listed on the Plugins page, never started, no server offered). */
 function bundledServers(): { key: string; marked: boolean }[] {
@@ -126,6 +139,7 @@ export async function bundledToolsStep(ctx: ExampleCtx, session: string, web: tr
   const offered = new Set(ctx.requests().flatMap((r) => r.tools));
   const leaked = [...offered].filter((name) => unoffered.some((t) => name === t || name.endsWith(`__${t}`)));
   if (leaked.length > 0) problems.push(`a plugin listed as not available offered ${leaked.join(", ")}`);
+  if (problems.length > 0) problems.push(`the bridge servers in the requests this step sent: ${serverShapes(ctx)}`);
   if (problems.length > 0) fail(`${problems.join(" | ")}${lines.length > 0 ? ` (the rest: ${lines.join("; ")})` : ""}`);
   return `${tools.length} bundled tools from ${servers.filter((x) => !BOTS_ONLY.has(x)).join(", ")}${botsOnly.length > 0 ? ` (not called here, a bot's own: ${botsOnly.join(", ")})` : ""}: ${lines.join("; ")}${marked.length > 0 ? `; not offered (listed as not available): ${marked.join(", ")}` : ""}`;
 }
