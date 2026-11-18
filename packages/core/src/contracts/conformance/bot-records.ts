@@ -118,7 +118,8 @@ export function runBotRecordsConformance(make: BotRecordsFactory): void {
     });
 
     test("the move: each plugin bot becomes a record of the same id, the user's layer over its plugin's; a settled entry is final", async () => {
-      const bots = setup();
+      const clock = new FakeClock();
+      const bots = make({ clock });
       await bots.create({ name: "Nova" }, user);
       const journal = await bots.move([
         { plugin: "alpha", id: "alpha", name: "Alpha", instructions: "plugin words", greeting: "Hi!", model: "acme/small", userLayer: { instructions: "the user's words", model: "acme/large" } },
@@ -134,12 +135,15 @@ export function runBotRecordsConformance(make: BotRecordsFactory): void {
       expect(bots.instructions("alpha")).toBe("the user's words");
       expect(bots.instructions("pack/luna")).toBe("Luna's words");
       expect(bots.get("nova")?.name).toBe("Nova");
-      // Run again: a plugin bot the journal doesn't name yet is moved, the settled ones are untouched.
+      // Run again, later: a plugin bot the journal doesn't name yet is moved, the settled ones are untouched, and the
+      // journal's `at` stays its first completion's.
+      clock.advance(60_000);
       const again = await bots.move([
         { plugin: "late", id: "late", name: "Late", instructions: "" },
         { plugin: "alpha", id: "alpha", name: "Alpha", instructions: "the plugin's words again" },
       ]);
       expect(again.bots).toEqual([...journal.bots, { outcome: "moved", id: "late", plugin: "late" }]);
+      expect(again.at).toBe(journal.at);
       expect(bots.get("late")).toMatchObject({ madeBy: { kind: "move", plugin: "late" } });
       expect(bots.instructions("alpha")).toBe("the user's words");
       // A run that settles nothing new changes nothing.

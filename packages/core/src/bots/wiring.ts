@@ -229,9 +229,9 @@ export function createBotSide(o: BotSideOptions): BotSide {
   if (source === "records") {
     const store: BotRecordStore = new BotRecordStore({
       home: o.home, clock: o.clock,
-      // Held: the plugin bots the move hasn't moved yet, and every installed plugin's top-level id (lane MC: a plugin's
+      // Held: the pre-split bots the move hasn't moved yet (move.ts), and every installed plugin's top-level id (lane MC: a plugin's
       // `own-bot` parts serve the bot of its own id, so a new bot never takes an installed plugin's id).
-      reserved: () => [...(store.journal() !== undefined ? [] : pendingPluginBots(o.registry, (id) => store.has(id))), ...o.registry.list().map((r) => topPluginIdOf(r.id))],
+      reserved: () => [...pendingPluginBots(o.registry, o.home, (id) => store.has(id), store.journal()), ...o.registry.list().map((r) => topPluginIdOf(r.id))],
       ...(o.pluginSettings === undefined ? {} : { pluginSettings: o.pluginSettings }),
       ...(o.warn === undefined ? {} : { warn: o.warn }),
     });

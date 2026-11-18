@@ -154,7 +154,8 @@ export const BotMoveOutcome = z.discriminatedUnion("outcome", [
 export type BotMoveOutcome = z.infer<typeof BotMoveOutcome>;
 
 /** The move's journal (`BOT_MOVE_JOURNAL`): at each start the move takes only what it doesn't settle yet (a `failed`
- *  entry, a plugin bot it doesn't name); `moved` and `kept` entries are final. */
+ *  entry, a pre-split bot it doesn't name); `moved` and `kept` entries are final. `at` is the first completion's time,
+ *  never moved forward: what the home holds of a bot dated before it is pre-split. */
 export const BotMoveJournal = z.object({
   move: z.literal(1),
   at: Timestamp,

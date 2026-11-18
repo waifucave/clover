@@ -61,7 +61,7 @@ import type { ArchivedBot, BotFace, BotMaker, BotMoveJournal, BotPatch, BotRecor
 import { projectRecords } from "../sessions/wire";
 import { readJson as readJsonFile } from "../sessions/atomic-file";
 import { defaultBotForMove } from "./default-bot";
-import { pendingPluginBots, pluginBotsForMove } from "./move";
+import { moveInputs, pendingPluginBots } from "./move";
 import { readMarkFile, type BotRecordStore } from "./records";
 import type { BotSource } from "./source";
 
@@ -644,9 +644,9 @@ export class BotService {
   moveStatus(): { journal?: BotMoveJournal; pending: string[]; held?: { reason: string } } {
     const store = this.#records;
     const journal = store?.journal();
-    // Pending: a plugin bot with no record, live or archived, that the journal doesn't settle.
+    // Pending: a pre-split bot (move.ts) with no record, live or archived, that the journal doesn't settle.
     const settled = (id: string) => store !== undefined && (store.has(id) || store.archived().some((a) => a.id === id));
-    const pending = pendingPluginBots(this.#o.registry, settled);
+    const pending = pendingPluginBots(this.#o.registry, this.#o.home, settled, journal);
     const held = store?.journalUnreadable === true
       ? { reason: "The record of moving your bots out of their plugins can't be read, so MOSS hasn't moved them again; your bots' files are untouched. Look at user-layers/moved/bots.json in MOSS's folder, or remove it to move them now." }
       : undefined;
@@ -683,12 +683,10 @@ export class BotService {
     try {
       // The plugin bots first, then the default bot MOSS offers (Alpha, default-bot.ts): a plugin that still brings a
       // bot of her id (a home's own development folder) is moved as that plugin's, and she isn't offered over it.
-      const plugins = pluginBotsForMove(this.#o.registry, this.#o.home);
+      // Then the bots the home holds the plugin era's record of that no listed plugin brings (their plugin gone): last, so
+      // neither a plugin's bot nor the default bot is taken from there too. Which bots are pre-split is move.ts's.
       const offered = this.#o.defaultBot === false ? [] : [defaultBotForMove(this.#o.home)];
-      // A plugin input of the default bot's id that can't be moved (the bundled `alpha` as a stale record still says, its
-      // bot files gone with her plugin's bot) gives way to the default bot, so she isn't left without a record.
-      const usable = offered.length === 0 ? plugins : plugins.filter((b) => !(b.failed !== undefined && offered.some((d) => d.id === b.id)));
-      journal = await store.move([...usable, ...offered]);
+      journal = await store.move(moveInputs(this.#o.registry, this.#o.home, store.journal(), offered));
     } catch (err) {
       this.#warn(`moving the plugin bots into records failed: ${err instanceof Error ? err.message : String(err)}`);
       return;

@@ -597,7 +597,9 @@ export class BotRecordStore implements BotRecords {
     for (const b of before?.bots ?? []) if (b.outcome === "failed" && !seen.has(b.id)) outcomes.push(b);
     if (!changed && before !== undefined) return structuredClone(before);
     const merged = [...(before?.bots ?? []).filter((b) => settled.has(b.id)), ...outcomes];
-    const journal = BotMoveJournal.parse({ move: 1, at: this.#o.clock.now(), bots: merged.slice(0, 1024) });
+    // `at` is the first completion's time and never moves forward: what the home holds of a bot dated before it is
+    // pre-split (move.ts), so a later run must not push the line past a bot made in between.
+    const journal = BotMoveJournal.parse({ move: 1, at: before?.at ?? this.#o.clock.now(), bots: merged.slice(0, 1024) });
     writeJsonAtomic(join(this.#home, ...BOT_MOVE_JOURNAL.split("/")), journal, { mode: 0o600 });
     this.#journal = journal;
     return structuredClone(journal);
