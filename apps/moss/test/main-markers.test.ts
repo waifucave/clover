@@ -25,6 +25,9 @@ describe("MOSS's main process and the test-only code", () => {
     expect(real.includes(TEST_BUILD_SENTINEL)).toBe(false);
     for (const t of [...TEST_ONLY_APP_STRINGS, ...TEST_ONLY_MOSS_APP_STRINGS]) expect([t, real.includes(t)]).toEqual([t, false]);
     const marked = compile(true);
+    // The test twin's gate needs both in the built app (try 16's twin build stopped on the missing label).
+    expect(marked.includes(TEST_BUILD_LABEL)).toBe(true);
+    expect(marked.includes(TEST_BUILD_SENTINEL)).toBe(true);
     // A name on MOSS's list that its test build no longer reads is stale: take it off the list.
     for (const t of TEST_ONLY_MOSS_APP_STRINGS) expect([t, marked.includes(t)]).toEqual([t, true]);
   }, 180_000);

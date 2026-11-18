@@ -52,6 +52,9 @@ if (process.platform === "win32") app.setAppUserModelId(identity.appId);
 const userDataOverride = devOverrides ? process.env.MOSS_USER_DATA : undefined;
 if (userDataOverride !== undefined && userDataOverride !== "") app.setPath("userData", userDataOverride);
 if ((typeof __MOSS_TEST_BUILD__ === "string")) {
+  // The label itself, as MOSS Code's main prints it: the test twin's marker gate looks for it in the built app
+  // (scripts/test-build.ts asarMarkerProblems), and a real build compiles this whole branch out.
+  process.stdout.write(`[moss] ${__MOSS_TEST_BUILD__}: a test-marked build, never for release\n`);
   // A test build keeps off the login keychain (Chromium's mock keychain) and refuses a real user-data folder.
   app.commandLine.appendSwitch("use-mock-keychain");
   if (userDataOverride === undefined || userDataOverride === "") {
