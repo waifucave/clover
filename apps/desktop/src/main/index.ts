@@ -137,8 +137,8 @@ declare const __MOSS_ACCEPTANCE_BUILD__: string | false | undefined;
 // The smoke run's test-only inputs: read only in a test build or the acceptance build, so a real build carries no trace of the names
 // (the marker gate in scripts/test-build.ts looks for them).
 /** A headless test run that presses real sealed buttons (`MOSS_TEST_SEALED_PRESS=1`, test-marked or acceptance builds only): its
- *  surfaces (the island, the pill) are shown invisible when they show (`showInvisible`: opacity 0, deaf to the mouse, never in
- *  front), as a person's are shown. A surface window that is never shown is painted only while Chromium keeps an initially hidden
+ *  surfaces that hold a pending card (the island) are shown invisible while they do (`showInvisible`: opacity 0, deaf to the
+ *  mouse, never in front), as a person's are shown; with no card they are hidden again, so a headless run shows no window then. A surface window that is never shown is painted only while Chromium keeps an initially hidden
  *  window drawing: on a GitHub runner, and on this Mac in a full acceptance run, the background host's island stopped drawing
  *  altogether (no animation frame in its own document for 100 ms, read 450 and 900 ms after the press) and a press on its card
  *  got no visibility reading within the limit (runs 44350482587, 44350489353, 44350496094, 44350504418: 8 of 8 attempts of the
@@ -2402,10 +2402,13 @@ function applyVisibility(s: Surface): void {
   if (down && s.win.isVisible()) hideSurface(s);
   if (s.wantsVisible === undefined) return;
   const show = !down && surfaceShown({ stepsAside: s.stepsAside, holdsPlacedCard: s.cards && islandHoldsCard() }, s.wantsVisible, mainState(), modeOf(s));
-  if (show && (invisible !== undefined || composeForPress) && !s.win.isVisible()) {
+  // The test's press (composeForPress): only while this surface holds a pending card, so a headless run still shows no window otherwise.
+  const pressCompose = composeForPress && invisible === undefined && s.cards === true && islandHoldsCard();
+  if (show && (invisible !== undefined || pressCompose) && !s.win.isVisible()) {
     showInvisible(s.win);
     if (invisible === undefined) log(`surface: ${s.ref} shown invisible while headless (the test's press: a surface that never shows stops drawing, and its sealed buttons read nothing after a press)`);
   }
+  else if (composeForPress && invisible === undefined && !pressCompose && s.win.isVisible()) hideSurface(s);
   else if (show && !headless && !s.win.isVisible()) s.win.showInactive();
   else if (!show && s.win.isVisible()) hideSurface(s);
   clickThrough(s);
