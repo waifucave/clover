@@ -11,7 +11,7 @@
 //     and offers "Switch now" (`now: true`); the engine's `release_changed` events keep the counts current.
 // The notice is data (`ReleaseNotice`); the root draws it (core/root.ts) from `registry.state`.
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { AppInstallRecord, MOSS_ERR, SemverVersion, type Program } from "@waifucave/moss-protocol";
 
 export type ReleaseNotice =
@@ -54,7 +54,8 @@ export function recordPath(home: string, program: Program): string {
 /** The host helper an app bundle carries on macOS (`<App>.app/Contents/Frameworks/MOSS Host[ Dev].app`): the engine's own
  *  rule (packages/core/src/host/world.ts `hostHelperPath`; apps/moss's test holds the two equal). */
 export function hostHelperIn(bundlePath: string, profile: "dist" | "dev"): string {
-  return join(bundlePath, "Contents", "Frameworks", profile === "dev" ? "MOSS Host Dev.app" : "MOSS Host.app");
+  // A macOS bundle path, joined with `/` on every OS, as the engine's own rule does.
+  return posix.join(bundlePath, "Contents", "Frameworks", profile === "dev" ? "MOSS Host Dev.app" : "MOSS Host.app");
 }
 
 /** Writes this app's record under the home; false (and a line in the log) when it couldn't. `carries` says what this copy
