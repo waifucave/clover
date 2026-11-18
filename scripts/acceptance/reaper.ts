@@ -9,7 +9,7 @@
 //   the run's own copy of the app (`<root>/host-app/…`), and so do its helpers.
 // Never by a name or a pattern: a folder only this run made, and groups only it made.
 import { spawnSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { readlinkSync, realpathSync } from "node:fs";
 
 export interface ProcRow {
   pid: number;
@@ -19,11 +19,15 @@ export interface ProcRow {
   exe: string;
 }
 
-/** Every process now (`ps -axo pid=,ppid=,pgid=,comm=`), or [] when ps can't be read. */
+/** Every process now (`ps -axo pid=,ppid=,pgid=,comm=`), or [] when ps can't be read. macOS's `comm` is the executable's whole
+ *  path; Linux's is its short name, so there the path is read from `/proc/<pid>/exe` (a process not ours to read keeps its
+ *  short name, which lies under no folder). */
 export function listProcesses(): ProcRow[] {
   const r = spawnSync("ps", ["-axo", "pid=,ppid=,pgid=,comm="], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
   if (r.status !== 0) return [];
-  return parsePs(r.stdout ?? "");
+  const rows = parsePs(r.stdout ?? "");
+  if (process.platform !== "linux") return rows;
+  return rows.map((p) => { try { return { ...p, exe: readlinkSync(`/proc/${p.pid}/exe`) }; } catch { return p; } });
 }
 
 export function parsePs(out: string): ProcRow[] {

@@ -8,21 +8,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listProcesses, nameLeftovers, parsePs, reap, rootForms, runProcesses, type ProcRow } from "./reaper";
 
-const made: string[] = [];
-/** A program of the run's own under `root`: this Bun, linked there (a copied system binary is killed by its signature). */
-function ownProgram(root: string, name: string): string {
-  const exe = join(root, name);
-  try { linkSync(process.execPath, exe); } catch { copyFileSync(process.execPath, exe); }
-  return exe;
-}
-/** A script that never ends and takes no notice of SIGTERM. */
-const DEAF = "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);";
-const started: ChildProcess[] = [];
-afterAll(() => {
-  for (const c of started) { try { process.kill(c.pid!, "SIGKILL"); } catch { /* gone */ } }
-  for (const d of made) rmSync(d, { recursive: true, force: true });
-});
-
 describe("which processes are a run's", () => {
   const rows: ProcRow[] = [
     { pid: 10, ppid: 1, pgid: 10, exe: "/private/var/folders/x/T/clv-acc-abc/host-app/MOSS Host Acceptance.app/Contents/MacOS/Electron" },
@@ -47,7 +32,22 @@ describe("which processes are a run's", () => {
   });
 });
 
-describe.if(process.platform === "darwin" || process.platform === "linux")("the reaper on real processes", () => {
+const made: string[] = [];
+/** A program of the run's own under `root`: this Bun, linked there (a copied system binary is killed by its signature). */
+function ownProgram(root: string, name: string): string {
+  const exe = join(root, name);
+  try { linkSync(process.execPath, exe); } catch { copyFileSync(process.execPath, exe); }
+  return exe;
+}
+/** A script that never ends and takes no notice of SIGTERM. */
+const DEAF = "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);";
+const started: ChildProcess[] = [];
+afterAll(() => {
+  for (const c of started) { try { process.kill(c.pid!, "SIGKILL"); } catch { /* gone */ } }
+  for (const d of made) rmSync(d, { recursive: true, force: true });
+});
+
+describe.if(process.platform !== "win32")("the reaper on real processes", () => {
   test("a child that ignores SIGTERM and runs from the run's folder (a host the run never saw) is named and ended", async () => {
     const root = mkdtempSync(join(tmpdir(), "clv-reap-"));
     made.push(root);
