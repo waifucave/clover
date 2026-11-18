@@ -75,11 +75,12 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
   let switchedOff = false;
   const refusals = () => ctx.appLog().split("\n").filter((l) => l.includes(`tree: ${COPY_ID}:`) && l.includes("refused"));
   try {
-    await toSessionTab(ctx);
-    // The code session the window shows (the newest: MOSS Code's window has no bots, lane MC), where its turns run.
-    const coding = (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["coding"] })).sessions
+    // The code session its turns run in (the newest), and the window put on THAT one: the sidebar's first row can be another session's
+    // (a long home has many), and the copy draws the session the window shows.
+    const coding = (await rpc.request<{ sessions: { id: string; title?: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["coding"] })).sessions
       .filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0));
     const session = coding[0]?.id ?? _session;
+    await toSessionTab(ctx, coding[0]?.title ?? session);
     const log = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: session, limit: 500 })).events;
 
     // 1. The copy installs behind its OK card, which says what it holds, and runs once pressed.
@@ -98,7 +99,7 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
     // 2. It takes the bundled one's place in the code session's tab (the bundled one switched off, as a user would in the Plugins page).
     await rpc.request("plugin.setEnabled", { id: BUNDLED, enabled: false }, 30_000);
     switchedOff = true;
-    await toSessionTab(ctx);
+    await toSessionTab(ctx, coding[0]?.title ?? session);
     const doc = await until("the conversation copy's document in the code session's tab", 60_000, async () => (await layerDocs(cdp, COPY_ID))[0],
       async () => (await cdp.documents()).map((d) => d.url.slice(0, 70)).join(" || "));
 
