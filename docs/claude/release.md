@@ -78,3 +78,21 @@ What only this signed run proves, and no unit test can:
 - each packaged app's hello passing the caller check as its own program.
 
 The `host` units cannot run packaged. A dist core ignores `MOSS_HOST_COMMAND`, and a test-marked core never starts a host through the OS. They stay source-only (`--units host`).
+
+### Each install state: what runs, what the person sees, and what proves it
+
+Test files:
+- Engine level: `packages/core/test/update/two-apps.test.ts`.
+- MOSS's side: `apps/moss/test/release.test.ts`, `apps/moss/test/install-record.test.ts`.
+- Payload: `scripts/release/two-apps.test.ts`.
+
+| State | What runs | What the person sees | Proved by |
+| :- | :- | :- | :- |
+| Only MOSS | MOSS writes `apps/moss.json` (`carries.host` true when its helper is there), runs `engine install`, then starts the home's engine through the OS (registering the login item only when none is installed). The engine starts the host from `MOSS.app/Contents/Frameworks/MOSS Host.app`. | MOSS's window. Cards in it while it's in front, else on the island. | Engine level: "only MOSS installed". Install record: "a copy that carries the host helper". Signed run: the helper's signature and the packaged `moss` unit. |
+| Only MOSS Code | As before lane PK. | As before. | Engine level: "only MOSS Code installed"; MOSS Code's own tests. |
+| Both, one release | One engine (the home's copy, whichever app installed it first wins the lock) and one host, from the newest record (a tie goes to the later start). Quitting either app stops nothing. | Both windows. | Engine level: "both installed on one release". The engine's quit rule (lane HS) is unchanged. |
+| MOSS newer than the engine | Served the release door only. Asks `release.bring` from its own bundle. Through the switch, starts the engine itself after 8 s. | "This MOSS (release X) is newer than the engine: it is waiting for work to finish (n turns running)…" with a "Switch now" sheet. If the new engine never answers: "The engine hasn't answered since it switched to release X." with "Try again". | `release.test.ts`, "a MOSS newer than the engine (ahead)". Engine level: "the newer app is served the release door". |
+| Older app open while a newer one brings the engine | `release_changed` names a newer release: the older app updates itself. Once the engine is switched, its hello is refused as behind, with the release it needs. | MOSS: "Updating MOSS to release X, the engine's, before it connects…", or "can't reach the update server…" when offline, or "couldn't update itself" with the `engine reset` command. MOSS Code: its own updating notice (RL). | `release.test.ts`, "a MOSS older than the engine (behind)". Engine level: "…the older one is refused as behind". |
+| One app deleted | Its record is no longer listed (the file goes after 30 s). The engine starts the host from the other app's own bundle. | The other app works as alone. The host menu opens only the app that's there. | Engine level: "one app deleted…", "the host's menu opens whichever app is there". |
+| Both deleted | The engine stays in the home and runs headless (no host source). Uninstall clean-up is open (item 109). | Nothing. | Engine level: "both apps deleted". |
+| MOSS's own update | Downloads its own `moss-<channel>-mac.yml` from the same release. Installs only at the engine's idle moment, after `update.apply` and `pair.exiting{update}` and once the engine and host have gone, then relaunches. Never at Quit. | "A MOSS update is ready" notification, then MOSS opens again. | Payload: `packages/app-release/test/feeds.test.ts`. Install gate: `release.test.ts`, "MOSS's own update installs through the idle gate". |
