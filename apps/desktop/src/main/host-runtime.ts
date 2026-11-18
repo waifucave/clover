@@ -90,6 +90,55 @@ export async function leaveFor(d: Pick<HostRuntimeDeps, "client" | "leave" | "lo
   d.leave();
 }
 
+/** How long the host stays without its engine before it leaves by itself (lane HV). The engine owns the host: one that is
+ *  gone for good (it crashed and nothing starts it again, it was force-quit, its home was deleted) leaves a host that would
+ *  redial forever, its island and pages with it, answering nothing. The legitimate gaps are far shorter: launchd starts a
+ *  crashed engine again after 1 s (`ThrottleInterval`), a release switch replaces it as soon as nothing is mid-work, and a
+ *  booted engine adopts the host that holds the lock if it says ready within `HOST_START_TIMEOUT_MS` (45 s); the host
+ *  redials at least every 5 s. Two minutes is past all of them (`HOST_SOURCE_GRACE_MS`, the engine's own wait for an app
+ *  that carries the host, is the same). A host that left early costs little: the engine starts a new one when it boots, and
+ *  the cards are told to it on its connection. */
+export const HOST_ENGINE_GONE_MS = 120_000;
+
+/** Why the host left: one line for its log. */
+export function engineGoneLine(ms: number): string {
+  return `host: no engine for ${Math.round(ms / 1000)} s (its connection closed or never came, and no engine took the host since): the host leaves, and its pages and parts end with it`;
+}
+
+/** The host's watch on its engine: `connected(false)` from the start and at each loss arms one timer; `connected(true)`
+ *  disarms it. When it runs out the host leaves (`leave`). The engine's socket is the whole watch: a crashed or killed
+ *  engine's socket closes at once (the kernel closes it), and a hello the engine refuses (a second host on the home, a
+ *  host behind its release) never counts as connected. */
+export class EngineWatch {
+  private timer: { cancel(): void } | undefined;
+  private done = false;
+  constructor(private readonly d: { boundMs?: number; after(ms: number, fn: () => void): { cancel(): void }; leave(): void; log(line: string): void }) {}
+
+  connected(up: boolean): void {
+    if (this.done) return;
+    if (up) {
+      this.timer?.cancel();
+      this.timer = undefined;
+      return;
+    }
+    if (this.timer !== undefined) return;
+    const ms = this.d.boundMs ?? HOST_ENGINE_GONE_MS;
+    this.timer = this.d.after(ms, () => {
+      this.timer = undefined;
+      this.done = true;
+      this.d.log(engineGoneLine(ms));
+      this.d.leave();
+    });
+  }
+
+  /** The host is leaving anyway (a stop, a quit): no timer left behind. */
+  stop(): void {
+    this.done = true;
+    this.timer?.cancel();
+    this.timer = undefined;
+  }
+}
+
 /** "Stop everything" from the host's menu: the engine answers what is mid-work, `confirm` asks the person, and the engine
  *  stops the host, both apps and itself only when they say yes. */
 export async function stopEverything(d: Pick<HostRuntimeDeps, "client" | "log">, confirm: (working: MidWork) => Promise<boolean>): Promise<"stopped" | "kept" | "no-engine"> {

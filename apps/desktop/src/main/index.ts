@@ -58,7 +58,7 @@ import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
 // lane HS: start
 import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostProfileAndHome, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
-import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
+import { EngineWatch, HOST_ENGINE_GONE_MS, hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
 import { fallbackHere as fallbackHereOf, fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
 import { drawerExempt, overlayStandsDown, surfacesReport } from "./host-stacking";
 import { FocusHandBack } from "./focus-handback";
@@ -1565,6 +1565,14 @@ function fallbackHere(cardId: string): boolean {
   return fallbackMayDraw(enginePlaces.get(cardId), fallbackHereOf(mountNow, hostGaveUp));
 }
 
+/** lane HV: the host leaves by itself once its engine is gone for good (host-runtime.ts `EngineWatch`): armed from the host's
+ *  first dial and at every loss of its connection, disarmed on a connection. A test-marked or acceptance build may shorten the
+ *  wait (`MOSS_TEST_HOST_ENGINE_GONE_MS`, the host row's own check); a real build always waits HOST_ENGINE_GONE_MS. */
+const hostEngineGoneMs: number = (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && Number(process.env.MOSS_TEST_HOST_ENGINE_GONE_MS) > 0 ? Number(process.env.MOSS_TEST_HOST_ENGINE_GONE_MS) : HOST_ENGINE_GONE_MS;
+const engineWatch: EngineWatch | undefined = program === "host"
+  ? new EngineWatch({ boundMs: hostEngineGoneMs, after: (ms, fn) => { const t = setTimeout(fn, ms); return { cancel: () => clearTimeout(t) }; }, leave: () => hostDeps().leave(), log })
+  : undefined;
+
 function hostDeps(): HostRuntimeDeps {
   return {
     release: app.getVersion(), bundlePath: hostBundlePath(process.execPath, process.platform), safeMode,
@@ -1880,6 +1888,8 @@ function stateChanged(s: PairState): void {
     openingRetryMs = 250;
   }
   log(`pair: ${s.kind}${s.kind === "unavailable" ? ` (${s.reason})` : ""}`);
+  // lane HV: an engine on the other end (on its release, or older and serving the release door only) is the host's engine.
+  engineWatch?.connected(s.kind === "connected" || s.kind === "ahead");
   // The root draws "Starting MOSS…" until the shell comes; once the pair has gone a long time with no daemon (and
   // again when one comes), it is asked to draw again, so it says so instead.
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
