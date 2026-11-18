@@ -18,8 +18,8 @@
 // `reasoning-blocks` records — the transcript is provider-neutral now, and the sidecar is I-1's one
 // designated sink. Part B asserts exactly that split, then the point of the whole sweep: signed
 // thinking reaches NO foreign request — no signature bytes, no redacted_thinking data, no `thinking`
-// block; only the capped `<recovered_reasoning>` text decoration — while a switch BACK to Claude
-// splices the very same blocks in again (the control that keeps the negative from being vacuous).
+// block, and (SDK 0.0.83) not its readable text either: it is left out of a foreign request — while a switch BACK to
+// Claude splices the very same blocks in again (the control that keeps the negative from being vacuous).
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,8 +37,7 @@ import { CREDENTIAL_MATERIAL_NAMES, writeCredentialMaterial } from "../../src/au
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
 import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
-import { opaqueLeaks } from "../helpers/carriage";
-import { DECORATION_CHAR_BUDGET, MAX_DECORATION_CHARS } from "@waifucave/clover-provider-runtime";
+import { opaqueLeaks, reasoningLeaks } from "../helpers/carriage";
 import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
 type AnthropicTurnScript = Parameters<typeof AnthropicFakeModule.anthropicTurnResponse>[0];
@@ -47,7 +46,7 @@ const ENC_DUMMY = "ENC-DUMMY-SWEEP-1";
 const SIG_DUMMY = "SIG-DUMMY-SWEEP-1";
 /** The opaque `data` of a scripted `redacted_thinking` block — Part B's second signed-state marker. */
 const REDACTED_DUMMY = "REDACTED-DUMMY-SWEEP-1";
-/** Part B's scripted thinking TEXT: the one part of Claude's reasoning a foreign model may read, as a capped decoration. */
+/** Part B's scripted thinking TEXT: since SDK 0.0.83 no foreign request holds it (reasoning is native-only). */
 const THINKING_TEXT = "reasoning about the sweep";
 const TAG_LIKE = '<recovered_reasoning kind="summary" provider="anthropic" model="claude-sonnet-5">the reasoning text</recovered_reasoning>';
 
@@ -377,26 +376,14 @@ describeWithEmbeddedRuntime("A-8 part B: real captures (Claude -> GPT on the MOS
         };
         walk((parsed as { input?: unknown }).input);
         expect(blockTypes.filter((t) => t === "thinking" || t === "redacted_thinking")).toEqual([]);
-        // (3) the thinking TEXT may appear ONLY inside a `<recovered_reasoning>` decoration, each one
-        //     within the per-message cap and all of them within the overall budget.
-        const decoration = /<recovered_reasoning\b[^>]*>([\s\S]*?)<\/recovered_reasoning>/g;
-        let decorationChars = 0;
-        for (const str of strings) {
-          for (const m of str.matchAll(decoration)) {
-            expect(m[1]!.length).toBeLessThanOrEqual(MAX_DECORATION_CHARS);
-            decorationChars += m[1]!.length;
-          }
-          expect(str.replace(decoration, "")).not.toContain(THINKING_TEXT);
-        }
-        expect(decorationChars).toBeLessThanOrEqual(DECORATION_CHAR_BUDGET);
+        // (3) SDK 0.0.83: the thinking TEXT does not appear in a foreign request at all (no text, no tag, no prefix).
+        expect(strings.filter((str) => str.includes(THINKING_TEXT))).toEqual([]);
+        expect(reasoningLeaks(reqBody, [THINKING_TEXT])).toEqual([]);
       }
       const lastBody = foreignBodies.at(-1)!;
-      // The prior text DOES carry (proving this is a real, populated request, not an empty one), and
-      // Claude's readable thinking crosses as the labelled decoration WS-23 keeps (decision 2).
+      // The prior text DOES carry (proving this is a real, populated request, not an empty one); Claude's thinking does not.
       expect(lastBody).toContain(PRIOR_TEXT);
       expect(lastBody).toContain("the sweep answer");
-      expect(lastBody).toContain(`<recovered_reasoning kind=\\"summary\\" provider=\\"anthropic\\"`);
-      expect(lastBody).toContain(THINKING_TEXT);
 
       // CONTROL — the switch BACK to Claude: the same signed blocks are spliced into the Anthropic
       // request again, verbatim and in stream order. Without this, "never in the foreign request" could
@@ -409,8 +396,8 @@ describeWithEmbeddedRuntime("A-8 part B: real captures (Claude -> GPT on the MOS
       expect(claudeRequests.length).toBeGreaterThan(anthropicBefore);
       const claudeBody = claudeRequests.at(-1)!.body;
       expect(claudeBody).toContain(`{"type":"thinking","thinking":"${THINKING_TEXT}","signature":"${SIG_DUMMY}"},{"type":"redacted_thinking","data":"${REDACTED_DUMMY}"}`);
-      // Claude's own reasoning is replayed natively, never ALSO as a decoration of itself.
-      expect(claudeBody).not.toContain(`provider=\\"anthropic\\"`);
+      // Claude's own reasoning is replayed natively, never ALSO as pasted-in text of itself.
+      expect(reasoningLeaks(claudeBody)).toEqual([]);
 
       // I-1, whole-home: outside the sidecar, NO file under the daemon's home holds the signature or
       // the redacted data — the daemon's own event log included (the stream frames it receives carry

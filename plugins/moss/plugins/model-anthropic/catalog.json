@@ -444,6 +444,227 @@
       "strength": "strong"
     },
     {
+      "key": "anthropic/claude-fable-5-2",
+      "providerId": "anthropic",
+      "upstreamId": "claude-fable-5-2",
+      "displayName": "Claude Fable 5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/overview — Claude Fable 5.2 Context window: 1M tokens (1000000).",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/overview — Claude Fable 5.2 Max output: 128K tokens (128000) on the synchronous Messages API.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/overview — Input → output: Text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/overview — Input → output: Text and images → text.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2 — tool_choice auto is the supported mode (forced any/tool returns 400); https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool Model compatibility lists claude-fable-5-2.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — Model compatibility lists Claude Fable 5.2 (claude-fable-5-2) with both tool search variants; https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2 documents strict tool use and the computer_toolset_20260801 toolset on it.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "Carried from anthropic/claude-fable-5-1 (https://platform.claude.com/docs/en/build-with-claude/tool-use — Messages tool_choice supports disable_parallel_tool_use=true; parallel use is otherwise available for tool-capable models); no page read on 2026-11-18 states otherwise for Fable 5.2.",
+        "confidence": "inferred",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/structured-outputs — supportedModels lists claude-fable-5-2 (read 2026-11-18); https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2 — keep tool_choice auto with strict: true, or JSON outputs, for schema-valid JSON (not available in an organisation with customer-managed encryption keys).",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Fable 5.2 has 5m/1h cache-write and cache-hit columns (read 2026-11-18).",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/overview — Thinking: Adaptive (always on); https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2 — thinking enabled (budget_tokens) and disabled both return a 400 error; omit thinking or send adaptive.",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1, applied per anthropic/claude-opus-5's own evidence — the Messages API returns a readable thinking summary, never the raw chain, for every current Claude model",
+          "confidence": "declared",
+          "observedAt": "2026-09-07T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "thinking.display",
+            "values": [
+              "summarized",
+              "omitted",
+              "updates"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/migration-guide and https://platform.claude.com/docs/en/build-with-claude/thinking (read 2026-11-18): thinking.display accepts summarized, omitted (the default on Claude Fable 5.2) and updates (beta; progress updates between tool calls come back as thinking blocks). Winter requests \"summarized\" wherever this list carries it (user ruling 2026-10-05, 0.0.48), exactly as on claude-fable-5-1.",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "completionEvent": {
+          "value": "content_block_stop",
+          "source": "official-doc",
+          "sourceRef": "R6-D's pinned stream vocabulary, applied per anthropic/claude-opus-5's own evidence — a thinking block's signature arrives across signature_delta events, so the complete replayable block exists only at content_block_stop",
+          "confidence": "declared",
+          "observedAt": "2026-09-07T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "anthropic/claude-fable-5-2"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance and why the domain is NARROW: https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2 — \"Only Claude Fable 5.2 and Claude Mythos 5.2 read Claude Fable 5.2 thinking blocks\": a switch from it to any other model drops the earlier turns' reasoning. The domain is this one row (Mythos 5.2, which also reads them, is not in the catalog). Thinking blocks also stay with the account that produced them.",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "effortRequest": {
+          "value": {
+            "field": "output_config.effort"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort — the effort page's supportedModels list names claude-fable-5-2; Fable 5.2 supports all five levels, API default high; effort is requested through output_config.effort (read 2026-11-18)."
+        },
+        "blockBinding": {
+          "value": {
+            "beta": "thinking-binding-controls-2026-08-01"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2 — on Fable 5.2 a request that fails the prefix check gets a 400 (\"The block is bound to a different conversation\"); the documented stopgap is the thinking-binding-controls-2026-08-01 beta header with thinking.block_binding.prefix_mismatch_behavior \"drop_block\"."
+        },
+        "perMessageEffort": {
+          "value": {
+            "beta": "mid-conversation-output-config-2026-07-01"
+          },
+          "source": "official-doc",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z",
+          "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/effort-per-message — supportedModels lists claude-fable-5-2; beta header mid-conversation-output-config-2026-07-01; a role:\"system\" message with empty content and output_config.effort (read 2026-11-18)."
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 8,
+          "outputPerMTokUsd": 40,
+          "cacheReadPerMTokUsd": 0.2,
+          "cacheWritePerMTokUsd": 10
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Model pricing table row \"Claude Fable 5.2\": base input $8 / MTok, 5m cache writes $10, 1h cache writes $16, cache hits and refreshes $0.20 (footnote 1: 0.025x the base input price), output $40 (read 2026-11-18); same figures on https://platform.claude.com/docs/en/models/fable-5-2/overview. cacheWritePerMTokUsd records the 5-MINUTE write; the 1-hour write ($16), Batch (-50%), fast mode ($16/$80) and inference_geo us (1.1x) have no field and are NOT folded in.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "unsupportedParameters": [
+        "thinking.type.enabled",
+        "thinking.type.disabled",
+        "tool_choice.any",
+        "tool_choice.tool"
+      ],
+      "status": "candidate",
+      "deferredToolLoading": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool — Model compatibility lists Claude Fable 5.2 (claude-fable-5-2); defer_loading and tool_reference blocks as on the other listed models (read 2026-11-18)."
+      },
+      "midConversationSystem": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — \"Mid-conversation system messages are available on Claude Fable 5.2, Claude Mythos 5.2, Claude Fable 5.1, ...\"; no beta header required (read 2026-11-18)."
+      },
+      "midConversationToolChanges": {
+        "value": {
+          "beta": "mid-conversation-tool-changes-2026-07-01"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages — tool changes by reference are in beta on the same models as mid-conversation system messages, which list Claude Fable 5.2; https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2 names the mid-conversation-tool-changes-2026-07-01 header for them (read 2026-11-18)."
+      },
+      "inlineToolDefinitions": {
+        "value": {
+          "beta": "inline-tools-2026-09-15"
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/whats-new-fable-5-2 — Mid-conversation tool changes (beta): on the Claude API send the inline-tools-2026-09-15 beta header; https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages says that header also covers defining a tool inside a tool_addition block (read 2026-11-18). Claude API only, so set on the anthropic and console providers, never on a cloud reseller."
+      },
+      "assistantPrefill": {
+        "value": false,
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z",
+        "sourceRef": "https://platform.claude.com/docs/en/models/fable-5-2/migration-guide — \"Prefilling the assistant message returns a 400 error, unchanged from Claude Fable 5.1\" (read 2026-11-18)."
+      },
+      "canonicalModelId": "claude-fable-5.2",
+      "modelFamily": "claude",
+      "strength": "strong"
+    },
+    {
       "key": "anthropic/claude-haiku-4-5-20251001",
       "providerId": "anthropic",
       "upstreamId": "claude-haiku-4-5-20251001",
@@ -2525,12 +2746,12 @@
           "inputPerMTokUsd": 2,
           "outputPerMTokUsd": 10,
           "cacheWritePerMTokUsd": 2.5,
-          "cacheReadPerMTokUsd": 0.2
+          "cacheReadPerMTokUsd": 0.1
         },
         "source": "official-doc",
-        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Sonnet 5.5 USD/MTok base input $2, output $10, 5m cache write $2.50, 1h cache write $4, cache hit $0.20 (same as Claude Sonnet 5; confirmed on https://platform.claude.com/docs/en/models/sonnet-5-5/overview).",
+        "sourceRef": "https://platform.claude.com/docs/en/about-claude/pricing — Claude Sonnet 5.5 USD/MTok base input $2, output $10, 5m cache write $2.50, 1h cache write $4, cache hits and refreshes $0.10 (footnote 2: Claude Opus 5.5 and Claude Sonnet 5.5 are priced at 0.05x the base input price; Sonnet 5's $0.20 is the standard 0.1x); same on https://platform.claude.com/docs/en/models/sonnet-5-5/overview (read 2026-11-18).",
         "confidence": "declared",
-        "observedAt": "2026-09-29T00:00:00Z"
+        "observedAt": "2026-11-18T12:00:00Z"
       },
       "unsupportedParameters": [
         "temperature",

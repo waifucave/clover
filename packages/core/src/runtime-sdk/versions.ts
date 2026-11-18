@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.82";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.83";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,12 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.82";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.82 (2026-11-17): a tool the request offers as callable is never refused as "not loaded" after the runtime is
+/** Bumped to 0.0.83 (2026-11-18): reasoning is carried natively across a model or provider switch or left out (the pasted-in
+ *  `<recovered_reasoning>` text, the summary pass and the decoration records are gone; one `portable` line says the new model does
+ *  not see the earlier model's reasoning); a coding agent's `is_error` result is judged by its terminal reason (a provider failure
+ *  rejects the prompt with its text, a refusal ends with stop reason `refusal` and its text once); the catalog: Claude Fable 5.2,
+ *  GPT-6.2 Sol and Astra, Kimi K3.1 Pro, OpenCode Go.
+ *  Earlier: bumped to 0.0.82 (2026-11-17): a tool the request offers as callable is never refused as "not loaded" after the runtime is
  *  reopened on the same session (the load-first gate follows what the request offers); a tool turned off never runs, tested
  *  across reopens.
  *  Earlier: bumped to 0.0.81 (2026-11-17): a tool that goes away and comes back in one session (the person's tool setting, a plugin

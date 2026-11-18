@@ -201,7 +201,7 @@ describe("session.setEffort round-trip RPC (provider-correctness T4)", () => {
     expect(res.error).toBeTruthy();
     expect(res.error.code).toBe(ERR.INVALID_PARAMS);
     expect(res.error.message).toContain("dispatch runs a fixed model");
-    expect(res.error.message).toContain("gpt-5.6-terra");
+    expect(res.error.message).toContain("gpt-6.1-terra");
     expect(res.error.message).toContain("medium");
     expect(store.meta(sessionId).effort).toBeUndefined();
     c.close();

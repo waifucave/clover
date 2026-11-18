@@ -1457,7 +1457,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
       const sid = t.store.createSession("t", { mode: "code", model: "openai/gpt-5.6-sol", approvalPolicy: "ask" });
       const first = await t.drivers.create(sid);
       // No codex-oauth material: the D30 default for an openai session, on openai's own locator.
-      expect(t.q().options.advisor).toEqual({ model: "openai/gpt-6-astra", authRef: expect.objectContaining({ account: "openai:default" }) });
+      expect(t.q().options.advisor).toEqual({ model: "openai/gpt-6.2-astra", authRef: expect.objectContaining({ account: "openai:default" }) });
       expect(t.logs.some((l) => l.includes("runtimes.advisorModel") && l.includes("codex-oauth"))).toBe(true);
       await first.end();
 
@@ -1487,7 +1487,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
     try {
       const fellBack = t.store.createSession("t", { mode: "code", model: "openai/gpt-5.6-sol", approvalPolicy: "ask" });
       await t.drivers.create(fellBack);
-      expect(t.q().options.advisor).toEqual({ model: "openai/gpt-6-astra", authRef: expect.objectContaining({ account: "openai:default" }) });
+      expect(t.q().options.advisor).toEqual({ model: "openai/gpt-6.2-astra", authRef: expect.objectContaining({ account: "openai:default" }) });
       expect(t.drivers.advisorProviderOf?.(fellBack)).toBe("codex-oauth");
 
       // The key arrives: the fell-back child is replaced, and its next incarnation states the pin.
@@ -1543,7 +1543,7 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
       try {
         const sid = t.store.createSession("t", { mode: "code", model: "openai/gpt-5.6-sol", approvalPolicy: "ask" });
         const s = await t.drivers.create(sid);
-        expect({ pin, advisor: t.q().options.advisor }).toEqual({ pin, advisor: { model: "openai/gpt-6-astra", authRef: expect.objectContaining({ account: "openai:default" }) } });
+        expect({ pin, advisor: t.q().options.advisor }).toEqual({ pin, advisor: { model: "openai/gpt-6.2-astra", authRef: expect.objectContaining({ account: "openai:default" }) } });
         expect(t.logs.some((l) => l.includes("runtimes.advisorModel"))).toBe(true);
         await s.end();
       } finally { t.close(); }

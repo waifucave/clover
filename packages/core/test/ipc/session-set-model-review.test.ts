@@ -51,7 +51,7 @@ import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain
 import { renderNoCredentialHint } from "../../src/runtime-sdk/handoff";
 import { daemonResolveEndpoint } from "../../src/providers/registry";
 import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
-import { carriesReasoning, opaqueLeaks, outOfOrder } from "../helpers/carriage";
+import { opaqueLeaks, outOfOrder, reasoningLeaks } from "../helpers/carriage";
 import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
 type AnthropicTurnScript = Parameters<typeof AnthropicFakeModule.anthropicTurnResponse>[0];
@@ -661,14 +661,11 @@ describeWithEmbeddedRuntime("A-7: the LITERAL gpt -> deepseek / deepseek -> GLM 
     await client.call(METHODS.sessionSend, { sessionId, text: "hop 2, on glm" });
     await client.waitFor(() => client.events.filter((x) => x.type === "turn_completed").length >= 3, 90_000);
     expect(zai!.models).toContain("glm-5");
-    // BODY-LEVEL (W18-19): the whole conversation in order, AND DeepSeek's reasoning re-rendered as
-    // data the destination can read — which is exactly why this hop is silent: there is nothing to
-    // warn about when the state carries. GLM is a full-exposed destination, so this takes the
-    // THINKING-CHANNEL door, which renders the labelled plain-text form and no `kind` at all (see
-    // `test/helpers/carriage.ts`).
+    // BODY-LEVEL (W18-19): the whole conversation in order (visible text, in order); DeepSeek's reasoning is NOT in it (SDK 0.0.83).
     const zaiBody = zai!.bodies.at(-1)!;
     expect(outOfOrder(zaiBody, ["hop 0, on gpt", "hello from gpt", "hop 1, on deepseek", "hello from deepseek", "hop 2, on glm"])).toEqual([]);
-    expect(carriesReasoning(zaiBody, { kind: "exposed", provider: "deepseek", text: "thinking about the hop" })).toBe(true);
+    // SDK 0.0.83: DeepSeek's reasoning is not native to GLM, so it is left out of the request (no text, no tag, no prefix).
+    expect(reasoningLeaks(zaiBody, ["thinking about the hop"])).toEqual([]);
     expect(opaqueLeaks(zaiBody)).toEqual([]);
 
     rmSync(cwd, { recursive: true, force: true });

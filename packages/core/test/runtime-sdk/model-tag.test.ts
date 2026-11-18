@@ -74,7 +74,7 @@ describe("modelTagIsKnown", () => {
 describe("canonicalizeModelTag", () => {
   test("a facing-name request resolves to its provider's real catalog row key", () => {
     expect(canonicalizeModelTag("anthropic/sonnet")).toBe(tag("anthropic/claude-sonnet-5-5"));
-    expect(canonicalizeModelTag("codex-oauth/terra")).toBe(tag("codex-oauth/gpt-5.6-terra"));
+    expect(canonicalizeModelTag("codex-oauth/terra")).toBe(tag("codex-oauth/gpt-6.1-terra"));
   });
   test("case-insensitive slot-name matching", () => {
     expect(canonicalizeModelTag("anthropic/Sonnet")).toBe(tag("anthropic/claude-sonnet-5-5"));
@@ -105,11 +105,12 @@ describe("canonicalizeModelTag", () => {
 });
 describe("slots", () => {
   test("terra maps to one tag per serving provider; a provider that does not serve it yields undefined", () => {
-    expect(tagsForSlot("terra")).toContain(tag("codex-oauth/gpt-5.6-terra"));
-    expect(tagsForSlot("terra")).toContain(tag("openai/gpt-5.6-terra"));
-    expect(facingNameToTag("codex-oauth", "terra")).toBe(tag("codex-oauth/gpt-5.6-terra"));
+    expect(tagsForSlot("terra")).toContain(tag("codex-oauth/gpt-6.1-terra"));
+    expect(tagsForSlot("terra")).toContain(tag("openai/gpt-6.1-terra"));
+    expect(facingNameToTag("codex-oauth", "terra")).toBe(tag("codex-oauth/gpt-6.1-terra"));
     expect(facingNameToTag("deepseek", "terra")).toBeUndefined();
-    expect(facingNameOf("codex-oauth/gpt-5.6-terra" as never)).toBe("terra");
+    expect(facingNameOf("codex-oauth/gpt-6.1-terra" as never)).toBe("terra");
+    expect(facingNameOf("codex-oauth/gpt-5.6-terra" as never)).toBeUndefined(); // SDK 0.0.83: the slot moved off it (still a catalog row)
     expect(facingNameOf("openai/gpt-5.6" as never)).toBeUndefined();
   });
   test("console serves the claude slots", () => {

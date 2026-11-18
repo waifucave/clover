@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "OpenCode Go (OpenAI dialect)",
+  "description": "OpenCode Go (OpenAI dialect)'s models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "opencode-go",
+        "name": "OpenCode Go (OpenAI dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your OpenCode Go (OpenAI dialect) API key. MOSS keeps it in your credential store and adds it to OpenCode Go (OpenAI dialect)'s requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://opencode.ai/inference/go/openai/v1"
+        }
+      }
+    ]
+  }
+}

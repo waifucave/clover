@@ -131,7 +131,8 @@ describe("a session's bridge server keeps its name across a restart", () => {
     await waitFor(() => w.report("session").length >= 2, "the agent's second session");
     const second = bridgeNameOf(w, 1);
     expect(second).toMatch(BRIDGE_NAME_RE);
-    expect(readAgentRecord(w.mossHome, r.sessionId)?.bridge).toBe(second);
+    // The manager writes the name once the agent's session is open: wait for it (the forged one is on disk until then).
+    await waitFor(() => readAgentRecord(w.mossHome, r.sessionId)?.bridge === second, "the record to hold the new name");
     await host.stop(r.sessionId);
   });
 });

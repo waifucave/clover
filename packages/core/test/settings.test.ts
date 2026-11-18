@@ -1641,11 +1641,11 @@ describe("WS-20: provider.model is a tag", () => {
 
 describe("WS-20: pinsFor", () => {
   test("pins default from the provider tag's provider, per slot", () => {
-    // SDK 0.0.23: the `gpt` family's `luna` slot moved to GPT-6 Luna (user ruling 2026-09-25); `terra` did not move.
+    // SDK 0.0.23: the `gpt` family's `luna` slot moved to GPT-6 Luna (user ruling 2026-09-25); `terra` did not move. SDK 0.0.83: the `terra` slot moved to GPT-6.1 Terra.
     const s = Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } });
-    expect(pinsFor(s)).toEqual({ dispatch: tag("codex-oauth/gpt-5.6-terra"), dream: tag("codex-oauth/gpt-5.6-terra"), cleaner: tag("codex-oauth/gpt-5.6-terra"), research: tag("codex-oauth/gpt-6-luna"), researchFallback: tag("codex-oauth/gpt-5.6-terra") });
+    expect(pinsFor(s)).toEqual({ dispatch: tag("codex-oauth/gpt-6.1-terra"), dream: tag("codex-oauth/gpt-6.1-terra"), cleaner: tag("codex-oauth/gpt-6.1-terra"), research: tag("codex-oauth/gpt-6-luna"), researchFallback: tag("codex-oauth/gpt-6.1-terra") });
     const o = Settings.parse({ schemaVersion: 3, provider: { model: "openai/gpt-5.6-sol" }, pins: { research: "openai/gpt-5.6-luna" } });
-    expect(pinsFor(o).dispatch).toBe(tag("openai/gpt-5.6-terra"));
+    expect(pinsFor(o).dispatch).toBe(tag("openai/gpt-6.1-terra"));
     expect(pinsFor(o).research).toBe(tag("openai/gpt-5.6-luna")); // explicit override wins
   });
 

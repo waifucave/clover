@@ -67,7 +67,8 @@ describe("checkPrintModelOffline — the checks that need no daemon", () => {
   });
 
   test("a facing name within a chosen provider resolves to its row, as the daemon does", () => {
-    expect(checkPrintModelOffline("codex-oauth/terra")).toEqual({ ok: true, model: { tag: TERRA, catalogRow: true } });
+    // SDK 0.0.83: the `terra` slot moved to GPT-6.1 Terra.
+    expect(checkPrintModelOffline("codex-oauth/terra")).toEqual({ ok: true, model: { tag: "codex-oauth/gpt-6.1-terra", catalogRow: true } });
   });
 
   test("a bare (unqualified) id is refused, naming the tag and pointing at `moss model`", () => {

@@ -188,7 +188,7 @@ describe("session.setModel round-trip RPC (Chat Slice D task 1)", () => {
     expect(res.error).toBeTruthy();
     expect(res.error.code).toBe(ERR.INVALID_PARAMS);
     expect(res.error.message).toContain("dispatch runs a fixed model");
-    expect(res.error.message).toContain("gpt-5.6-terra");
+    expect(res.error.message).toContain("gpt-6.1-terra");
     expect(res.error.message).toContain("medium");
     expect(store.meta(sessionId).model).toBeUndefined();
     c.close();
@@ -396,13 +396,13 @@ describe("session.create validates model exactly like session.setModel (WS-20: t
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "creator");
 
-    const res = await c.request(METHODS.sessionCreate, { scope: "global", model: "codex-oauth/gpt-5.6-terra" });
+    const res = await c.request(METHODS.sessionCreate, { scope: "global", model: "codex-oauth/gpt-6.1-terra" });
     expect(res.error).toBeUndefined();
-    expect(store.meta(res.result.sessionId).model).toBe("codex-oauth/gpt-5.6-terra");
+    expect(store.meta(res.result.sessionId).model).toBe("codex-oauth/gpt-6.1-terra");
 
     const listed = await c.request(METHODS.sessionList, {});
     const row = listed.result.sessions.find((s: any) => s.sessionId === res.result.sessionId);
-    expect(row.model).toBe("codex-oauth/gpt-5.6-terra");
+    expect(row.model).toBe("codex-oauth/gpt-6.1-terra");
     c.close();
   });
 

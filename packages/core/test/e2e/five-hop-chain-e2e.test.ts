@@ -67,7 +67,7 @@ import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { ANTHROPIC_CREDENTIAL_SECRET_NAME } from "../../src/runtime-sdk/keychain";
 import { daemonResolveEndpoint } from "../../src/providers/registry";
 import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
-import { carriesReasoning, opaqueLeaks, outOfOrder } from "../helpers/carriage";
+import { opaqueLeaks, outOfOrder, reasoningLeaks } from "../helpers/carriage";
 import type { anthropicFake as AnthropicFakeModule } from "@waifucave/clover-provider-conformance";
 
 type AnthropicTurnScript = Parameters<typeof AnthropicFakeModule.anthropicTurnResponse>[0];
@@ -326,9 +326,10 @@ describeWithEmbeddedRuntime("A-5 part 2: the chain's LAST hop (gpt -> claude) is
 //   (c) NO OPAQUE STATE crosses — no `signature`, `encrypted_content` or `redacted_thinking` in the
 //       conversation, and the Claude turn's own scripted signature value appears in no body at all.
 //
-// The carriage TAG's form is per-adapter and is MEASURED, not assumed — see `test/helpers/carriage.ts`
-// for both renderings and why asserting only the angle-bracket one would have made every
-// chat-completions hop read as a defect.
+// SDK 0.0.83 (the owner's rule: "when reasoning cant be carried natively across models and providers we just remove it"):
+// an earlier model's reasoning is sent only where the destination takes it natively (the same model on the same provider),
+// so no hop's request holds another model's reasoning, tag or labelled prefix (`reasoningLeaks`, test/helpers/carriage.ts).
+// The visible text of every turn still carries, in order; Claude's own signed thinking comes back to Claude at hop 4.
 //
 // ── A W18-19 ROW-4 CONTINUITY FINDING, MEASURED 2026-09-15 (review N4) — CLOSED BY WS-23 ─────────
 // (On the MOSS runtime the Claude destination replays hop 0's thinking natively, signature and all;
@@ -474,11 +475,9 @@ describeWithEmbeddedRuntime("A-5 part 3: claude -> deepseek -> GLM -> gpt -> cla
       expect(deepseek!.models).toContain("deepseek-v4-pro");
       const deepseekBody = deepseek!.bodies.at(-1)!;
       expect(outOfOrder(deepseekBody, ["hop 0, on claude", "hello from claude", "hop 1, on deepseek"])).toEqual([]);
-      // (b) the Claude turn's thinking, carried as data with its own provenance — the readable part of
-      // it, as the capped decoration WS-23 keeps (decision 2). DeepSeek is
-      // full-exposed, so this hop takes the THINKING-CHANNEL door, which renders no `kind`: the
-      // `kind` half of W18-19's table is proven on hop 3, whose destination takes the tag door.
-      expect(carriesReasoning(deepseekBody, { kind: "summary", provider: "anthropic", text: CLAUDE_THINKING })).toBe(true);
+      // (b) SDK 0.0.83, the owner's rule: Claude's reasoning cannot be carried natively to DeepSeek, so it is left out. The
+      // request holds none of it (no text, no tag, no labelled prefix); the visible text and the order above carry.
+      expect(reasoningLeaks(deepseekBody, [CLAUDE_THINKING])).toEqual([]);
       // (c) ...and the signature that made it opaque stays behind.
       expect(opaqueLeaks(deepseekBody, [CLAUDE_SIGNATURE])).toEqual([]);
 
@@ -489,11 +488,9 @@ describeWithEmbeddedRuntime("A-5 part 3: claude -> deepseek -> GLM -> gpt -> cla
       expect(glm!.models).toContain("glm-5");
       const glmBody = glm!.bodies.at(-1)!;
       expect(outOfOrder(glmBody, ["hop 0, on claude", "hello from claude", "hop 1, on deepseek", "hello from deepseek", "hop 2, on glm"])).toEqual([]);
-      // BOTH prior models' reasoning is still travelling — the chain accumulates, it does not
-      // replace, which is what "keeps one conversation" means five hops in. GLM is full-exposed too,
-      // so this is the thinking-channel door again and carries no `kind`.
-      expect(carriesReasoning(glmBody, { kind: "summary", provider: "anthropic", text: CLAUDE_THINKING })).toBe(true);
-      expect(carriesReasoning(glmBody, { kind: "exposed", provider: "deepseek", text: "reasoning on the deepseek hop" })).toBe(true);
+      // Neither earlier model's reasoning travels to GLM (0.0.83): it is not native to GLM, so it is left out. The
+      // conversation (the visible text of every hop, in order) is what "keeps one conversation" means now.
+      expect(reasoningLeaks(glmBody, [CLAUDE_THINKING, "reasoning on the deepseek hop"])).toEqual([]);
       expect(opaqueLeaks(glmBody, [CLAUDE_SIGNATURE])).toEqual([]);
 
       // HOP 3 — GLM -> gpt. Still SILENT: the exposed state carries as a tag on a hidden-reasoning
@@ -505,12 +502,9 @@ describeWithEmbeddedRuntime("A-5 part 3: claude -> deepseek -> GLM -> gpt -> cla
       expect(gptRequests.length).toBeGreaterThan(0);
       const gptBody = gptRequests.at(-1)!.body;
       expect(outOfOrder(gptBody, ["hop 0, on claude", "hello from claude", "hop 1, on deepseek", "hello from deepseek", "hop 2, on glm", "hello from glm", "hop 3, on gpt"])).toEqual([]);
-      // THE LITERAL W18-19 TAG: `openai` rides the `openai-responses` adapter, which renders the
-      // angle-bracket form — all THREE prior models, each with its own kind and provenance.
-      expect(gptBody).toContain(`<recovered_reasoning kind=\\"summary\\" provider=\\"anthropic\\"`);
-      expect(gptBody).toContain(`<recovered_reasoning kind=\\"exposed\\" provider=\\"deepseek\\"`);
-      expect(gptBody).toContain(`<recovered_reasoning kind=\\"exposed\\" provider=\\"zai\\"`);
-      expect(carriesReasoning(gptBody, { kind: "exposed", provider: "zai", text: "reasoning on the glm hop" })).toBe(true);
+      // 0.0.83: no `<recovered_reasoning>` tag any more, and none of the three earlier models' reasoning (Claude's,
+      // DeepSeek's, GLM's) reaches `openai`: none of it is native to it.
+      expect(reasoningLeaks(gptBody, [CLAUDE_THINKING, "reasoning on the deepseek hop", "reasoning on the glm hop"])).toEqual([]);
       expect(opaqueLeaks(gptBody, [CLAUDE_SIGNATURE])).toEqual([]);
 
       // HOP 4 — gpt -> claude. WS-23: SILENT, like every hop before it (part 2 measures the same
@@ -532,12 +526,9 @@ describeWithEmbeddedRuntime("A-5 part 3: claude -> deepseek -> GLM -> gpt -> cla
       // was the retired official leg's; the MOSS runtime's Anthropic adapter closes it. Pinned as
       // carried, so a regression has to come here and say so.
       expect(claudeBody).toContain(`{"type":"thinking","thinking":"${CLAUDE_THINKING}","signature":"${CLAUDE_SIGNATURE}"}`);
-      // THE TAG DOOR, all three prior families: GPT is hidden-reasoning, so its readable SUMMARY is
-      // what carries (`kind="summary"`); DeepSeek and GLM are full-exposed sources, so theirs carry
-      // as `kind="exposed"`.
-      expect(carriesReasoning(claudeBody, { kind: "summary", provider: "openai", text: GPT_SUMMARY })).toBe(true);
-      expect(carriesReasoning(claudeBody, { kind: "exposed", provider: "deepseek", text: "reasoning on the deepseek hop" })).toBe(true);
-      expect(carriesReasoning(claudeBody, { kind: "exposed", provider: "zai", text: "reasoning on the glm hop" })).toBe(true);
+      // 0.0.83: the three FOREIGN families' reasoning (GPT's readable summary, DeepSeek's, GLM's) is not native to Claude
+      // and is left out: no text, no tag, no labelled prefix. Only Claude's own, above, comes back.
+      expect(reasoningLeaks(claudeBody, [GPT_SUMMARY, "reasoning on the deepseek hop", "reasoning on the glm hop"])).toEqual([]);
       // ...and GPT's OPAQUE half stays behind. `encrypted_content` is what the Responses leg calls
       // it and `itemJson` is what MOSS's own `reasoning_item` calls it; neither the field names nor
       // the blob itself may cross a family boundary.

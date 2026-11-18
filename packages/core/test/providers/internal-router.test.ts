@@ -140,7 +140,7 @@ describe("a DeepSeek default with a Codex OAuth login", () => {
     expect(isInternalRefusal(call)).toBe(false);
     if (isInternalRefusal(call)) return;
     expect(call.providerId).toBe("codex-oauth");
-    expect(String(call.tag)).toBe("codex-oauth/gpt-5.6-terra");
+    expect(String(call.tag)).toBe("codex-oauth/gpt-6.1-terra");
   });
 });
 
@@ -319,7 +319,7 @@ describe("roles split across two credentialed providers", () => {
     const router = await routerFor(secrets);
     const settings = settingsWith("codex-oauth/gpt-5.6-sol", {
       titles: { model: "openai/gpt-5.6-luna" },
-      pins: { dream: "codex-oauth/gpt-5.6-terra" },
+      pins: { dream: "codex-oauth/gpt-6.1-terra" },
     });
     const titles = router.resolve("titles.model", settings);
     const dream = router.resolve("pins.dream", settings);
@@ -414,7 +414,7 @@ describe("hot transitions", () => {
     if (!isInternalRefusal(first)) expect(first.providerId).toBe("deepseek");
     if (!isInternalRefusal(second)) expect(second.providerId).toBe("openai");
     // `openai`'s terra row, not the user's luna default: the family slot wins when the provider has one.
-    if (!isInternalRefusal(second)) expect(String(second.tag)).toBe("openai/gpt-5.6-terra");
+    if (!isInternalRefusal(second)) expect(String(second.tag)).toBe("openai/gpt-6.1-terra");
   });
 
   test("changing a role pin moves that role alone on the next call", async () => {
@@ -423,7 +423,7 @@ describe("hot transitions", () => {
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-openai" });
     const router = await routerFor(secrets);
     const base = settingsWith("deepseek/deepseek-flash");
-    const pinned = setModelRole(base, "pins.dream", "openai/gpt-5.6-terra");
+    const pinned = setModelRole(base, "pins.dream", "openai/gpt-6.1-terra");
     const dream = router.resolve("pins.dream", pinned);
     const titles = router.resolve("titles.model", pinned);
     if (!isInternalRefusal(dream)) expect(dream.providerId).toBe("openai");
@@ -462,13 +462,13 @@ describe("hot transitions", () => {
 describe("codex-oauth and openai still work over their own loopback fakes", () => {
   test("codex-oauth", async () => {
     const fake = await codexFake.startCodexFake({
-      scenarios: { "gpt-5.6-terra": [openaiResponsesFake.responsesStream({ text: ["Codex Title"] })] },
+      scenarios: { "gpt-6.1-terra": [openaiResponsesFake.responsesStream({ text: ["Codex Title"] })] },
     });
     try {
       const secrets = secretsStore();
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.codexOauth, { kind: "oauth", accessToken: "at", refreshToken: "rt", expiresAt: Date.now() + 3_600_000 });
       const router = await routerFor(secrets, { testBackendUrl: (id) => (id === "codex-oauth" ? fake.url : undefined) });
-      const call = router.resolve("titles.model", settingsWith("codex-oauth/gpt-5.6-terra"));
+      const call = router.resolve("titles.model", settingsWith("codex-oauth/gpt-6.1-terra"));
       if (isInternalRefusal(call)) throw new Error(`refused: ${call.reason} ${call.detail}`);
       const out: string[] = [];
       for await (const ev of call.provider.streamTurn({ model: call.model, instructions: "t", input: [{ type: "message", role: "user", content: "hi" }], tools: [], ...(call.effort ? { reasoningEffort: call.effort } : {}) })) {
@@ -482,7 +482,7 @@ describe("codex-oauth and openai still work over their own loopback fakes", () =
   });
 
   test("openai", async () => {
-    const model = "gpt-5.6-terra";
+    const model = "gpt-6.1-terra";
     const fake = await openaiResponsesFake.startOpenAiResponsesFake({
       scenarios: { [model]: [openaiResponsesFake.responsesStream({ text: ["OpenAI Title"] })] },
     });
@@ -506,7 +506,7 @@ describe("codex-oauth and openai still work over their own loopback fakes", () =
 
 describe("a user-entered providers.<id>.baseUrl", () => {
   test("keeps MOSS's historically unrestricted BYO-endpoint behaviour — a loopback override streams", async () => {
-    const model = "gpt-5.6-terra";
+    const model = "gpt-6.1-terra";
     const fake = await openaiResponsesFake.startOpenAiResponsesFake({
       scenarios: { [model]: [openaiResponsesFake.responsesStream({ text: ["Local Title"] })] },
     });
@@ -626,7 +626,7 @@ describe("M-1 / D2 follow-up (2026-09-22): an explicit effort of `none`", () => 
     const secrets = secretsStore();
     await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.codexOauth, { kind: "oauth", accessToken: "at" });
     const router = await routerFor(secrets);
-    // `codex-oauth/gpt-5.6-terra`'s vocabulary is [low, medium, high, xhigh, max] — no `"none"`, so
+    // `codex-oauth/gpt-6.1-terra`'s vocabulary is [low, medium, high, xhigh, max] — no `"none"`, so
     // `implicitEffortFor` would MISS and fall through to the row's defaultEffort, `"medium"` — an
     // ESCALATION past what a role asking for `"none"` (for speed) wanted. The rule sends the row's
     // lowest declared tier ("low") instead: less reasoning than the escalation, never more, and never
@@ -700,10 +700,10 @@ describe("M-1 / D2 follow-up (2026-09-22): an explicit effort of `none`", () => 
   test("the static test double runs the SAME effort rule production does", () => {
     const view = staticInternalProviderView(["codex-oauth"]);
     const fake: Provider = { id: "fake", models: () => [], streamTurn: () => (async function* () {})() };
-    const router = staticInternalRouter({ view, provider: fake, model: "gpt-5.6-terra", tag: "codex-oauth/gpt-5.6-terra" as never });
+    const router = staticInternalRouter({ view, provider: fake, model: "gpt-6.1-terra", tag: "codex-oauth/gpt-6.1-terra" as never });
     const none = router.resolve("pins.dream", settingsWith("codex-oauth/gpt-5.6-sol", { roleEfforts: { "pins.dream": "none" } }));
     if (isInternalRefusal(none)) throw new Error("expected a live call");
-    expect(none.effort).toBe("low"); // gpt-5.6-terra's own lowest declared tier, not the provider's "medium" default
+    expect(none.effort).toBe("low"); // gpt-6.1-terra's own lowest declared tier, not the provider's "medium" default
     // …and the dreamer's own unmappable constant ("medium", not in this row's vocabulary at all) is still
     // dropped on a deepseek row here — never escalated onto its heavier `high` default (R.1 controller
     // ruling) — unaffected by the `"none"` rule above, since "medium" is never `"none"`.
@@ -721,7 +721,7 @@ describe("M-2: one quota ledger per provider", () => {
     await writeCredentialMaterial(secrets, "deepseek:default", { kind: "api-key", key: "sk-deepseek" });
     const router = await routerFor(secrets);
     const settings = settingsWith("codex-oauth/gpt-5.6-sol", {
-      titles: { model: "codex-oauth/gpt-5.6-terra" },
+      titles: { model: "codex-oauth/gpt-6.1-terra" },
       pins: { dream: "deepseek/deepseek-flash" },
     });
     const codex = router.resolve("titles.model", settings);
@@ -788,7 +788,7 @@ describe("M-3: MOSS never guesses a model on a provider the user did not choose"
     const call = router.resolve("pins.cleaner", settingsWith("anthropic/claude-fable-1"));
     if (isInternalRefusal(call)) throw new Error(`refused: ${call.reason}`);
     expect(call.providerId).toBe("openai");
-    expect(String(call.tag)).toBe("openai/gpt-5.6-terra");
+    expect(String(call.tag)).toBe("openai/gpt-6.1-terra");
   });
 
   test("no-default-model when a third-party key is the ONLY one and it IS the session default's sibling", async () => {
@@ -822,7 +822,7 @@ describe("the reviewer's pin fallback", () => {
     expect(isInternalRefusal(call)).toBe(false);
     if (isInternalRefusal(call)) return;
     expect(call.providerId).toBe("codex-oauth");
-    expect(String(call.tag)).toBe("codex-oauth/gpt-5.6-terra");
+    expect(String(call.tag)).toBe("codex-oauth/gpt-6.1-terra");
     // The pin's issue rides along so the wire can still report it.
     expect(call.pinRefusal?.reason).toBe("no-credential");
     expect(call.pinRefusal?.detail).toBe("no credential is stored for DeepSeek");
@@ -836,7 +836,7 @@ describe("the reviewer's pin fallback", () => {
     const call = router.resolve("reviewer.model", settings, { fallbackToDefault: true });
     expect(isInternalRefusal(call)).toBe(false);
     if (isInternalRefusal(call)) return;
-    expect(String(call.tag)).toBe("codex-oauth/gpt-5.6-terra");
+    expect(String(call.tag)).toBe("codex-oauth/gpt-6.1-terra");
     expect(call.pinRefusal?.reason).toBe("provider-unsupported");
     expect(call.pinRefusal?.detail).toBe("AWS Bedrock can't be used for MOSS's own jobs yet");
   });
@@ -919,7 +919,7 @@ describe("R.1 ruling 1: a tag with no catalog row is an unrunnable pin", () => {
     const settings = pinnedEverywhere(settingsWith("codex-oauth/gpt-5.6-sol"));
     const call = router.resolve("reviewer.model", settings, { fallbackToDefault: true });
     if (isInternalRefusal(call)) throw new Error(`expected a live call, got ${call.reason}`);
-    expect(String(call.tag)).toBe("codex-oauth/gpt-5.6-terra");
+    expect(String(call.tag)).toBe("codex-oauth/gpt-6.1-terra");
     expect(call.pinRefusal?.reason).toBe("model-not-in-catalog");
     expect(String(call.pinRefusal?.tag)).toBe(RETIRED);
   });
@@ -948,7 +948,7 @@ describe("R.1 ruling 1: a tag with no catalog row is an unrunnable pin", () => {
       expect(roles[role].problem?.reason).toBe("model-not-in-catalog");
       expect(roles[role].problem?.model).toBe(RETIRED);
     }
-    expect(roles["reviewer.model"].problem?.detail).toContain("— reviewing on codex-oauth/gpt-5.6-terra meanwhile");
+    expect(roles["reviewer.model"].problem?.detail).toContain("— reviewing on codex-oauth/gpt-6.1-terra meanwhile");
     // …and the session-facing overlay leaves that detail alone rather than replacing it.
     expect(catalogRoleProblemsFor(roles)["reviewer.model"].problem?.detail).toContain("meanwhile");
   });

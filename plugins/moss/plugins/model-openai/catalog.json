@@ -322,7 +322,7 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "unsupportedParameters": [],
-      "status": "candidate",
+      "status": "deprecated",
       "promptCacheKey": {
         "value": true,
         "source": "official-doc",
@@ -3265,12 +3265,21 @@
           "inputPerMTokUsd": 10,
           "outputPerMTokUsd": 50,
           "cacheReadPerMTokUsd": 1,
-          "cacheWritePerMTokUsd": 12.5
+          "cacheWritePerMTokUsd": 12.5,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 272001,
+              "inputPerMTokUsd": 20,
+              "outputPerMTokUsd": 75,
+              "cacheReadPerMTokUsd": 2,
+              "cacheWritePerMTokUsd": 25
+            }
+          ]
         },
         "source": "official-doc",
-        "sourceRef": "https://developers.openai.com/api/docs/pricing — gpt-6-astra, standard tier, short context: input $10.00, cached input $1.00, cache writes $12.50, output $50.00 per 1M tokens (retrieved 2026-09-06). Long context: $20.00 / $2.00 / $25.00 / $75.00. Unlike GPT-4.1, this model DOES publish a cache-write rate, so the key is set.",
+        "sourceRef": "https://developers.openai.com/api/docs/pricing — gpt-6-astra, standard tier, short context: input $10.00, cached input $1.00, cache writes $12.50, output $50.00 per 1M tokens (retrieved 2026-09-06). Long context: $20.00 / $2.00 / $25.00 / $75.00. Unlike GPT-4.1, this model DOES publish a cache-write rate, so the key is set. 2026-11-18: https://developers.openai.com/api/docs/models/gpt-6-astra.md — \"Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request\" recorded as one longContextTiers entry (minPromptTokens 272001; cache-write doubled with the other cache rates).",
         "confidence": "declared",
-        "observedAt": "2026-09-06T00:00:00Z"
+        "observedAt": "2026-11-18T12:00:00Z"
       },
       "unsupportedParameters": [],
       "status": "candidate",
@@ -3454,12 +3463,21 @@
           "inputPerMTokUsd": 0.1,
           "outputPerMTokUsd": 0.5,
           "cacheReadPerMTokUsd": 0.01,
-          "cacheWritePerMTokUsd": 0.125
+          "cacheWritePerMTokUsd": 0.125,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 272001,
+              "inputPerMTokUsd": 0.2,
+              "outputPerMTokUsd": 0.75,
+              "cacheReadPerMTokUsd": 0.02,
+              "cacheWritePerMTokUsd": 0.25
+            }
+          ]
         },
         "source": "official-doc",
-        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6-luna — gpt-6-luna standard short-context USD/MTok table: input $0.1, output $0.5, cached input $0.01, cache writes $0.125. - Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request.",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6-luna — gpt-6-luna standard short-context USD/MTok table: input $0.1, output $0.5, cached input $0.01, cache writes $0.125. - Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request. 2026-11-18: https://developers.openai.com/api/docs/models/gpt-6-luna.md — \"Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request\" recorded as one longContextTiers entry (minPromptTokens 272001; cache-write doubled with the other cache rates).",
         "confidence": "declared",
-        "observedAt": "2026-09-25T10:21:48Z"
+        "observedAt": "2026-11-18T12:00:00Z"
       },
       "unsupportedParameters": [],
       "status": "candidate",
@@ -3643,12 +3661,21 @@
           "inputPerMTokUsd": 2,
           "outputPerMTokUsd": 10,
           "cacheReadPerMTokUsd": 0.2,
-          "cacheWritePerMTokUsd": 2.5
+          "cacheWritePerMTokUsd": 2.5,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 272001,
+              "inputPerMTokUsd": 4,
+              "outputPerMTokUsd": 15,
+              "cacheReadPerMTokUsd": 0.4,
+              "cacheWritePerMTokUsd": 5
+            }
+          ]
         },
         "source": "official-doc",
-        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6-sol — gpt-6-sol standard short-context USD/MTok table: input $2, output $10, cached input $0.2, cache writes $2.5. - Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request.",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6-sol — gpt-6-sol standard short-context USD/MTok table: input $2, output $10, cached input $0.2, cache writes $2.5. - Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request. 2026-11-18: https://developers.openai.com/api/docs/models/gpt-6-sol.md — \"Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request\" recorded as one longContextTiers entry (minPromptTokens 272001; cache-write doubled with the other cache rates).",
         "confidence": "declared",
-        "observedAt": "2026-09-25T10:21:48Z"
+        "observedAt": "2026-11-18T12:00:00Z"
       },
       "unsupportedParameters": [],
       "status": "candidate",
@@ -3831,12 +3858,21 @@
           "inputPerMTokUsd": 2,
           "outputPerMTokUsd": 10,
           "cacheReadPerMTokUsd": 0.1,
-          "cacheWritePerMTokUsd": 2.5
+          "cacheWritePerMTokUsd": 2.5,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 272001,
+              "inputPerMTokUsd": 4,
+              "outputPerMTokUsd": 15,
+              "cacheReadPerMTokUsd": 0.2,
+              "cacheWritePerMTokUsd": 5
+            }
+          ]
         },
         "source": "official-doc",
-        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.1-sol — gpt-6.1-sol standard short-context USD/MTok table: input $2, cached input $0.1, cache writes $2.5, output $10; \"Cached input tokens are priced at 5% of the uncached input token rate\" (https://developers.openai.com/api/docs/guides/prompt-caching: reads cost \"0.05× on GPT-6.1 Sol\" — the 0.1 is not a typo for gpt-6-sol's 0.2). - Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request.",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.1-sol — gpt-6.1-sol standard short-context USD/MTok table: input $2, cached input $0.1, cache writes $2.5, output $10; \"Cached input tokens are priced at 5% of the uncached input token rate\" (https://developers.openai.com/api/docs/guides/prompt-caching: reads cost \"0.05× on GPT-6.1 Sol\" — the 0.1 is not a typo for gpt-6-sol's 0.2). - Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request. 2026-11-18: https://developers.openai.com/api/docs/models/gpt-6.1-sol.md — \"Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request\" recorded as one longContextTiers entry (minPromptTokens 272001; cache-write doubled with the other cache rates).",
         "confidence": "declared",
-        "observedAt": "2026-10-07T09:00:00Z"
+        "observedAt": "2026-11-18T12:00:00Z"
       },
       "unsupportedParameters": [
         "prediction"
@@ -4085,6 +4121,418 @@
         "observedAt": "2026-10-29T12:00:00Z"
       },
       "canonicalModelId": "gpt-6.1-terra",
+      "modelFamily": "gpt",
+      "strength": "strong"
+    },
+    {
+      "key": "openai/gpt-6.2-astra",
+      "providerId": "openai",
+      "upstreamId": "gpt-6.2-astra",
+      "displayName": "GPT-6.2 Astra",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — 1,050,000 token context window.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxInputTokens": {
+        "value": 922000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — maximum input tokens 922,000.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — maximum output tokens 128,000.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — accepts text and image input; audio and video are unsupported.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — text output.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — function calling supported; https://developers.openai.com/api/docs/guides/latest-model — \"tool calling requires Responses\".",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — function_calling listed under supported features; Responses tools: web search, file search, image generation, code interpreter, hosted shell, apply patch, skills, computer use, MCP, tool search.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — structured outputs listed under supported features.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — prompt caching listed under supported features.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — \"The API rejects requests that set reasoning effort to `none`.\"; reasoning tokens supported. The page lists no other efforts and no default; see the row note (levels inferred from the Codex list, https://developers.openai.com/api/docs/guides/reasoning says supported values are model-dependent).",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "openai/gpt-6.2-astra"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model.  WS-13 §8.2: \"OpenAI-compatible\" is never the capability test, so this key shares NO domain with any other row (not even openai/gpt-6-sol).",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "perMessageEffort": {
+          "value": {
+            "item": "configuration_update"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://developers.openai.com/api/docs/guides/reasoning — configuration_update is \"supported on GPT-6 and later models in standard, single-agent mode\"; it changes only reasoning effort (read 2026-11-18). NOT set on the codex-oauth row (probe-gated there, as on every codex row).",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 8,
+          "outputPerMTokUsd": 40,
+          "cacheReadPerMTokUsd": 0.4,
+          "cacheWritePerMTokUsd": 10,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 272001,
+              "inputPerMTokUsd": 16,
+              "outputPerMTokUsd": 60,
+              "cacheReadPerMTokUsd": 0.8,
+              "cacheWritePerMTokUsd": 20
+            }
+          ]
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-astra — Standard short-context USD/MTok: input $8, cached input $0.4, cache writes $10 (30-minute retention; 12-hour retention is $20, which the single cache-write field cannot carry), output $40. \"Requests over 272K input tokens: input and cache rates double, and output is 1.5x the short-context rate for the full request\" -> tier input $16, cache read $0.8, cache write $20, output $60 (read 2026-11-18)."
+      },
+      "unsupportedParameters": [
+        "prediction"
+      ],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/prompt-caching — the Responses API takes prompt_cache_key: \"A supplied prompt_cache_key, which separates cache reuse between groups of requests and helps optimize cache routing on models before GPT-5.6\" — on GPT-5.6+ (this model) routing is automatic and the key is kept for separate cache accounting (read 2026-10-07).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/tools-tool-search — \"In the Responses API, only gpt-5.4 and later models support tool_search\" (read 2026-10-07); https://developers.openai.com/api/docs/models/gpt-6.2-astra lists tool search among its tools (read 2026-11-18).",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "additionalToolsItem": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/tools-tool-search — \"you can use an additional_tools input item to make tools available at a specific point in the conversation\" (read 2026-10-07). The page names no model list, so it is set on the rows the same page documents tool_search for (GPT-5.4 and later), as on openai/gpt-6-sol.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "allowedToolsChoice": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[…]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\" (read 2026-10-07). No model list on the page; set on the same GPT-5.4+ rows.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — \"On supported models beginning with GPT-5, functions can be called in parallel when built-in tools are also available … You can prevent this by setting parallel_tool_calls to false\" (read 2026-10-07); the Responses adapter already sends parallel_tool_calls: true unless this is false.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "canonicalModelId": "gpt-6.2-astra",
+      "modelFamily": "gpt",
+      "strength": "strong"
+    },
+    {
+      "key": "openai/gpt-6.2-sol",
+      "providerId": "openai",
+      "upstreamId": "gpt-6.2-sol",
+      "displayName": "GPT-6.2 Sol",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — 1,050,000 token context window.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxInputTokens": {
+        "value": 922000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — maximum input tokens 922,000.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — maximum output tokens 128,000.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — accepts text and image input; audio and video are unsupported.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — text output.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — function calling supported; https://developers.openai.com/api/docs/guides/latest-model — \"tool calling requires Responses\".",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — function_calling listed under supported features; Responses tools: web search, file search, image generation, code interpreter, hosted shell, apply patch, skills, computer use, MCP, tool search.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — structured outputs listed under supported features.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — prompt caching listed under supported features.",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — \"The API rejects requests that set reasoning effort to `none`.\"; reasoning tokens supported. The page lists no other efforts and no default; see the row note (levels inferred from the Codex list, https://developers.openai.com/api/docs/guides/reasoning says supported values are model-dependent).",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "medium",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface returns a readable summary, never the raw chain",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "auto",
+              "concise",
+              "detailed"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1 — the Responses surface's summary control and its current values `auto`/`concise`/`detailed`; the deprecated `generate_summary` alias is deliberately not listed.",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "completionEvent": {
+          "value": "response.completed",
+          "source": "upstream-static",
+          "sourceRef": "Norma packages/core/src/providers/responses-sse.ts — encrypted_content is preserved VERBATIM off the completion event",
+          "confidence": "declared",
+          "observedAt": "2026-09-06T00:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "openai/gpt-6.2-sol"
+          ],
+          "source": "official-doc",
+          "sourceRef": "continuity report §5.1/§5.3 for own-state acceptance — the Responses surface replays its own completed `reasoning.encrypted_content` items to the same model.  WS-13 §8.2: \"OpenAI-compatible\" is never the capability test, so this key shares NO domain with any other row (not even openai/gpt-6-sol).",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "perMessageEffort": {
+          "value": {
+            "item": "configuration_update"
+          },
+          "source": "official-doc",
+          "sourceRef": "https://developers.openai.com/api/docs/guides/reasoning — configuration_update is \"supported on GPT-6 and later models in standard, single-agent mode\"; it changes only reasoning effort (read 2026-11-18). NOT set on the codex-oauth row (probe-gated there, as on every codex row).",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.1,
+          "cacheWritePerMTokUsd": 2.5,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 272001,
+              "inputPerMTokUsd": 4,
+              "outputPerMTokUsd": 15,
+              "cacheReadPerMTokUsd": 0.2,
+              "cacheWritePerMTokUsd": 5
+            }
+          ]
+        },
+        "source": "official-doc",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z",
+        "sourceRef": "https://developers.openai.com/api/docs/models/gpt-6.2-sol — Standard short-context USD/MTok: input $2, cached input $0.1, cache writes $2.5 (30-minute retention; 12-hour retention is $5.0, which the single cache-write field cannot carry), output $10. \"Requests over 272K input tokens: input and cache rates double, and output is 1.5x the short-context rate for the full request\" -> tier input $4, cache read $0.2, cache write $5, output $15 (read 2026-11-18)."
+      },
+      "unsupportedParameters": [
+        "prediction"
+      ],
+      "status": "candidate",
+      "promptCacheKey": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/prompt-caching — the Responses API takes prompt_cache_key: \"A supplied prompt_cache_key, which separates cache reuse between groups of requests and helps optimize cache routing on models before GPT-5.6\" — on GPT-5.6+ (this model) routing is automatic and the key is kept for separate cache accounting (read 2026-10-07).",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "clientToolSearch": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/tools-tool-search — \"In the Responses API, only gpt-5.4 and later models support tool_search\" (read 2026-10-07); https://developers.openai.com/api/docs/models/gpt-6.2-sol lists tool search among its tools (read 2026-11-18).",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "additionalToolsItem": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/tools-tool-search — \"you can use an additional_tools input item to make tools available at a specific point in the conversation\" (read 2026-10-07). The page names no model list, so it is set on the rows the same page documents tool_search for (GPT-5.4 and later), as on openai/gpt-6-sol.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "allowedToolsChoice": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — tool_choice {\"type\":\"allowed_tools\",\"mode\":\"auto\"|\"required\",\"tools\":[…]}: \"make only a subset of tools available across model requests, but not modify the list of tools you pass in, so you can maximize savings from prompt caching\" (read 2026-10-07). No model list on the page; set on the same GPT-5.4+ rows.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "parallelTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developers.openai.com/api/docs/guides/function-calling — \"On supported models beginning with GPT-5, functions can be called in parallel when built-in tools are also available … You can prevent this by setting parallel_tool_calls to false\" (read 2026-10-07); the Responses adapter already sends parallel_tool_calls: true unless this is false.",
+        "confidence": "declared",
+        "observedAt": "2026-10-07T09:00:00Z"
+      },
+      "canonicalModelId": "gpt-6.2-sol",
       "modelFamily": "gpt",
       "strength": "strong"
     },
@@ -4353,7 +4801,7 @@
         "observedAt": "2026-09-19T00:00:00Z"
       },
       "unsupportedParameters": [],
-      "status": "candidate",
+      "status": "deprecated",
       "promptCacheKey": {
         "value": true,
         "source": "official-doc",
@@ -4508,7 +4956,7 @@
         "observedAt": "2026-09-05T00:00:00Z"
       },
       "unsupportedParameters": [],
-      "status": "candidate",
+      "status": "deprecated",
       "promptCacheKey": {
         "value": true,
         "source": "official-doc",

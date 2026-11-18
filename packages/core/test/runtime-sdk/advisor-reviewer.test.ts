@@ -14,14 +14,14 @@ describe("familyOfModel / d30DefaultModel — the D30 per-family table", () => {
   test("an openai (gpt) family model resolves to the family's own slot-1 tag, on the SAME provider", () => {
     expect(familyOfModel("codex-oauth/gpt-6-astra")).toBe("openai");
     // WS-20: the answer is a TAG (the same provider's own row for family slot 1), never a bare id.
-    expect(d30DefaultModel("codex-oauth/gpt-6-astra")).toBe(tag("codex-oauth/gpt-6-astra")); // already the default itself
-    expect(d30DefaultModel("openai/gpt-5.6-sol")).toBe(tag("openai/gpt-6-astra"));
+    expect(d30DefaultModel("codex-oauth/gpt-6.2-astra")).toBe(tag("codex-oauth/gpt-6.2-astra")); // already the default itself
+    expect(d30DefaultModel("openai/gpt-5.6-sol")).toBe(tag("openai/gpt-6.2-astra"));
     expect(d30DefaultModel("gpt-6-astra")).toBeUndefined(); // WS-20: a bare id is not a tag — no provider to resolve against
   });
 
   test("a claude family model resolves to the family's own slot-1 tag (fable), on the SAME provider", () => {
     expect(familyOfModel("anthropic/claude-sonnet-5")).toBe("claude");
-    expect(d30DefaultModel("anthropic/claude-sonnet-5")).toBe(tag("anthropic/claude-fable-5-1"));
+    expect(d30DefaultModel("anthropic/claude-sonnet-5")).toBe(tag("anthropic/claude-fable-5-2"));
   });
 
   test("WS-20: no cross-provider fallback — a provider that does not serve its family's slot 1 answers undefined", () => {
