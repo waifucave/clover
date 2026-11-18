@@ -133,6 +133,9 @@ export class AgentDriver implements SessionDriver {
 
   async turn(input: TurnInput, ctl: TurnControl): Promise<TurnEnd> {
     const end = await this.#turn(input, ctl);
+    // A failed turn says why in the conversation (the wire's turn end carries no text): the provider's own words, or MOSS's, as a
+    // notice the person reads before they send again. The session is open, so what to do next is theirs to see.
+    if (end.reason === "failed" && end.text !== undefined && end.text.trim() !== "") this.#record(ctl, { type: "agent_notice", text: end.text.trim().slice(0, 600) });
     return this.#opts.redact && end.text !== undefined ? { ...end, text: this.#opts.redact(end.text) } : end;
   }
 

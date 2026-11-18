@@ -634,6 +634,8 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     expect(ended()[0]!.end).toMatchObject({ reason: "failed", failure: "error" });
     expect(String(ended()[0]!.end.text)).toContain("no credential for the request");
     expect(w.host.get(r.sessionId)).toMatchObject({ status: "idle", failure: "error" });
+    // The reason is a row in the conversation too (the wire's turn end carries no text).
+    expect(JSON.stringify(w.host.history(r.sessionId).filter((x) => x.type === "driver"))).toContain("no credential for the request");
   });
 
   /** A runtime that opens one agent per start; each answers each message as `how(agentNumber, messageNumber)` says. */

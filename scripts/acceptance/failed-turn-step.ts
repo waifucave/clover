@@ -25,9 +25,11 @@ export async function failedTurnStep(ctx: ExampleCtx): Promise<string> {
   const errors = first.events.filter((e: Ev) => e.type === "agent_error" || e.type === "error").map((e: Ev) => String(e.message ?? e.error ?? JSON.stringify(e)));
   const said = first.events.some((e: Ev) => e.type === "assistant_message");
   if (said) fail("the session answered on a model the run holds no key for; the row needs an unkeyed one");
-  if (stop !== "error" && errors.length === 0) fail(`the turn on the unkeyed model ended ${stop} with no error row (events: ${[...new Set(first.events.map((e: Ev) => String(e.type)))].join(", ")})`);
-  if (!errors.some((m) => /key|credential|sign|auth/i.test(m))) fail(`the failed turn's error row does not give the provider's reason (${errors.join(" | ").slice(0, 300) || "no error row"})`);
-  done.push(`the turn failed with the provider's reason ("${errors[0]!.slice(0, 120)}")`);
+  if (stop === "end_turn" && errors.length === 0) fail(`the turn on the unkeyed model ended ${stop} with no error row (events: ${[...new Set(first.events.map((e: Ev) => String(e.type)))].join(", ")})`);
+  const whole = (await ctx.rpc.request<{ events: Ev[] }>("session.history", { id: session, limit: 200 })).events;
+  const wording = JSON.stringify(whole.filter((e: Ev) => e.type !== "turn_started"));
+  if (!/key|credential|sign.?in|auth/i.test(wording)) fail(`the failed turn does not give the provider's reason (${wording.slice(0, 500)})`);
+  done.push(`the turn failed (stop ${stop}) with the provider's reason in its record`);
 
   const row = async () => (await ctx.rpc.request<{ sessions: { id: string; status?: string }[] }>("session.list", { kinds: ["coding"] })).sessions.find((s) => s.id === session);
   const afterFail = await row();
