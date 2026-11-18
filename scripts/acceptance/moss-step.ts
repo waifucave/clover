@@ -280,7 +280,25 @@ class MossWindow {
   /** A trusted click on the first element matching `selector` (or holding `text`), as a person's. */
   async click(selector: string, text?: string): Promise<void> {
     const s = await this.main();
-    const at = await this.x.until(`the window's ${selector}${text !== undefined ? ` "${text}"` : ""}`, 20_000, () => this.cdp.centerOf(s, selector, text), 250);
+    // A person presses what is there when they press: once the page has no read on its way (`data-loading`, MOSS's
+    // Settings pages: a card that fills in above a button moves it from under a press measured a moment before, row 107's
+    // miss), the target's point is measured until it holds still across two readings and the element at it is the target.
+    let last: { x: number; y: number } | undefined;
+    let moved = 0;
+    let loading = false;
+    const at = await this.x.until(`the window's ${selector}${text !== undefined ? ` "${text}"` : ""}, holding still with nothing loading`, 20_000, async () => {
+      loading = await this.eval<boolean>("!!document.querySelector('[data-loading]')").catch(() => false);
+      if (loading) { last = undefined; return undefined; }
+      const p = await this.cdp.centerOf(s, selector, text);
+      if (p === undefined) { last = undefined; return undefined; }
+      const steady = last !== undefined && Math.abs(last.x - p.x) < 1 && Math.abs(last.y - p.y) < 1;
+      if (last !== undefined && !steady) moved++;
+      last = p;
+      if (!steady) return undefined;
+      const hit = await this.eval<boolean>(`((x, y, sel, text) => { const t = document.elementFromPoint(x, y); const el = t && t.closest(sel); return !!el && (text === null || (el.innerText || el.getAttribute('aria-label') || '').includes(text)); })(${p.x}, ${p.y}, ${JSON.stringify(selector)}, ${JSON.stringify(text ?? null)})`).catch(() => false);
+      return hit ? p : undefined;
+    }, 150);
+    if (moved > 0) console.error(`acceptance: MOSS click: ${selector}${text !== undefined ? ` "${text}"` : ""} moved ${moved} time(s) before it held still; pressed where it settled`);
     await this.cdp.click(s, at.x, at.y);
     await sleep(150);
   }
@@ -756,7 +774,12 @@ async function archiveRow(s: UnitState): Promise<string> {
   const item = `[data-archived-bot=${JSON.stringify(id)}]`;
   await s.w.waitFor(`${name} under Archived bots`, `!!document.querySelector(${JSON.stringify(item)})`, 20_000);
   await s.w.click(`${item} .text-button`, "Bring back");
-  await s.w.waitFor(`${name} back in MOSS's list`, `!!document.querySelector(${JSON.stringify(`[data-bot-row="${id}"]`)})`, 20_000);
+  await s.w.waitFor(`${name} back in MOSS's list`, `!!document.querySelector(${JSON.stringify(`[data-bot-row="${id}"]`)})`, 20_000).catch(async (err: unknown) => {
+    // What the engine and the page say, beside the miss: a press that never reached Bring back leaves no note.
+    const engine = `bot.records: ${(await records(s.c)).map((b) => b.id).join(", ")}; bot.archived: ${(await s.c.request<{ bots: { id: string }[] }>("bot.archived", {})).bots.map((b) => b.id).join(", ") || "none"}`;
+    const note = await s.w.eval<string>("[...document.querySelectorAll('[data-settings=archived] [role=status]')].map((e) => e.textContent).join(' | ')").catch(() => "");
+    return s.x.fail(`${s.x.why(err)} (${engine}; the Archived card's note: ${note || "none"})`);
+  });
   const page = await s.c.request<{ events: { type: string }[] }>("bot.conversation", { id, limit: 200 });
   if (page.events.length < before) s.x.fail(`${name} came back with ${page.events.length} event(s), not its ${before}`);
   await openBot(s, id!, name);

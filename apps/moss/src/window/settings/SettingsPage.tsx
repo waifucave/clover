@@ -68,6 +68,12 @@ function Waiting(props: { what: string }) {
   return <p className="muted">Waiting for the engine's {props.what}.</p>;
 }
 
+/** A read still on its way: draws nothing, and says so (`data-loading`), so what is pressed below it is pressed once the
+ *  page has its final shape (a card arriving above a button moves it from under a press: row 107's miss). */
+function Pending() {
+  return <span data-loading hidden />;
+}
+
 const KIND_WORDS: Record<string, string> = { desktop: "Computer", laptop: "Computer", phone: "Phone", tablet: "Tablet", cloud: "Cloud computer", browser: "Browser" };
 
 // ---------------------------------------------------------------------------------------------
@@ -86,7 +92,7 @@ function General() {
   return (
     <>
       <Card title="Account" id="account">
-        {s === undefined ? null : s.account === "waiting" ? <Waiting what="account" /> : s.account.signedIn ? (
+        {s === undefined ? <Pending /> : s.account === "waiting" ? <Waiting what="account" /> : s.account.signedIn ? (
           <div className="ma2-account">
             <span className="account__dot" aria-hidden="true">{(s.account.name ?? s.account.email ?? "?").slice(0, 1).toUpperCase()}</span>
             <span className="ma2-account__who">
@@ -98,14 +104,14 @@ function General() {
         ) : <p className="muted">Not signed in. Signing in links your computers and phone.</p>}
       </Card>
       <Card title="Keys and sign-ins" id="keys" note="For the models and voices your plugins bring. A key you paste here is kept by MOSS's engine and is never shown again.">
-        {s === undefined ? null : s.signIns === "waiting" ? <Waiting what="sign-ins" /> : s.signIns.length === 0 ? <p className="muted">No model or voice needs a key yet.</p> : (
+        {s === undefined ? <Pending /> : s.signIns === "waiting" ? <Waiting what="sign-ins" /> : s.signIns.length === 0 ? <p className="muted">No model or voice needs a key yet.</p> : (
           <ul className="kv ma2-keys">
             {s.signIns.map((x) => <SignInRow key={`${x.pluginId}#${x.index}`} row={x} onChanged={load} />)}
           </ul>
         )}
       </Card>
       <Card title="Approval level" id="level" note="How much a bot may do on each computer before it asks you. A change asks you on a card first.">
-        {s === undefined ? null : s.computers === "waiting" ? <Waiting what="computers" /> : (
+        {s === undefined ? <Pending /> : s.computers === "waiting" ? <Waiting what="computers" /> : (
           <ul className="kv">
             {s.computers.map((c) => (
               <li key={c.name} data-computer={c.name}>
@@ -120,9 +126,11 @@ function General() {
         )}
         {levelNote !== undefined ? <p className="add__note" role="status">{levelNote}</p> : null}
       </Card>
-      <Archived />
+      {/* Drawn once the cards above it are in: a list read before the keys (a few hundred rows) would be pushed down under
+          the person's pointer as they press Bring back (row 107's miss). */}
+      {s === undefined ? <Pending /> : <Archived />}
       <Card title="Devices" id="devices">
-        {s === undefined ? null : s.devices === "waiting" ? <Waiting what="devices" /> : s.devices.length === 0 ? <p className="muted">Only this computer.</p> : (
+        {s === undefined ? <Pending /> : s.devices === "waiting" ? <Waiting what="devices" /> : s.devices.length === 0 ? <p className="muted">Only this computer.</p> : (
           <ul className="kv">{s.devices.map((d) => <li key={d.id}><span>{d.name}</span><span className="muted">{KIND_WORDS[d.kind] ?? d.kind}</span></li>)}</ul>
         )}
       </Card>
@@ -209,7 +217,7 @@ function BotPage(props: { bot: BotRow }) {
     if (ok) load();
     return ok;
   };
-  if (rec === undefined) return null;
+  if (rec === undefined) return <Pending />;
   if (rec === "waiting") return <Card title={props.bot.name}><Waiting what="bots" /></Card>;
   return (
     <div className="ma2-bot" data-bot-page={id}>
@@ -222,7 +230,7 @@ function BotPage(props: { bot: BotRow }) {
       </header>
       {note !== undefined ? <p className="add__note" role="status">{note}</p> : null}
       <Card title="Model" id="model">
-        {models === undefined ? null : models === "waiting" ? <Waiting what="models" /> : (
+        {models === undefined ? <Pending /> : models === "waiting" ? <Waiting what="models" /> : (
           <Pick
             value={rec.model ?? ""} label={`${rec.name}'s model`} data="model-picker" onSave={(v) => void edit({ model: v === "" ? null : v }, "Model saved.")}
             options={[
@@ -268,7 +276,7 @@ function Memory(props: { bot: string; name: string }) {
   };
   return (
     <Card title="Memory" id="memory" note={`What ${props.name} keeps in its memory folder, read only.`}>
-      {files === undefined ? null : files === "waiting" ? <Waiting what="memory" />
+      {files === undefined ? <Pending /> : files === "waiting" ? <Waiting what="memory" />
         : files.length === 0 ? <p className="muted small" data-memory-empty>{props.name} hasn't written any memory yet.</p> : (
           <ul className="ma2-memory" data-memory-files>
             {files.map((f) => (
@@ -296,7 +304,7 @@ function Archived() {
   const [note, setNote] = useState<string | undefined>(undefined);
   const load = (): void => { void bridge().archivedBots().then((b) => setBots("waiting" in b ? "waiting" : b)); };
   useEffect(load, []);
-  if (bots === undefined) return null;
+  if (bots === undefined) return <Pending />;
   return (
     <Card title="Archived bots" id="archived" note="Bots you archived. Bringing one back brings its conversation, memory and routines with it.">
       {bots === "waiting" ? <Waiting what="archive" /> : bots.length === 0 ? <p className="muted">None.</p> : (
@@ -358,6 +366,7 @@ function Instructions(props: { bot: string; name: string; bytes: number; onSave:
     <>
       <p className="muted small" data-instructions-size>{props.bytes === 0 ? `${props.name} has no instructions yet.` : `${props.name}'s instructions file holds ${sizeWords(props.bytes)}.`}</p>
       <textarea className="ma2-field ma2-instructions" rows={5} value="" disabled readOnly placeholder={`Who ${props.name} is, how ${props.name} talks…`} aria-label={`${props.name}'s instructions`} />
+      {now === undefined ? <Pending /> : null}
       {now === "waiting" ? <p className="muted small" data-instructions-why>Editing comes once MOSS can show you what the file says now, so nothing is replaced unseen.</p> : null}
       <div className="ma2-inline ma2-inline--end">
         <button type="button" className="text-button text-button--solid" disabled>Save instructions</button>
@@ -443,7 +452,7 @@ export function PluginSettings(props: { bot: string }) {
   const set = async (r: BotSetting, value: unknown): Promise<void> => {
     if (await bridge().setBotSetting(props.bot, r.pluginId, r.key, value)) load();
   };
-  if (rows === undefined) return null;
+  if (rows === undefined) return <Pending />;
   if (rows === "waiting") return <Card title="From plugins"><Waiting what="plugins" /></Card>;
   if (rows.length === 0) return <Card title="From plugins"><p className="muted">No plugin has a setting for this bot.</p></Card>;
   const groups = new Map<string, { name: string; rows: BotSetting[] }>();
