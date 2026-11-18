@@ -42,7 +42,7 @@ test("the bundle is the .app on macOS, the install folder elsewhere, the source 
 test("a copy that carries the host helper says so (lane PK): the engine starts the host from it when only MOSS is installed", () => {
   const home = join(root, "h3");
   const bundle = "/Applications/MOSS.app";
-  const helper = join(bundle, "Contents", "Frameworks", "MOSS Host.app");
+  const helper = hostHelperIn(bundle, "dist");
   // The engine's own rule for where the helper sits, and the apps' copy of it, are one.
   for (const profile of ["dist", "dev"] as const) expect(hostHelperIn(bundle, profile)).toBe(hostHelperPath(bundle, profile));
   expect(carriesHost(bundle, "dist", "darwin", (p) => p === helper)).toBe(true);

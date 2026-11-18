@@ -65,10 +65,10 @@ describe("one home, two apps: where the host comes from", () => {
     const s = await w.startHost();
     expect(s.from).toBe(moss);
     expect(s.argv[0]?.slice(0, 3)).toEqual(["codesign", "--verify", "--strict"]);
-    expect(s.argv[0]?.at(-1)).toBe(join(moss, "Contents", "Frameworks", "MOSS Host.app"));
+    expect(s.argv[0]?.at(-1)).toBe(hostHelperPath(moss, "dist"));
     expect(s.argv[0]?.find((a) => a.startsWith("-R="))).toContain('identifier "com.waifucave.moss.host"');
     expect(s.argv[1]?.slice(0, 3)).toEqual(["open", "-n", "-g"]);
-    expect(s.argv[1]?.at(-1)).toBe(join(moss, "Contents", "Frameworks", "MOSS Host.app"));
+    expect(s.argv[1]?.at(-1)).toBe(hostHelperPath(moss, "dist"));
     expect(w.failed).toEqual([]);
   });
 
