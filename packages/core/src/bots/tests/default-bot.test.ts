@@ -169,7 +169,9 @@ describe("the default bot", () => {
   test("own-bot reaches a bot only when its record says it was moved from that plugin, never by an equal id, both ways", async () => {
     const root = tempDir();
     const scout = writePlugin(root, "scout", { "moss.json": botManifest("scout", "Scout"), "bot/instructions.md": "You are Scout." });
-    const plugins = (await pluginFromFolder(scout)).inputs.map((i) => ({ ...i, approved: true }));
+    // MOSS's own bundled alpha plugin is installed, as in a real home: it serves her room tools (default-bot-owner.test.ts
+    // has the home where it is not, or where another plugin has her id).
+    const plugins = [...(await pluginFromFolder(scout)).inputs.map((i) => ({ ...i, approved: true })), ...(await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs];
     const b = await boot({ home: tempDir(), plugins, botSource: "records", defaultBot: true });
     const own = (plugin: string, bot: string) => servesScope("own-bot", { kind: "bot", bot }, plugin);
     // Moved from its plugin: that plugin's own parts reach it, another's don't.
