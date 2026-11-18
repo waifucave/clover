@@ -2335,7 +2335,19 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
       return undefined;
     };
-    const waitFor = (what: string, sel: string, ms = 45_000) => until(what, ms, () => find(sel), () => dumpFrames(cdp));
+    // The row lands on its session's tab itself: a wait that finds nothing while another view is up (an earlier row, or a window document
+    // that loaded again, left the window elsewhere) puts the window on that session again, as a person would, and keeps waiting.
+    let landedOn: string | undefined;
+    const tabShown = async () => {
+      for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, `!!document.querySelector('.cl-window__content .cl-agent-tab[data-place=main]') && [...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(landedOn ?? "")}))`).catch(() => false)) === true) return true;
+      return false;
+    };
+    const waitFor = (what: string, sel: string, ms = 45_000) => until(what, ms, async () => {
+      const f = await find(sel);
+      if (f !== undefined) return f;
+      if (landedOn !== undefined && !(await tabShown())) await showWindowSession(ctx, landedOn).catch(() => undefined);
+      return undefined;
+    }, () => dumpFrames(cdp));
     /** Where the plugin's frames are in the window, and whether each sleeps (a frame away from the screen sleeps and wakes when it comes near: §5.5). */
     const placed = async () => {
       const out: string[] = [];
@@ -2393,6 +2405,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
       // A turn that calls the plugin's tool, in that code session (running before its OK), open in the window while it runs.
       const session = await showWindowSession(ctx, running);
+      landedOn = session;
       const tag = `WINDOW-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
       await rpc.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL Window {"text":"${tag}"}`, clientMessageId: `window-${tag}` } }, 30_000);
       const carded = "a read-only tool of its own: it ran with no card";
