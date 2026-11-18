@@ -197,7 +197,7 @@ export class AgentDriver implements SessionDriver {
     if (notice !== undefined) this.#record(ctl, { type: "agent_notice", text: notice });
     const flusher = new TextRuns((e) => this.#record(ctl, e), this.#opts.coalesceMs ?? 250);
     let heard = false;
-    const off = session.onEvent((e) => { heard = true; flusher.push(e); });
+    const off = session.onEvent((e) => { if (e.type !== "progress") heard = true; flusher.push(e); });
     const onAbort = () => {
       if (!this.#stopping) void session.cancel();
     };

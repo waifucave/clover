@@ -475,7 +475,7 @@ export class MossCodeBackend implements AgentBackend {
         return answer;
       };
       const q = run({ prompt: args.prompt, options: { ...o, mcpServers: servers as Options["mcpServers"], canUseTool } }) as unknown as AcpQuery;
-      const watched = stoppingTasksWhilePaused(q, gate, abort.signal, deps.log);
+      const watched = failedResultsAsErrors(stoppingTasksWhilePaused(q, gate, abort.signal, deps.log));
       return onContext === undefined ? watched : reportingContext(watched, onContext);
     };
     return { query, options, abort, bridgeCalls };
@@ -590,6 +590,27 @@ export function contextUpdates(): { report: (tokens: number) => void; writer: (w
     },
     heard: learn,
   };
+}
+
+/** The runtime ends a turn its provider refused (no credential for the model, a 4xx) with a `result` marked
+ *  `is_error: true` yet `subtype: "success"`, no model call and no tokens. The ACP adapter takes `success` for an answer and
+ *  ends the turn `end_turn` with nothing said: a person types and nothing comes back. Such a result is an error result, so
+ *  the adapter fails the turn with the result's own words (the provider's reason). */
+export function failedResultsAsErrors(q: AcpQuery): AcpQuery {
+  return new Proxy(q, {
+    get(target, prop, recv) {
+      if (prop === Symbol.asyncIterator) {
+        return () => (async function* () {
+          for await (const m of target) {
+            const msg = m as { type?: unknown; subtype?: unknown; is_error?: unknown };
+            yield msg?.type === "result" && msg.is_error === true && msg.subtype === "success" ? { ...(m as object), subtype: "error_during_execution" } : m;
+          }
+        })();
+      }
+      const v = Reflect.get(target, prop, recv) as unknown;
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
 }
 
 /** The query, with each `result`'s `context_tokens` (the runtime's count of the last main-loop request's whole prompt,

@@ -616,6 +616,34 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     expect(String(ended()[0]!.end.text)).toContain("without answering");
   });
 
+  test("a turn the provider refused (the runtime's result is_error with subtype success, no tokens) fails with the provider's own words", async () => {
+    const query = ((args: { prompt: AsyncIterable<string> }) => {
+      async function* run() {
+        yield { type: "system", subtype: "init", model: CODE_MODEL, permissionMode: "default" };
+        for await (const _ of args.prompt) yield { type: "result", subtype: "success", is_error: true, result: "provider request failed (auth): no credential for the request: no key is stored for this model", usage: { input_tokens: 0, output_tokens: 0 } };
+      }
+      return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
+    }) as unknown as MossCodeDeps["query"];
+    const { w } = await setup({ ...codeBackend(spawn, query), long: true, level: "automatic" });
+    const r = await code(w, "say hello");
+    const ended = () => w.host.history(r.sessionId).filter((x) => x.type === "turn_ended") as unknown as { end: { reason: string; failure?: string; text?: string } }[];
+    await waitFor(() => ended().length >= 1, "the turn's end", 60_000);
+    expect(ended()[0]!.end).toMatchObject({ reason: "failed", failure: "error" });
+    expect(String(ended()[0]!.end.text)).toContain("no credential for the request");
+  });
+
+  test("a coding session started with no prompt (the user's New session): its first message is answered", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "automatic" });
+    const r = await w.manager.start({
+      caller: { kind: "user", device: "d".repeat(16), clientMessageId: "m-np", sentAt: w.clock.now() },
+      backend: MOSS_CODE_ID, root: "home/Studio/project1", model: CODE_MODEL, prompt: "",
+    });
+    await w.host.sendUser(r.sessionId, { text: `CALL mcp__${CODE_BRIDGE}__${short} {"n":9}`, device: "d".repeat(16), clientMessageId: "m-first", sentAt: w.clock.now() });
+    const ends = () => w.host.history(r.sessionId).filter((x) => x.type === "turn_ended") as unknown as { end: { reason: string; text?: string } }[];
+    await waitFor(() => ends().length >= 1, "the first message's turn", 60_000);
+    expect([ends()[0]!.end.reason, wire(w, r.transcript).includes(`${tool} ran with`)]).toEqual(["end_turn", true]);
+  });
+
   test("a plugin enabled while the session runs: its tool is called in the next turn of the same session, and set off, the call after is not run", async () => {
     const off = new Set<string>();
     const { w, p, changed } = await setup({ ...codeBackend(spawn), level: "automatic", availability: (_s, t) => (off.has(t) ? "off" : "always") });
