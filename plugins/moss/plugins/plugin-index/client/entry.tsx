@@ -267,6 +267,9 @@ function mutedIn(mutes: { muted: string[] } | undefined, id: string): boolean {
 /** A call's failure in the page's words. */
 const why = (err: unknown) => (err instanceof Error ? err.message.replace(/^[a-z_]+: /, "") : String(err));
 
+/** How long an extra of the detail (its log, its mutes, its grants) may take before the detail shows without it. */
+const EXTRA_MS = 6_000;
+
 export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const core = typedCore(useCore());
   const TABS: PluginsTab[] = ["installed", "add", "updates", "find", "indexes"];
@@ -280,7 +283,10 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [updateStatus, setUpdateStatus] = useState<DetailStatus | undefined>(undefined);
   const [indexRows, setIndexRows] = useState<IndexRow[]>([]);
   const [indexStatus, setIndexStatus] = useState<DetailStatus | undefined>(undefined);
-  const [picked, setPicked] = useState<{ kind: PickKind; token: string; name: string } | undefined>(undefined);
+  // A folder the user chose (a token and a name, never the path) is kept like the tab: the window's document loads again when
+  // a plugin with a layer of its own is installed, and the user's choice stands in the new one (the token is the plugin's
+  // own, not the document's, and lasts five minutes).
+  const [picked, setPicked] = useKept<{ kind: PickKind; token: string; name: string } | undefined>(`plugins.picked:${place}`, undefined);
   const [adding, setAdding] = useState(false);
   const [addStatus, setAddStatus] = useState<DetailStatus | undefined>(undefined);
   const [installed, setInstalled] = useState<InstalledPlugin[] | undefined>(undefined);
@@ -289,10 +295,12 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   const [keptOpen, setOpen] = useKept<string | null>(`plugins.open:${place}`, () => props.params?.id ?? null);
   const open: string | undefined = keptOpen ?? undefined;
   const [detail, setDetail] = useState<PluginDetailView | undefined>(undefined);
+  /** Why the opened plugin's detail could not be read (the plugin is still there): the page says so and offers Try again. */
+  const [openFailed, setOpenFailed] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<DetailStatus | undefined>(undefined);
   const [revision, setRevision] = useState(0);
   const [devFolders, setDevFolders] = useState<DevRow[] | undefined>(undefined);
-  const [devPicked, setDevPicked] = useState<{ token: string; name: string } | undefined>(undefined);
+  const [devPicked, setDevPicked] = useKept<{ token: string; name: string } | undefined>(`plugins.devPicked:${place}`, undefined);
   const [adultConfirmed, setAdultConfirmed] = useState<boolean | undefined>(undefined);
 
   // What is installed: `plugin.list` alone, never a call per plugin.
@@ -317,9 +325,14 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
 
   // The one opened: its record, settings, sign-ins and log (each may be refused: what's there is shown).
   useEffect(() => {
-    if (!core || open === undefined) return setDetail(undefined);
+    if (!core || open === undefined) {
+      setOpenFailed(undefined);
+      return setDetail(undefined);
+    }
     let live = true;
-    const quiet = <T,>(p: Promise<T>) => p.catch(() => undefined);
+    // An extra the detail shows (its log, its mutes) that does not answer in a few seconds is left out, so one slow call
+    // never keeps the whole detail from showing.
+    const quiet = <T,>(p: Promise<T>) => Promise.race([p.catch(() => undefined), new Promise<undefined>((done) => setTimeout(() => done(undefined), EXTRA_MS))]);
     void Promise.all([
       core.call("plugin.get", { id: open }).then(async (d) => {
         // Its children's tools too: each child is a plugin of its own, with its own servers.
@@ -335,8 +348,16 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
       quiet(core.call("plugin.grant.list", { pluginId: open })),
       quiet(core.call("command.list", {})),
     ]).then(
-      ([{ d, childTools, parts }, settings, auth, logs, mutes, grants, cmds]) => live && setDetail(toDetail(d.plugin, { childTools, parts, ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}), ...(cmds ? { commands: cmds.commands } : {}) }, "en", icons)),
-      () => live && setOpen(null),
+      ([{ d, childTools, parts }, settings, auth, logs, mutes, grants, cmds]) => { if (!live) return; setOpenFailed(undefined); setDetail(toDetail(d.plugin, { childTools, parts, ...(settings ? { settings: settings.settings } : {}), ...(auth ? { auth: auth.auth } : {}), ...(logs ? { log: logs.lines } : {}), muted: mutedIn(mutes, open), ...(grants ? { grants: grants.grants.map((g) => ({ token: g.token, path: g.path, kind: g.kind, access: g.access })) } : {}), ...(cmds ? { commands: cmds.commands } : {}) }, "en", icons)); },
+      (err: unknown) => {
+        if (!live) return;
+        // The plugin went (removed meanwhile): back to the list. Any other failure (a call refused while the window's
+        // document was being replaced, a slow core) keeps what the user pressed: the page says so and offers Try again.
+        void core.call("plugin.list", {}).then(
+          (r) => { if (live) { if (r.plugins.some((p) => p.id === open)) setOpenFailed(why(err)); else setOpen(null); } },
+          () => live && setOpenFailed(why(err)),
+        );
+      },
     );
     return () => {
       live = false;
@@ -587,7 +608,15 @@ export function PluginIndexEntry({ props }: { props: PluginIndexEntryProps }) {
   return (
     <div className="cl-plugin-index">
       <div className="cl-plugin-index__page">
-        {id !== undefined && detail !== undefined && core ? (
+        {id !== undefined && detail === undefined && core ? (
+          // The plugin the user pressed Open on: the page shows that the press took (it is opening, or why it could not),
+          // never the list as if nothing was pressed.
+          <div className="cl-plugin-index__opening" role="status" aria-live="polite">
+            <button type="button" className="cl-plugin-index__back" onClick={() => { setOpen(null); setStatus(undefined); }}>{S.back}</button>
+            <p className="cl-plugin-index__opening-text">{openFailed === undefined ? S.opening : S.openFailed(openFailed)}</p>
+            {openFailed !== undefined ? <button type="button" className="cl-plugin-index__retry" onClick={() => { setOpenFailed(undefined); setRevision((n) => n + 1); }}>{S.tryAgain}</button> : null}
+          </div>
+        ) : id !== undefined && detail !== undefined && core ? (
           <Detail
             // Its picture may come after its record (plugin.ui answers on its own).
             plugin={{

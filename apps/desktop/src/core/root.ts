@@ -129,6 +129,9 @@ function reloadIn(item: { mount: string; url: string; ref: string; layer: string
   const old = frames.filter((f) => f.isConnected);
   if (old.length === 0) return mount(item);
   for (const f of old) f.inert = true;
+  // The old document takes no press meanwhile (it is let go in main): the pointer says it is not ready, over the window as a whole
+  // (nothing is faded or covered, so a sealed card frame inside it is drawn as it was).
+  stage.style.cursor = "progress";
   const frame = frameFor(item);
   frame.style.visibility = "hidden";
   frame.inert = true;
@@ -143,6 +146,7 @@ function reloadIn(item: { mount: string; url: string; ref: string; layer: string
     frame.style.visibility = "";
     frame.inert = false;
     delete frame.dataset.mossPending;
+    if (stage.querySelector("iframe[data-moss-pending]") === null) stage.style.cursor = "";
     for (const f of old) f.remove();
   };
   rendered.set(item.mount, swap);

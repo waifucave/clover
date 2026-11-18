@@ -17,7 +17,7 @@ afterEach(() => {
   devFolders = [];
 });
 
-async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found") {
+async function mount(params: { spot?: string; key?: string; tab?: string; id?: string } = { tab: "find" }, installState: "found" | "running" = "found", overrides: Parameters<typeof fakeCore>[0] = {}) {
   const core = fakeCore({
     "plugin.list": () => ({ plugins: INSTALLED, adultConfirmed: false }),
     "plugin.ui": () => ({ plugins: Object.entries(INSTALLED_ICONS).map(([pluginId, icon]) => ({ pluginId, icon })) as never }),
@@ -57,6 +57,7 @@ async function mount(params: { spot?: string; key?: string; tab?: string; id?: s
       const id = source.from === "index" ? source.id : "local";
       return id === "terminal-plus" ? Promise.reject(new Error("hash mismatch")) : { id, state: installState };
     },
+    ...overrides,
   });
   const routes: unknown[] = [];
   render(
@@ -542,6 +543,74 @@ describe("the Plugins page: updates and indexes", () => {
     cleanup();
     await mount({ tab: "find" }, "found");
     expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Find");
+  });
+
+  test("a folder the user chose outlives a reload of the window's document, and a registry change landing before the press leaves it: the press installs it", async () => {
+    sessionStorage.clear();
+    const first = await mount({ tab: "add" });
+    fireEvent.click(screen.getByRole("button", { name: "Choose a folder…" }));
+    await act(() => settle());
+    expect(screen.getByText("Chosen: tarot")).toBeTruthy();
+    // The first plugin's install finishing: its layer loads the document again (no unmount, so the session storage stands).
+    const atReload = Object.fromEntries(Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i)!).map((k) => [k, sessionStorage.getItem(k)!]));
+    cleanup();
+    for (const [k, v] of Object.entries(atReload)) sessionStorage.setItem(k, v);
+    const { core } = await mount({ tab: "add" });
+    expect(first.core.calls.filter((c) => c.method === "plugin.install")).toEqual([]);
+    expect(screen.getByText("Chosen: tarot")).toBeTruthy();
+    // A registry event arrives as the press lands: the folder and its button stay, and the press installs it, once.
+    act(() => core.emit("plugin_changed", { type: "plugin_changed", id: "local" }));
+    fireEvent.click(screen.getByRole("button", { name: "Install tarot" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "plugin.install").map((c) => c.params)).toEqual([{ source: { from: "folder", path: "pick-1" } }]);
+  });
+
+  test("a press on Open shows that it took: opening, then the detail, even when a registry change lands before the detail has been read", async () => {
+    let gets = 0;
+    let release: (() => void) | undefined;
+    const { core } = await mount({}, "found", {
+      "plugin.get": (({ id }: { id: string }) => {
+        gets++;
+        // The first read waits (the page is replaced or the core is busy); the one after the change answers at once.
+        return gets === 1 ? new Promise((done) => { release = () => done({ plugin: installedDetail(id) }); }) : { plugin: installedDetail(id) };
+      }) as never,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
+    await act(() => settle());
+    expect(screen.getByRole("status").textContent).toContain("Opening…");
+    expect(screen.queryByRole("list", { name: "Installed plugins" })).toBeNull();
+    act(() => core.emit("plugin_changed", { type: "plugin_changed", id: "tarot-panel" }));
+    await act(() => settle());
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
+    release?.();
+    await act(() => settle());
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
+  });
+
+  test("a detail that cannot be read stays open, says why and tries again; one for a plugin that is gone goes back to the list", async () => {
+    let fail = true;
+    let listed = true;
+    const { core } = await mount({}, "found", {
+      "plugin.get": (({ id }: { id: string }) => (fail ? Promise.reject(new Error("invalid: this document isn't bound to a mount")) : { plugin: installedDetail(id) })) as never,
+      "plugin.list": (() => ({ plugins: listed ? INSTALLED : INSTALLED.filter((p) => p.id !== "tarot-panel"), adultConfirmed: false })) as never,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
+    await act(() => settle());
+    expect(screen.getByRole("status").textContent).toContain("Couldn't open it: this document isn't bound to a mount");
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await act(() => settle());
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tarot panel");
+    // Back to the list, then a plugin that went between the press and the read.
+    fireEvent.click(screen.getByRole("button", { name: "‹ All plugins" }));
+    await act(() => settle());
+    fail = true;
+    fireEvent.click(screen.getByRole("button", { name: "Open Tarot panel" }));
+    listed = false;
+    act(() => core.emit("plugin_removed", { type: "plugin_removed", id: "tarot-panel" }));
+    await act(() => settle());
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("tab", { selected: true }).textContent).toContain("Installed");
   });
 
   test("development folders: listed with when they expire and reload; a folder from main's picker is added on a card; Renew asks on a card; Remove stops loading it", async () => {
