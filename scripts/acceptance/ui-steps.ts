@@ -8,7 +8,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { MossClient } from "./client";
@@ -58,29 +58,30 @@ export const UI_STEPS = [
 /** A tiny 1x1 PNG, for the Files panel's preview step. */
 const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
-/** A coding session in a folder of the run's user home (`alpha-code-work`, holding `tiny.png`), started with `agent.start` as the
- *  app starts one when the run has none; its id (the newest coding session `session.list` gives). It is started while the window
- *  is up and never announced to it: the window learns it from `conversation.watch`. */
+/** The folder of the run's user home that the Files row's coding session works in: its own, so no other row's coding session
+ *  (the avatar row's is in `alpha-code-work`) is ever the one handed to it, and `tiny.png` is in it whoever else ran before. */
+export const FILES_FOLDER = "alpha-files-work";
+
+/** A coding session started with `agent.start` as the app starts one when the run has none; its id (the newest coding session
+ *  `session.list` gives). With `withFile`, the session is the one in `FILES_FOLDER` (holding `tiny.png`, put there every time).
+ *  It is started while the window is up and never announced to it: the window learns it from `conversation.watch`. */
 export async function ensureCodingSession(ctx: Pick<Ctx, "rpc" | "home">, o: { withFile?: boolean } = {}): Promise<string | undefined> {
   const rpc = ctx.rpc;
-  const newestView = async () => (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number; root?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0];
-  const newest = async () => (await newestView())?.id;
-  const have = await newestView();
-  // With a file: the folder holds tiny.png whoever started the session in it (another row, the avatar row's, starts one in the same
-  // folder with nothing in it, and in a run that shares one home it is the newest): the file is put there now, every time.
-  const dir = ctx.home === undefined ? undefined : join(dirname(ctx.home), "alpha-code-work");
+  const views = async () => (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number; root?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0));
+  const dir = ctx.home === undefined ? undefined : join(dirname(ctx.home), o.withFile === true ? FILES_FOLDER : "alpha-code-work");
   if (o.withFile === true && dir !== undefined) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "tiny.png"), TINY_PNG);
   }
-  // With a file: the newest coding session must be the one in the run's folder that holds it (an earlier step's coding session, in another folder, has none).
-  if (have !== undefined && (o.withFile !== true || (have.root ?? "").endsWith("/alpha-code-work"))) return have.id;
+  // With a file: the newest coding session in that folder (an earlier row's coding session, in another folder, has no such file).
+  const have = (await views()).find((x) => o.withFile !== true || (x.root ?? "").endsWith(`/${FILES_FOLDER}`));
+  if (have !== undefined) return have.id;
   const computerName = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {}).catch(() => ({ computers: [] }))).computers[0]?.name;
   if (dir === undefined || computerName === undefined) return undefined;
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "tiny.png"), TINY_PNG);
-  await rpc.request("agent.start", { backend: "moss-code", computer: computerName, root: `home/${computerName}/alpha-code-work` }, 60_000);
-  return newest();
+  await rpc.request("agent.start", { backend: "moss-code", computer: computerName, root: `home/${computerName}/${basename(dir)}` }, 60_000);
+  return (await views())[0]?.id;
 }
 
 /** The window's own sidebar to a coding session: the session's row under its project (its id, the title a session with none
