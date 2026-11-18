@@ -85,20 +85,26 @@
 .ma2-switch input:checked + span::after { transform: translateX(16px); }
 .ma2-switch input:focus-visible + span { box-shadow: 0 0 0 3px var(--ring); }
 
-/* ---- Narrow ---- */
-@media (max-width: 900px) {
+/* ---- Medium and narrow ---- */
+/* The pages' rows stack their controls once the window is under 1100px wide (the Plugins page's two button groups need
+   about 700px beside the list, Settings' key row more than its column holds just above the narrow layout), so no page
+   is ever wider than its column, which under classic scroll bars is a sideways bar over the page's last button. */
+@media (max-width: 1100px) {
   .ma2-tools__head { display: none; }
   .ma2-tool { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .ma2-seg { justify-self: start; flex-wrap: wrap; }
-  .ma2-settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-  .ma2-settings__nav { flex-direction: row; align-items: center; overflow-x: auto; overflow-y: hidden; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; }
-  .ma2-settings__nav .nav-item { width: auto; flex: none; font-size: 13px; padding: 6px 10px; justify-content: flex-start; }
-  .ma2-settings__nav .nav-item span { display: inline; }
-  .ma2-settings__group { display: none; }
   .ma2-key__do { flex-basis: 100%; justify-content: flex-start; flex-wrap: nowrap; }
   .ma2-key__do .ma2-field { width: auto; flex: 1; min-width: 0; }
   .ma2-setting { flex-wrap: wrap; }
   .ma2-setting__control { max-width: 100%; }
+}
+@media (max-width: 900px) {
+  .ma2-settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  /* The bots' names wrap onto more rows rather than scroll sideways: a sideways bar takes room under classic scroll bars. */
+  .ma2-settings__nav { flex-direction: row; flex-wrap: wrap; align-items: center; overflow-x: hidden; overflow-y: auto; max-height: 40%; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; }
+  .ma2-settings__nav .nav-item { width: auto; flex: none; font-size: 13px; padding: 6px 10px; justify-content: flex-start; }
+  .ma2-settings__nav .nav-item span { display: inline; }
+  .ma2-settings__group { display: none; }
 }
 .ma2-publisher-id { color: var(--faint); }
 .ma2-pick { flex-wrap: nowrap; justify-content: flex-end; }

@@ -984,7 +984,8 @@ async function statusRow(s: UnitState): Promise<string> {
   const rowsBefore = await s.w.eval<number>("document.querySelectorAll('.messages [data-bubble]').length");
   // The fake model holds this turn open for about ten seconds (its server's idle limit), so the line is watched for from
   // the page itself: every phrase it takes, and every mood word in the list, is recorded as it changes.
-  await s.w.eval(`(() => { window.__seenStatus = []; window.__seenMood = []; window.__seenBot = []; const note = () => {
+  await s.w.eval(`(() => { window.__seenStatus = []; window.__seenMood = []; window.__seenBot = []; window.__seenTail = []; const note = () => {
+    const mm = document.querySelector('.messages'); const tl = mm ? [...mm.children].slice(-3).map((x) => x.tagName + '.' + x.className + ':' + (x.textContent || '').slice(0, 30)).join(' | ') + ' / head=' + (document.querySelector('.conversation__who')?.textContent || '') : ''; if (window.__seenTail.at(-1) !== tl) window.__seenTail.push(tl);
     const b = [...document.querySelectorAll('.messages .bubble--bot')].map((x) => x.textContent.slice(0, 40)).join('|'); if (window.__seenBot.at(-1) !== b) window.__seenBot.push(b);
     const t = document.querySelector('.messages [data-status-line] [data-status-text]')?.textContent; if (t && window.__seenStatus.at(-1) !== t) window.__seenStatus.push(t);
     const m = document.querySelector('[data-bot-row=alpha] [data-mood-words]')?.textContent; if (m && window.__seenMood.at(-1) !== m) window.__seenMood.push(m);
@@ -993,7 +994,7 @@ async function statusRow(s: UnitState): Promise<string> {
   const phrase = await s.w.waitFor<string>("the status line while her turn runs", "document.querySelector('.messages [data-status-line] [data-status-text]')?.textContent ?? null", 20_000)
     .catch(async (err: unknown) => {
       const feed = await s.c.request<{ activity: { subject: { id: string }; state: string; tool?: string }[] }>("activity.list", { kind: "bots" }).then((r) => JSON.stringify(r.activity.find((x) => x.subject.id === "alpha"))).catch(() => "unreadable");
-      const seen = await s.w.eval<string>("JSON.stringify({ status: window.__seenStatus, mood: window.__seenMood, bot: window.__seenBot.slice(-3) })").catch(() => "unreadable");
+      const seen = await s.w.eval<string>("JSON.stringify({ status: window.__seenStatus, mood: window.__seenMood, bot: window.__seenBot.slice(-3), tail: window.__seenTail.slice(-4) })").catch(() => "unreadable");
       return s.x.fail(`${String((err as Error)?.message ?? err)}; seen in the page ${seen}; the engine's feed for Alpha: ${feed}`);
     });
   if (toolWords.test(phrase) || phrase.length > 60) s.x.fail(`the status line says "${phrase}": a tool name or an argument is on the screen`);

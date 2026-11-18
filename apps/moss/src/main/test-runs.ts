@@ -120,6 +120,32 @@ export function sceneFile(scene: string, theme: string, size: string): string {
 }
 
 export const SIZES = [{ name: "usual", width: 1280, height: 820 }, { name: "narrow", width: 760, height: 820 }] as const;
+/** The widths the layout measure covers: usual and narrow, just above the narrow breakpoint, and the window's minimum. */
+const MEASURE_SIZES = [...SIZES, { name: "w1000", width: 1000, height: 820 }, { name: "w901", width: 901, height: 820 }, { name: "w640", width: 640, height: 480 }] as const;
+
+/** Page script: adds classic scroll bars to this document, then lists what scrolls sideways (the page's own width too). */
+const MEASURE = `(() => {
+  if (!document.getElementById("__classic")) {
+    const st = document.createElement("style");
+    st.id = "__classic";
+    st.textContent = "::-webkit-scrollbar { width: 15px; height: 15px; background: #888 } ::-webkit-scrollbar-thumb { background: #444 }";
+    document.head.append(st);
+  }
+  const name = (e) => e.tagName.toLowerCase() + (e.id ? "#" + e.id : "") + (typeof e.className === "string" && e.className ? "." + e.className.trim().split(/\\s+/).join(".") : "");
+  const over = [];
+  for (const e of document.querySelectorAll("*")) {
+    const cs = getComputedStyle(e);
+    if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && e.scrollWidth > e.clientWidth && e.clientWidth > 0) {
+      // The widest things inside it, so a failure names what is too wide.
+      const box = e.getBoundingClientRect();
+      const wide = [...e.querySelectorAll("*")].filter((c) => c.getBoundingClientRect().right > box.right + 1).slice(0, 4).map((c) => name(c) + " " + Math.round(c.getBoundingClientRect().width) + "px");
+      over.push({ el: name(e), scrollWidth: e.scrollWidth, clientWidth: e.clientWidth, wide });
+    }
+  }
+  const r = document.documentElement;
+  const b = document.body;
+  return { over, page: { scrollWidth: Math.max(r.scrollWidth, b.scrollWidth), clientWidth: r.clientWidth }, innerWidth: window.innerWidth };
+})()`;
 
 export async function runRender(o: { win: BrowserWindow; engine: MossEngine; dir: string; log: (l: string) => void; logLines: string[] }): Promise<void> {
   const { win, engine } = o;
@@ -130,35 +156,48 @@ export async function runRender(o: { win: BrowserWindow; engine: MossEngine; dir
     return (await win.webContents.executeJavaScript(`document.querySelectorAll("[data-bot-row]").length`).catch(() => 0) as number) > 0;
   }, 30_000);
   const written: string[] = [];
+  const measured: Record<string, unknown>[] = [];
+  // A scene that opened a form or said a refusal leaves the window as it was found for the next one.
+  const reset = async (scene: Scene): Promise<void> => {
+    if (scene.run === undefined && scene.said === undefined) return;
+    win.webContents.reload();
+    await sleep(500);
+    await until(async () => (await win.webContents.executeJavaScript(`document.querySelectorAll("[data-bot-row]").length`).catch(() => 0) as number) > 0, 15_000);
+  };
   if (ready) {
     win.webContents.setFrameRate(30);
-    for (const theme of ["light", "dark"] as const) {
+    // Layout does not depend on the colours: the measure looks at the light theme only.
+    for (const theme of process.env.MOSS_RENDER_MEASURE === "1" ? ["light" as const] : ["light", "dark"] as const) {
       nativeTheme.themeSource = theme;
-      for (const size of SIZES) {
+      for (const size of process.env.MOSS_RENDER_MEASURE === "1" ? MEASURE_SIZES : SIZES) {
         win.setContentSize(size.width, size.height);
         // MOSS_RENDER_SCENES: a prefix to draw only some scenes (`ma2-`).
         const only = process.env.MOSS_RENDER_SCENES;
         for (const scene of SCENES.filter((x) => only === undefined || only === "" || x.name.startsWith(only))) {
           await win.webContents.executeJavaScript(`window.__mossTest && window.__mossTest.go(${JSON.stringify({ ...scene.go, calm: true })})`).catch(() => undefined);
           // Let the conversation load, the sealed card frames draw and the faces settle.
-          await sleep(1_600);
-          if (scene.run !== undefined) { await win.webContents.executeJavaScript(scene.run).catch((err: unknown) => o.log(`render: ${scene.name} script failed: ${String(err)}`)); await sleep(900); }
+          await sleep(process.env.MOSS_RENDER_MEASURE === "1" ? 1_000 : 1_600);
+          if (scene.run !== undefined) { await win.webContents.executeJavaScript(scene.run).catch((err: unknown) => o.log(`render: ${scene.name} script failed: ${String(err)}`)); await sleep(process.env.MOSS_RENDER_MEASURE === "1" ? 500 : 900); }
           if (scene.said !== undefined) { win.webContents.send("moss:card-said", scene.said.card, scene.said.words); await sleep(500); }
+          if (process.env.MOSS_RENDER_MEASURE === "1") {
+            // Layout, not a picture: with classic (always shown, space-taking) scroll bars styled onto this page only (never a
+            // system setting), every scroll container that scrolls sideways, and the page itself, is reported.
+            const m = await win.webContents.executeJavaScript(MEASURE).catch((err: unknown) => ({ error: String(err) })) as Record<string, unknown>;
+            measured.push({ scene: scene.name, theme, size: size.name, ...m });
+            await reset(scene);
+            continue;
+          }
           const image = await win.webContents.capturePage();
           const file = join(o.dir, sceneFile(scene.name, theme, size.name));
           writeFileSync(file, image.toPNG());
           written.push(file);
           o.log(`render: ${file} (${image.getSize().width}x${image.getSize().height})`);
-          // A scene that opened a form or said a refusal leaves the window as it was found for the next one.
-          if (scene.run !== undefined || scene.said !== undefined) {
-            win.webContents.reload();
-            await sleep(500);
-            await until(async () => (await win.webContents.executeJavaScript(`document.querySelectorAll("[data-bot-row]").length`).catch(() => 0) as number) > 0, 15_000);
-          }
+          await reset(scene);
         }
       }
     }
   }
+  if (process.env.MOSS_RENDER_MEASURE === "1") writeFileSync(join(o.dir, "measure.json"), JSON.stringify(measured, null, 2));
   writeFileSync(join(o.dir, "render-run.json"), JSON.stringify({ ok: ready, written, log: o.logLines.slice(-120) }, null, 2));
   app.exit(ready ? 0 : 1);
 }
