@@ -281,12 +281,12 @@ class MossWindow {
         return /sealed: answer refused \([^\n]*/.exec(text)?.[0];
       }, 200);
       if (said === "accepted") {
-        console.log(`acceptance: sealed press (MOSS): ${attempt === 0 ? "landed first try" : `landed on retry (the first press said ${tried.join(", ")})`}`);
+        console.error(`acceptance: sealed press (MOSS): ${attempt === 0 ? "landed first try" : `landed on retry (the first press said ${tried.join(", ")})`}`);
         return "accepted";
       }
       if (attempt === 0 && (said === "late" || said === "missed" || said === "no-pointer" || said === "opening")) {
         tried.push(said);
-        console.log(`acceptance: sealed press (MOSS): the card said press again (${said}); one more press`);
+        console.error(`acceptance: sealed press (MOSS): the card said press again (${said}); one more press`);
         continue;
       }
       if (said === "covered") this.x.fail(`the press on the card's Approve in MOSS was read as covered (never pressed again)${tried.length > 0 ? `; the press before it said ${tried.join(", ")}` : ""}`);
