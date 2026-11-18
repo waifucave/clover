@@ -10,6 +10,7 @@ import { ROUTER_STEP } from "./router-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
 import { ADDONS_STEP } from "./addons-step";
 import { ARCHIVE_STEP } from "./archive-step";
+import { BOT_MOVE_UPGRADE_STEP } from "./bot-move-upgrade-step";
 import { ACP_BACKEND_STEP } from "./acp-backend-step";
 import { BUILDER_EXAMPLES_STEP } from "./builder-examples-step";
 import { WORKSHOP_POINTS_STEP } from "./workshop-points-step";
@@ -163,6 +164,8 @@ export const COPY_UPGRADE_STEPS = [
   "the copy from the old install's home is offered on the core's own card, taken on the press, and swapped in at the restart",
   "the old run's model key does not come over: the notice names it, it isn't signed in, and it works once entered again",
   "the old conversation is listed and opens in MOSS: the default bot's record is on the old conversation, the engine's page of it holds the old turns, and MOSS (the bots app, beside MOSS Code) draws them in her conversation; the old run's code sessions, if any, are listed for MOSS Code",
+  // Lane BT's: the bots the old home recorded, after the move (bot-move-upgrade-step.ts).
+  BOT_MOVE_UPGRADE_STEP,
   "a new turn runs on the upgraded home",
   "the old run's plugin is still installed, asks for its OK again once (its files were updated), and its tool answers",
   "a fenced write still raises an approval card, then lands",

@@ -101,7 +101,8 @@ import { BUILDER_EXAMPLES_STEP, builderExamplesStep } from "./builder-examples-s
 import { WORKSHOP_POINTS_STEP, workshopPointsStep } from "./workshop-points-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { BOT_RECORDS_ENV, BOT_RECORDS_STEP, botRecordsWrong } from "./bot-records-step";
-import { MOSS_ENV, MOSS_STEPS, mossShowsOldConversation, mossUnit, seedLongConversation, type MossUnitCtx } from "./moss-step";
+import { MOSS_ENV, MOSS_STEPS, mossListsArchived, mossShowsOldConversation, mossUnit, seedLongConversation, type MossUnitCtx } from "./moss-step";
+import { botMoveUpgradeCheck } from "./bot-move-upgrade-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
@@ -5887,6 +5888,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   // bot, on the same main session), its old turns over the engine's own page (bot.conversation), and MOSS, started on the
   // upgraded home beside MOSS Code, drawing them; and the old run's code sessions, if it left any, listed for MOSS Code.
   let session: string | undefined;
+  const mossKept: { port?: number; log?: string } = {};
   try {
     if (bots === undefined) fail(`bot.list: ${botsWhy}`);
     if (k.session === undefined) block("the old run left no conversation (its step 3 didn't run)");
@@ -5915,12 +5917,28 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     const listed = (await c.request<{ sessions: { id: string; mode?: string; kind?: string }[] }>("session.list", {}).catch(() => ({ sessions: [] }))).sessions;
     const code = listed.filter((x) => (x.mode ?? x.kind) === "code");
     if (target !== "source" && mossBundle === undefined) block(`${rec!.id}'s record and her old turns are on the engine (bot.records, bot.conversation); a packaged run takes the build's MOSS with --moss-app <MOSS.app> to draw them`);
-    const drawn = await mossShowsOldConversation(mossCtx(), { bot: rec!.id, name, text: "ACCEPTANCE-REPLY-OK" });
+    const drawn = await mossShowsOldConversation(mossCtx(), { bot: rec!.id, name, text: "ACCEPTANCE-REPLY-OK", keep: mossKept });
     record(stepNo("the old conversation is listed"), "PASS", `bot.records: ${rec!.id} (made by ${rec!.madeBy.kind}) on the old conversation ${session}; bot.conversation holds the old run's reply; ${drawn}; the old run's code sessions listed for MOSS Code: ${code.length === 0 ? "none (the old build kept none)" : code.map((x) => x.id).join(", ")}`);
   } catch (err) {
     record(stepNo("the old conversation is listed"), statusOf(err), why(err));
     // A conversation not listed: the new turns go to the bot's current one, if there is one.
     if (session === undefined && bots !== undefined && bots.length > 0) session = bots[0]!.mainSession;
+  }
+
+  // The copy's upgrade: every bot the old home recorded (its conversation under transcripts/), after the move: named once
+  // in its journal, listed or archived with that conversation, an archived one brought back with its old turns (and put
+  // back), and the archived ones under MOSS's Archived bots, in the MOSS the row before left up (lane BT).
+  if (copyUpgrade) {
+    const n = stepNo("every bot the old home recorded");
+    try {
+      const checked = await botMoveUpgradeCheck({ rpc: c, oldHome: kept_!.oldHome!, okPlugin: async (id) => { await okOldPluginAgain(c, id); } });
+      const archived = (await c.request<{ bots: { id: string }[] }>("bot.archived", {})).bots;
+      if (archived.length > 0 && (mossKept.port === undefined || mossKept.log === undefined)) block(`${checked}; MOSS didn't start in the row before, so its Archived bots weren't looked at`);
+      const shown = archived.length === 0 ? "no bot is archived, so MOSS's Archived bots weren't looked at" : await mossListsArchived(mossCtx(), { port: mossKept.port!, log: mossKept.log! }, archived);
+      record(n, "PASS", `${checked}; ${shown}`);
+    } catch (err) {
+      record(n, statusOf(err), why(err));
+    }
   }
 
   // 4: a new turn, its own reply (a tag only this turn can have caused).

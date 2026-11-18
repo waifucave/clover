@@ -170,7 +170,7 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
  *  bot bubble holding `text` (the old run's reply) is drawn there. MOSS is then put behind (its front file says `back`), so
  *  the rows after it are MOSS Code's, and it stays up until the run ends (the run's children are ended then): today's
  *  engine stops when the newest app connection goes. What it saw, in words. */
-export async function mossShowsOldConversation(x: MossUnitCtx, o: { bot: string; name: string; text: string }): Promise<string> {
+export async function mossShowsOldConversation(x: MossUnitCtx, o: { bot: string; name: string; text: string; keep?: { port?: number; log?: string } }): Promise<string> {
   const front = join(x.root, "moss-front");
   const keyFile = join(x.root, "moss-answer-key");
   writeFileSync(front, "front");
@@ -178,6 +178,8 @@ export async function mossShowsOldConversation(x: MossUnitCtx, o: { bot: string;
   const built = x.mossApp();
   const env = { ...x.env(), MOSS_USER_DATA: join(x.root, "moss-user-data"), MOSS_TEST_DEBUG: "1", MOSS_TEST_ANSWER_KEY: keyFile, MOSS_TEST_MAIN_FRONT_FILE: front };
   const app = x.startChild("moss-app", built.exe, [...built.args, "--mute-audio", "--moss-headless", `--remote-debugging-port=${port}`], env);
+  // MOSS stays up after the row: a later row of the same run looks at its window again through this port.
+  if (o.keep !== undefined) { o.keep.port = port; o.keep.log = app.log; }
   let cdp: Cdp | undefined;
   try {
     await x.until("MOSS's DevTools port", 120_000, async () => {
@@ -200,6 +202,28 @@ export async function mossShowsOldConversation(x: MossUnitCtx, o: { bot: string;
   } finally {
     writeFileSync(front, "back");
     cdp?.close();
+  }
+}
+
+/** The upgrade's bots row in MOSS (bot-move-upgrade-step.ts): MOSS, left up by `mossShowsOldConversation` (its DevTools
+ *  `port`), opens its Settings, and every archived bot in `bots` is listed under Archived bots. What it saw, in words. */
+export async function mossListsArchived(x: MossUnitCtx, at: { port: number; log: string }, bots: readonly { id: string }[]): Promise<string> {
+  const cdp = await Cdp.connect(at.port);
+  try {
+    const w = new MossWindow(x, cdp, at.log);
+    await w.main();
+    await w.click(".list__bottom .nav-item.account");
+    await w.click(`[data-section="general"]`);
+    const ids = JSON.stringify(bots.map((b) => b.id));
+    const shown = await w.waitFor<number>(`the ${bots.length} archived bots under Archived bots in MOSS's Settings`, `(() => { const want = ${ids}; const have = new Set([...document.querySelectorAll('[data-archived-bot]')].map((e) => e.getAttribute('data-archived-bot'))); return want.every((id) => have.has(id)) ? have.size : null; })()`, 30_000)
+      .catch(async (err: unknown) => {
+        const have = await w.eval<string>("[...document.querySelectorAll('[data-archived-bot]')].map((e) => e.getAttribute('data-archived-bot')).join(', ')").catch(() => "");
+        const shot = await w.failureShot(x.logs, 90).catch(() => "");
+        return x.fail(`${x.why(err)} [listed: ${have || "none"}]${shot}`);
+      });
+    return `MOSS's Settings list all ${bots.length} under Archived bots (${shown} there)`;
+  } finally {
+    cdp.close();
   }
 }
 
