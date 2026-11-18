@@ -16,9 +16,9 @@ describe("the bundled model plugins", () => {
     expect(checkModelPlugins()).toEqual([]);
   });
 
-  test("one plugin per provider: 218 of them, 6 with code, the rest data on a generic adapter", () => {
+  test("one plugin per provider: 220 of them, 6 with code, the rest data on a generic adapter", () => {
     expect(generateModelPlugins().size).toBe(sdk.providers.length);
-    expect(sdk.providers.length).toBe(218);
+    expect(sdk.providers.length).toBe(220);
     const code = sdk.providers.filter((p) => !GENERIC_ADAPTER_IDS.has(p.adapterId)).map((p) => p.id).sort();
     expect(code).toEqual(Object.keys(CODE_PLUGINS).sort());
     for (const id of code) {
@@ -30,7 +30,7 @@ describe("the bundled model plugins", () => {
   test("each is a valid child of `moss`: data with its endpoint and key placement, or code with its adapter", async () => {
     const { report } = await pluginFromFolder(join(BUNDLED_CHILDREN_DIR, ".."), { bundled: true });
     const models = report.children.filter((c) => c.folder.startsWith("model-"));
-    expect(models.length).toBe(218);
+    expect(models.length).toBe(220);
     const bad = models.filter((c) => !c.ok || c.report.manifest === undefined).map((c) => c.folder);
     expect(bad).toEqual([]);
     for (const c of models) {

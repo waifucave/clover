@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "OpenCode Go (Anthropic dialect)",
+  "description": "OpenCode Go (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "opencode-go-anthropic",
+        "name": "OpenCode Go (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your OpenCode Go (Anthropic dialect) API key. MOSS keeps it in your credential store and adds it to OpenCode Go (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://opencode.ai/inference/go/anthropic"
+        }
+      }
+    ]
+  }
+}

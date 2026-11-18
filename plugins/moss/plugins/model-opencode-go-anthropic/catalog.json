@@ -1,0 +1,527 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Subscription API-key access with plan usage limits (Go $10, Go Plus $40, Go Teams $20 per member per month); throughput is a plan entitlement and no live gate case has run."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://opencode.ai/docs/go/ — OpenCode's own docs, read 2026-11-18: API keys are created in the OpenCode Console after subscribing; the endpoint is `https://opencode.ai/inference/go`; each model is listed with its native API and every text model also works through the other APIs.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm",
+    "conversationIdHeader": "x-opencode-session"
+  },
+  "rows": [
+    {
+      "key": "opencode-go-anthropic/claude-haiku-5-5",
+      "providerId": "opencode-go-anthropic",
+      "upstreamId": "claude-haiku-5-5",
+      "displayName": "Claude Haiku 5.5 (OpenCode Go)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `claude-haiku-5-5` limit.context",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `claude-haiku-5-5` limit.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `claude-haiku-5-5` modalities.input",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `claude-haiku-5-5` modalities.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `claude-haiku-5-5` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `claude-haiku-5-5` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://opencode.ai/inference/go/v1/models — `claude-haiku-5-5` capabilities.reasoning.supported",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `claude-haiku-5-5` capabilities.structured_output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "canonicalModelId": "claude-haiku-5.5",
+      "modelFamily": "claude",
+      "strength": "weak"
+    },
+    {
+      "key": "opencode-go-anthropic/minimax-m3",
+      "providerId": "opencode-go-anthropic",
+      "upstreamId": "minimax-m3",
+      "displayName": "MiniMax-M3 (OpenCode Go)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `minimax-m3` limit.context",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `minimax-m3` limit.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `minimax-m3` modalities.input",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `minimax-m3` modalities.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `minimax-m3` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `minimax-m3` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://opencode.ai/inference/go/v1/models — `minimax-m3` capabilities.reasoning.supported",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m3",
+      "modelFamily": "minimax",
+      "strength": "medium"
+    },
+    {
+      "key": "opencode-go-anthropic/qwen3.7-plus",
+      "providerId": "opencode-go-anthropic",
+      "upstreamId": "qwen3.7-plus",
+      "displayName": "Qwen3.7 Plus (OpenCode Go)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.7-plus` limit.context",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.7-plus` limit.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.7-plus` modalities.input",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.7-plus` modalities.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.7-plus` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.7-plus` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.7-plus` capabilities.reasoning.supported",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.7-plus",
+      "modelFamily": "qwen",
+      "strength": "medium"
+    },
+    {
+      "key": "opencode-go-anthropic/qwen3.8-flash",
+      "providerId": "opencode-go-anthropic",
+      "upstreamId": "qwen3.8-flash",
+      "displayName": "Qwen3.8 Flash (OpenCode Go)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-flash` limit.context",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-flash` limit.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-flash` modalities.input",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-flash` modalities.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-flash` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-flash` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-flash` capabilities.reasoning.supported",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-flash` capabilities.structured_output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-flash",
+      "modelFamily": "qwen",
+      "strength": "weak"
+    },
+    {
+      "key": "opencode-go-anthropic/qwen3.8-max",
+      "providerId": "opencode-go-anthropic",
+      "upstreamId": "qwen3.8-max",
+      "displayName": "Qwen3.8 Max (OpenCode Go)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-max` limit.context",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-max` limit.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-max` modalities.input",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-max` modalities.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-max` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-max` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-max` capabilities.reasoning.supported",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen3.8-max` capabilities.structured_output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-max",
+      "modelFamily": "qwen",
+      "strength": "strong"
+    },
+    {
+      "key": "opencode-go-anthropic/qwen4-max",
+      "providerId": "opencode-go-anthropic",
+      "upstreamId": "qwen4-max",
+      "displayName": "Qwen4 Max (OpenCode Go)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen4-max` limit.context",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen4-max` limit.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen4-max` modalities.input",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen4-max` modalities.output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen4-max` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen4-max` capabilities.tools.supported: true",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen4-max` capabilities.reasoning.supported",
+          "confidence": "declared",
+          "observedAt": "2026-11-18T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "xhigh"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://opencode.ai/inference/go/v1/models — `qwen4-max` capabilities.structured_output",
+        "confidence": "declared",
+        "observedAt": "2026-11-18T12:00:00Z"
+      },
+      "canonicalModelId": "qwen4-max",
+      "modelFamily": "qwen",
+      "strength": "strong"
+    }
+  ]
+}

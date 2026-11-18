@@ -7,7 +7,7 @@
 //   * `moss.json`: one `models[]` entry, minimal (provider, name, catalog, auth and an endpoint or an adapter);
 //   * `catalog.json`: the provider's rows and the rest of its record (provider-catalog's catalog file, format 1).
 //
-// DECLARATIVE (data, no code): every provider on one of the SDK's generic adapters, 212 of 218. Its entry names a
+// DECLARATIVE (data, no code): every provider on one of the SDK's generic adapters, 214 of 220. Its entry names a
 // compatible `endpoint` and the core runs it on the generic adapter for that protocol.
 //
 // CODE: the six providers whose adapter is their own (`CODE_PLUGINS`). Each has a host module exporting `adapter`,

@@ -97,7 +97,7 @@ describe("the model plugins, loaded", () => {
     // The file the sessions read: content-addressed, and it is the catalog.
     const bytes = readFileSync(snap.catalogPath);
     expect(createHash("sha256").update(bytes).digest("hex")).toBe(snap.catalogSha256);
-    expect(JSON.parse(bytes.toString("utf8")).providers.length).toBe(218);
+    expect(JSON.parse(bytes.toString("utf8")).providers.length).toBe(220);
     const option = plugins.sessionOption({ caller: { kind: "core" } })!;
     expect(option.catalog).toEqual({ path: snap.catalogPath, sha256: snap.catalogSha256 });
     expect(option.hostAdapters!.map((a) => a.id).sort()).toEqual([...snap.served.keys()].sort());
