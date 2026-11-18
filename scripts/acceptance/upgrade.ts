@@ -24,6 +24,7 @@ import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } fr
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { holdMachine } from "./exclusive";
+import { nameLeftovers, reap } from "./reaper";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const HARNESS = join(REPO, "scripts", "acceptance");
@@ -72,6 +73,18 @@ let tree: string | undefined;
 let fromLabel = "";
 let code = 2;
 const tables: string[] = [];
+/** Lane HV: whatever of the pair's is still running from its own temp folders (the old tree's app and engine, anything under
+ *  the state dir) is ended, and named: each half's run reaps its own, but an old tree's harness may have no reaper. */
+async function reapPair(): Promise<string | undefined> {
+  const r = await reap({ roots: [state, ...(tree !== undefined ? [tree] : [])], groups: [] });
+  return r.leftovers.length === 0 ? undefined : `${r.leftovers.length} process(es) the pair started outlived it (ended now): ${nameLeftovers(r.leftovers)}${r.survivors.length > 0 ? `; still alive after SIGKILL: ${nameLeftovers(r.survivors)}` : ""}`;
+}
+// Interrupted: each half's run hears the same signal (one group) and cleans up; then the pair's own leftovers go.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(sig, () => {
+    void reapPair().then((p) => { if (p !== undefined) console.error(`upgrade: FAIL: ${p}`); process.exit(130); });
+  });
+}
 try {
   let oldScript = join(HARNESS, "run.ts");
   let oldCwd = REPO;
@@ -129,6 +142,8 @@ try {
   code = 2;
 } finally {
   console.log(tables.join("\n\n"));
+  const left = await reapPair();
+  if (left !== undefined) { console.error(`upgrade: FAIL: ${left}`); code = code === 0 ? 1 : code; }
   if (keep) {
     console.error(`upgrade: kept the state dir ${state}${tree !== undefined ? ` and the old tree ${tree}` : ""}`);
   } else {
