@@ -248,15 +248,18 @@ describe("the app's shortcuts", () => {
 });
 
 describe("surface windows", () => {
-  test("a headless run's surfaces draw offscreen (the background host's too: a never-shown island stopped drawing); a measuring run's and a real build's don't", () => {
-    // The host is started headless with no capture flag: its island, pill and drawers are offscreen, as a capture run's are.
-    expect(surfaceDrawsOffscreen({ headless: true, measuring: false })).toBe(true);
-    expect(webPreferences({ preload: "p", partition: "q", headless: true, offscreen: surfaceDrawsOffscreen({ headless: true, measuring: false }) }).offscreen).toBe(true);
-    // MOSS_TEST_INVISIBLE: shown at opacity 0 and composited as a person's are, never offscreen.
-    expect(surfaceDrawsOffscreen({ headless: true, measuring: true })).toBe(false);
+  test("the background host's headless surfaces draw offscreen (a never-shown island stopped drawing), as a capture run's do; MOSS Code's other headless runs, a measuring run and a real build keep real windows", () => {
+    const o = (x: Partial<{ headless: boolean; measuring: boolean; capture: boolean; host: boolean }>) => surfaceDrawsOffscreen({ headless: true, measuring: false, capture: false, host: false, ...x });
+    expect(o({ host: true })).toBe(true);
+    expect(o({ capture: true })).toBe(true);
+    expect(webPreferences({ preload: "p", partition: "q", headless: true, offscreen: o({ host: true }) }).offscreen).toBe(true);
+    // The UI tests' headless MOSS Code: its surfaces take a dropped file and play media in real windows.
+    expect(o({})).toBe(false);
+    // MOSS_TEST_INVISIBLE: shown at opacity 0 and composited as a person's are.
+    expect(o({ host: true, measuring: true })).toBe(false);
     // A real build is never headless: its surfaces are real windows, shown when they hold a card.
-    expect(surfaceDrawsOffscreen({ headless: false, measuring: false })).toBe(false);
-    expect("offscreen" in webPreferences({ preload: "p", partition: "q", headless: false, offscreen: surfaceDrawsOffscreen({ headless: false, measuring: false }) })).toBe(false);
+    expect(o({ headless: false, host: true })).toBe(false);
+    expect("offscreen" in webPreferences({ preload: "p", partition: "q", headless: false, offscreen: o({ headless: false, host: true }) })).toBe(false);
   });
   const prefs = webPreferences({ preload: "/p.cjs", partition: "persist:ui", headless: true, offscreen: false });
   test("an overlay is frameless, unfocused and out of the task switcher; on Wayland every surface is a normal window", () => {

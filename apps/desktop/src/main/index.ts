@@ -2530,10 +2530,10 @@ function syncSurfaces(): void {
     const win = new BrowserWindow(surfaceWindowPlan({
       surface: { ...w.window, alwaysOnTop: floats && w.window.alwaysOnTop === true },
       title: `${identity.productName} ${w.id}`,
-      // A headless run draws its surfaces offscreen (window.ts `surfaceDrawsOffscreen`: a capture run's, and the background
-      // host's, whose never-shown island stopped drawing after a resize and read nothing for a press); a measuring run's are
-      // shown invisible instead, and a real build's are shown.
-      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: surfaceDrawsOffscreen({ headless, measuring: invisible !== undefined }) }),
+      // A capture run's surfaces and the background host's headless ones draw offscreen (window.ts `surfaceDrawsOffscreen`: the
+      // host's never-shown island stopped drawing after a resize and read nothing for a press); a measuring run's are shown
+      // invisible instead, and a real build's are shown.
+      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: surfaceDrawsOffscreen({ headless, measuring: invisible !== undefined, capture: args.capture !== undefined, host: program === "host" }) }),
       wayland,
     }));
     watchWindow(win);
