@@ -4053,6 +4053,14 @@ async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void>
 /** The workshop row alone (--only-workshop): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, cards pressed in its window, main's picker for the
  *  peer bot's folder) and the row, as the full run's UI phase gives it. */
+/** Puts Alpha back on the model she had before a row moved her (`bot.setUserLayer`). With bots as records the move writes her
+ *  record, so clearing the user layer leaves her on the moved-to model: the model her record named is picked again the person's
+ *  way (`bot.edit`), as `pickKeyedModel` first gave it. */
+async function restoreAlphaModel(c: MossClient, before: string | null, kept: string | undefined): Promise<void> {
+  await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+  if (before === null && kept !== undefined) await c.request("bot.edit", { id: "alpha", patch: { model: kept } }).catch(() => undefined);
+}
+
 /** One provider's turn on a running daemon: its bundled plugin signed in with the run's dummy key through its own
  *  sign-in (`plugin.auth.signIn`), Alpha moved to its model, one turn (`check` gives the verdict on the events and the
  *  requests its fake saw during it), and Alpha's model and the sign-in put back, so no later turn sees the key. */
@@ -4061,6 +4069,8 @@ async function providerTurn(c: MossClient, session: string, p: { plugin: string;
   let signedIn: number | undefined;
   /** Alpha's own model setting before the turn (null: none, the default's). */
   let before: string | null = null;
+  /** The model her record names (picked by `bot.edit`), which the user layer's clearing does not bring back. */
+  let kept: string | undefined;
   try {
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: p.plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
@@ -4070,6 +4080,7 @@ async function providerTurn(c: MossClient, session: string, p: { plugin: string;
     signedIn = entry!.index;
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    kept = alpha.model;
     await c.request("bot.setUserLayer", { id: "alpha", patch: { model: p.model } });
     moved = true;
     await until(`Alpha on ${p.model}`, 30_000, async () => {
@@ -4082,7 +4093,7 @@ async function providerTurn(c: MossClient, session: string, p: { plugin: string;
     if (wrong !== undefined) fail(wrong);
     return `${p.model} (${p.seen() - from} request(s), key matched${carded.length ? `; cards: ${carded.join("; ")}` : ""})`;
   } finally {
-    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (moved) await restoreAlphaModel(c, before, kept);
     if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: p.plugin, index: signedIn }).catch(() => undefined);
   }
 }
@@ -4126,6 +4137,8 @@ async function thirdPartyModelTurn(c: MossClient, session: string): Promise<{ st
   let moved = false;
   let signedIn: number | undefined;
   let before: string | null = null;
+  /** The model her record names (picked by `bot.edit`), which the user layer's clearing does not bring back. */
+  let kept: string | undefined;
   try {
     const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", THIRD_PARTY_PLUGIN);
     placeModelsFixture(join(import.meta.dir, "fixtures", THIRD_PARTY_PLUGIN), folder, models.port);
@@ -4146,6 +4159,7 @@ async function thirdPartyModelTurn(c: MossClient, session: string): Promise<{ st
     signedIn = entry!.index;
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    kept = alpha.model;
     // Its model is in the catalog once the model plugins have rebuilt on its OK.
     // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
     await modelPluginsUp();
@@ -4172,7 +4186,7 @@ async function thirdPartyModelTurn(c: MossClient, session: string): Promise<{ st
   } catch (err) {
     return { status: statusOf(err), detail: why(err) };
   } finally {
-    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (moved) await restoreAlphaModel(c, before, kept);
     if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: THIRD_PARTY_PLUGIN, index: signedIn }).catch(() => undefined);
   }
 }
@@ -4190,6 +4204,8 @@ async function oauthSignInTurn(c: MossClient, session: string): Promise<{ status
   let moved = false;
   let signedIn: number | undefined;
   let before: string | null = null;
+  /** The model her record names (picked by `bot.edit`), which the user layer's clearing does not bring back. */
+  let kept: string | undefined;
   try {
     const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", OAUTH_PLUGIN);
     placeOAuthFixture(join(import.meta.dir, "fixtures", OAUTH_PLUGIN), folder, o.port);
@@ -4223,6 +4239,7 @@ async function oauthSignInTurn(c: MossClient, session: string): Promise<{ status
     if (o.seen.refusedExchanges > 0) fail(`the OAuth server refused ${o.seen.refusedExchanges} exchange(s)`);
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    kept = alpha.model;
     // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
     await modelPluginsUp();
     await until(`${OAUTH_MODEL} listed by models.list`, 60_000, async () => ((await c.request<{ models: { id: string }[] }>("models.list", {}).catch(() => undefined))?.models.some((m) => m.id === OAUTH_MODEL) ? true : undefined), 500);
@@ -4255,7 +4272,7 @@ async function oauthSignInTurn(c: MossClient, session: string): Promise<{ status
   } catch (err) {
     return { status: statusOf(err), detail: why(err) };
   } finally {
-    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (moved) await restoreAlphaModel(c, before, kept);
     if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: OAUTH_PLUGIN, index: signedIn }).catch(() => undefined);
   }
 }
