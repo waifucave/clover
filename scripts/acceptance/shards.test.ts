@@ -84,9 +84,17 @@ describe("the split", () => {
     expect(run).toContain('if (runs("moss"))');
   });
 
+  test("the host units start their own daemon: beside any other unit each is a run of its own, so a mixed set runs every unit", () => {
+    const hosts = ["host", "browser-host", "surface-copy-host"] as const;
+    for (const h of hosts) expect(units().find((u) => u.id === h)!.ownHome).toBe(true);
+    expect(homePlan(["cold", "idle", ...hosts, "arrivals", "models"])).toEqual({ shared: ["cold", "idle", "arrivals", "models"], ownRuns: [...hosts] });
+    expect(homePlan(["browser-host"])).toEqual({ shared: ["browser-host"], ownRuns: [] });
+    expect(homePlan([...hosts])).toEqual({ shared: [], ownRuns: [...hosts] });
+  });
+
   test("the moss unit's rows are never scheduled into a home another unit uses", () => {
     const all = units();
-    const ids = all.map((u) => u.id).filter((id) => id !== "moss");
+    const ids = all.filter((u) => u.ownHome !== true).map((u) => u.id);
     expect(all.find((u) => u.id === "moss")!.ownHome).toBe(true);
     // Alone, the run's home is its own; beside any other unit, or all of them (the full run's list), a run of its own.
     expect(homePlan(["moss"])).toEqual({ shared: ["moss"], ownRuns: [] });

@@ -120,12 +120,14 @@ const OTHERS: readonly Unit[] = [
   { id: "moss", rows: MOSS_STEPS, phase: "parallel", estimate: 240, ownHome: true },
   { id: "cold", rows: [COLD_START_STEP], phase: "serial", estimate: 16 },
   { id: "idle", rows: [IDLE_STEP], phase: "serial", estimate: 45 },
+  // lane HS: the background host's rows start their own daemon (and the host) on a home no other unit has used: beside other
+  // units each is a run of its own (`ownHome`), so a set that names them with others runs every unit, not just the first of them.
   // lane HS: the background host's row, alone (its own daemon starts the host, host-step.ts).
-  { id: "host", rows: [HOST_STEP, HOST_GAVE_UP_STEP], phase: "serial", estimate: 240 },
+  { id: "host", rows: [HOST_STEP, HOST_GAVE_UP_STEP], phase: "serial", estimate: 240, ownHome: true },
   // …and the Browser rows with that host running (the controller's ruling: every browser row passes with a host too).
-  { id: "browser-host", rows: [BROWSER_HOST_STEP], phase: "serial", estimate: 90 },
+  { id: "browser-host", rows: [BROWSER_HOST_STEP], phase: "serial", estimate: 90, ownHome: true },
   // lane HS: row 65 (the island and pill copies) with the background host drawing the screen (the controller's R12 ruling).
-  { id: "surface-copy-host", rows: [SURFACE_COPY_HOST_STEP], phase: "serial", estimate: 120 },
+  { id: "surface-copy-host", rows: [SURFACE_COPY_HOST_STEP], phase: "serial", estimate: 120, ownHome: true },
 ];
 
 /** Every unit, the `chain` first, its rows every row of `steps` the others don't name; then the window's three. */

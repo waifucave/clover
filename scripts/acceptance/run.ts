@@ -3731,7 +3731,7 @@ async function unitsRun(app: { exe: string; args: string[] }, allIds: readonly U
   // run of its own after them (shards.ts `homePlan`, `ownHome`): its own temp home, never the one they used.
   if (allIds.length === 1 && allIds[0] === "moss") return mossRun(true);
   const plan = homePlan(allIds);
-  await otherUnitsRun(app, plan.shared);
+  if (plan.shared.length > 0) await otherUnitsRun(app, plan.shared);
   for (const id of plan.ownRuns) await ownHomeRun(id);
 }
 
