@@ -1,6 +1,6 @@
 // The one-time move on a home copied from the plugin era (lane BT, round 4): which bots it moves is decided from what
 // the home holds, not from the moment it first runs (move.ts). The fixture home first runs as the plugin era did
-// (plugins as the source), so each bot has its conversation, its state file and its memory, the way a Clover home
+// (plugins as the source), so each bot has its conversation, its state file and its memory, the way an old-app home
 // does; then its plugins change as a copy leaves them, and records become the source:
 //   sprout      its plugin gone (removed before the split), with the person's layer over it
 //   notes/keeper  a pack's bot whose pack is gone (its folder `notes--keeper`)
@@ -160,13 +160,13 @@ describe("the move on a home copied from the plugin era", () => {
 });
 
 describe("what tells a pre-split bot from a later one", () => {
-  test("the plugin era's state file and conversation meta, as Clover wrote them, dated before the first completion", () => {
+  test("the plugin era's state file and conversation meta, as the old app wrote them, dated before the first completion", () => {
     const home = tempDir();
     const put = (seg: string, name: string, body: object) => {
       mkdirSync(join(home, "transcripts", seg), { recursive: true });
       writeFileSync(join(home, "transcripts", seg, name), `${JSON.stringify(body, null, 2)}\n`);
     };
-    // Byte-shaped as a Clover 3a3e247e3 home holds them.
+    // Shaped as the old app (build 3a3e247e3) left them in its home.
     put("ws-sprout", "bot.json", { bot: "ws-sprout", firstSeen: 1794911669042, seededMemory: true });
     put("ws-sprout", "b_ws-sprout.meta.json", { meta: 1, id: "b_ws-sprout", kind: "bot", startedAt: 1794911669059, computer: "Delta", title: "Workshop sprout", model: "anthropic/claude-fable-5", bot: "ws-sprout" });
     put("example-notes--bot", "bot.json", { bot: "example-notes/bot", firstSeen: 1794911426040, seededMemory: true });
