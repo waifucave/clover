@@ -101,7 +101,7 @@ import { BUILDER_EXAMPLES_STEP, builderExamplesStep } from "./builder-examples-s
 import { WORKSHOP_POINTS_STEP, workshopPointsStep } from "./workshop-points-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { BOT_RECORDS_ENV, BOT_RECORDS_STEP, botRecordsWrong } from "./bot-records-step";
-import { MOSS_ENV, MOSS_STEPS, mossUnit, seedLongConversation } from "./moss-step";
+import { MOSS_ENV, MOSS_STEPS, mossShowsOldConversation, mossUnit, seedLongConversation, type MossUnitCtx } from "./moss-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
 import { TAB_FLASH_STEP, launchSamples, tabFlashStep, TAB_FLASH_SLEEP_MS } from "./tab-flash-step";
 import { HTTP_MCP_MARK, httpMcpFixture } from "./http-mcp-fixture";
@@ -895,14 +895,14 @@ const BUNDLED_LISTED = /\[plugins\] plugin MCP moss\/web\/web: (listed \d+ tool\
 // installs (acceptance-echo, no network) stands for every served one on the boots after its install.
 const BUNDLED_FAILED = /\[plugins\] plugin MCP [^:\n]*: (?:its tools couldn't be listed|its plugin's worker went)[^\n]*/;
 const ECHO_LISTED = /\[plugins\] plugin MCP acceptance-echo\/echo: listed \d+ tool\(s\)/;
-const bundledBoots: { run: number; log: string; listed?: string; ms?: number; echoMs?: number; graceMs: number; waited?: Promise<void> }[] = [];
+const bundledBoots: { run: number; log: string; listed?: string; ms?: number; echoMs?: number; graceMs: number; waited?: Promise<void>; t0?: number; endedForCopy?: number }[] = [];
 /** Requests the fake had when each daemon started: the turns after it are that boot's. */
 const requestsAtBoot: number[] = [];
 function watchBundledListing(run: number, log: string, graceMs = 0): void {
   // The clock starts when the registry may open: at once, or after the run's own hold on it.
   const t0 = Date.now() + graceMs;
   requestsAtBoot[run] = fake?.requests.length ?? 0;
-  const boot: (typeof bundledBoots)[number] = { run, log, graceMs };
+  const boot: (typeof bundledBoots)[number] = { run, log, graceMs, t0 };
   boot.waited = (async () => {
     for (;;) {
       const text = readLog(log);
@@ -913,7 +913,8 @@ function watchBundledListing(run: number, log: string, graceMs = 0): void {
       }
       if (boot.echoMs === undefined && ECHO_LISTED.test(text)) boot.echoMs = Date.now() - t0;
       // The first boot of a full run has no plugin yet; an upgrade's first boot has the old run's.
-      if ((boot.listed !== undefined && ((run === 1 && !upgrade) || boot.echoMs !== undefined)) || Date.now() - t0 >= BUNDLED_MCP_CEILING_MS) {
+      // A boot the copy's press ended (its exit 76, the person's own restart into the copy) lists nothing after it.
+      if ((boot.listed !== undefined && ((run === 1 && !upgrade) || boot.echoMs !== undefined)) || Date.now() - t0 >= BUNDLED_MCP_CEILING_MS || boot.endedForCopy !== undefined) {
         // Listed while the registry was still held: no time after its opening.
         if (boot.ms !== undefined && boot.ms < 0) boot.ms = 0;
         if (boot.echoMs !== undefined && boot.echoMs < 0) boot.echoMs = 0;
@@ -1186,6 +1187,7 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
   try {
     await Promise.all(bundledBoots.map((b) => b.waited));
     if (bundledBoots.length === 0) fail("no daemon started");
+    const cut: string[] = [];
     for (const b of bundledBoots) {
       // A plugin a row crashes on purpose says so in the same line (the workshop's step 7, "acceptance crash: …"): that is
       // the row's own doing on a home every row shares (a packaged run), not a listing that failed.
@@ -1195,6 +1197,11 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
       // Without a turn on this boot, the listing's time stands in for the owner's first turn, at twice the wait.
       const limit = first === undefined ? BUNDLED_MCP_NO_TURN_MS : BUNDLED_MCP_CEILING_MS;
       const from = b.graceMs > 0 ? `the registry opening (the run holds it ${b.graceMs / 1000} s after the socket answers)` : "the socket answering";
+      // The copy's first boot, ended by the person's press on the offer (exit 76, the restart into the copy) before its
+      // listing was due: a boot that no longer runs has no turn to offer the tools to, and nothing to judge it by; the
+      // boot after it (the copied home's) is judged as any other. Ended later than the limit with nothing listed fails.
+      const endedEarly = b.listed === undefined && b.endedForCopy !== undefined && b.t0 !== undefined && b.endedForCopy - b.t0 <= limit;
+      if (endedEarly) { cut.push(`daemon ${b.run} ended for the copy's restart ${Math.max(0, Math.round((b.endedForCopy! - b.t0!) / 100) / 10)} s after its registry could open, before its listing`); continue; }
       if (b.listed === undefined || (b.ms ?? 0) > limit) fail(`daemon ${b.run}: moss/web/web neither listed its tools nor said why it isn't served within ${limit / 1000} s of ${from}${first === undefined ? " (no turn on this boot: twice the wait a turn gives it)" : ""} [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
       const settled = b.listed!;
       const listed = settled.startsWith("listed ");
@@ -1215,7 +1222,8 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
       if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
-    const listedAll = bundledBoots.map((b) => `daemon ${b.run}: moss/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s${(b.ms ?? 0) > BUNDLED_MCP_WAIT_MS ? `, after the ${BUNDLED_MCP_WAIT_MS / 1000} s a turn waits: this boot's first turn still had them` : ""})${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`).join("; ");
+    if (bundledBoots.every((b) => b.listed === undefined)) fail(`no boot listed moss/web/web (${cut.join("; ")})`);
+    const listedAll = [...bundledBoots.filter((b) => b.listed !== undefined).map((b) => `daemon ${b.run}: moss/web/web ${b.listed!.slice(0, 120)} (${((b.ms ?? 0) / 1000).toFixed(1)} s${(b.ms ?? 0) > BUNDLED_MCP_WAIT_MS ? `, after the ${BUNDLED_MCP_WAIT_MS / 1000} s a turn waits: this boot's first turn still had them` : ""})${b.echoMs === undefined ? "" : `, acceptance-echo/echo listed (${(b.echoMs / 1000).toFixed(1)} s)`}${b.graceMs > 0 ? ` after the registry opened (held ${b.graceMs / 1000} s)` : ""}`), ...cut].join("; ");
     // An upgrade whose old run approved no plugin can't show the old plugin's server: the web half passed, said so.
     if (upgrade && kept?.pluginId === undefined) block(`the old run left no approved plugin, so its server can't be listed (the web tools: ${listedAll})`);
     record(n, "PASS", listedAll);
@@ -3494,6 +3502,17 @@ const mossDriver = async () => {
   return d;
 };
 
+/** What the MOSS rows are given (moss-step.ts): the run's helpers, its home and its MOSS build. */
+const mossCtx = (): MossUnitCtx => ({
+  root, home, userHome, logs, fake: fake!,
+  env: baseEnv, startChild, endChild: (p) => endChild(p), alive, until, fail, readLog,
+  driver: mossDriver,
+  helloAs: (extra) => helloApp("moss-acceptance-other", extra),
+  freePort, mossApp,
+  record: (name, status, detail) => record(stepNumber(FULL_STEPS, name), status, detail),
+  statusOf, why,
+});
+
 /** The `moss` unit: a daemon with the records as the bots' source (`fresh`: the home is new, so this is its first
  *  daemon; otherwise the one before is ended first and the home's bots move), the dummy key, then MOSS over it and its
  *  rows (moss-step.ts). Source target only. */
@@ -3517,15 +3536,7 @@ async function mossRun(fresh: boolean): Promise<void> {
     MOSS_STEPS.forEach((name, i) => record(stepNumber(FULL_STEPS, name), i === 0 ? statusOf(err) : "BLOCKED", i === 0 ? `the moss unit's setup: ${why(err)}` : "setup failed"));
     return;
   }
-  await mossUnit({
-    root, home, userHome, logs, fake: fake!,
-    env: baseEnv, startChild, endChild: (p) => endChild(p), alive, until, fail, readLog,
-    driver: mossDriver,
-    helloAs: (extra) => helloApp("moss-acceptance-other", extra),
-    freePort, mossApp,
-    record: (name, status, detail) => record(stepNumber(FULL_STEPS, name), status, detail),
-    statusOf, why,
-  });
+  await mossUnit(mossCtx());
   void daemon;
 }
 
@@ -5871,7 +5882,10 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     }
   }
 
-  // 3: the old conversation: listed, its history kept, and drawn in the window.
+  // 3: the old conversation, a bot's (the old build's Alpha): since the bots are engine records (lane MC1) it lives in
+  // MOSS, the bots app, and MOSS Code's window shows code sessions only. Its record (the move made it from the old plugin
+  // bot, on the same main session), its old turns over the engine's own page (bot.conversation), and MOSS, started on the
+  // upgraded home beside MOSS Code, drawing them; and the old run's code sessions, if it left any, listed for MOSS Code.
   let session: string | undefined;
   try {
     if (bots === undefined) fail(`bot.list: ${botsWhy}`);
@@ -5879,12 +5893,30 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     const bot = bots!.find((b) => b.mainSession === k.session);
     if (bot === undefined) fail(`bot.list doesn't list the old conversation ${k.session} (it lists ${bots!.map((b) => `${b.id}: ${b.mainSession}`).join(", ") || "no bot"})`);
     session = k.session;
-    await c.request("session.attach", { id: session });
-    const events = await history(c, session!);
-    if (!JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK")) fail(`session.history of ${session} has ${events.length} event(s) and not the old run's reply`);
-    if (cdp === undefined) fail("the window couldn't be driven (step 1)");
-    await until("the old reply drawn in the window", 30_000, async () => ((await treeText(cdp!)).includes("ACCEPTANCE-REPLY-OK") ? true : undefined), 500);
-    record(stepNo("the old conversation is listed"), "PASS", `bot.list lists ${bot!.id}'s conversation ${session}; its history (${events.length} events) has the old run's reply, and the window draws it`);
+    type Rec = { id: string; name: string | { en: string }; mainSession: string; madeBy: { kind: string } };
+    const recs = (await c.request<{ bots: Rec[] }>("bot.records", {})).bots;
+    const rec = recs.find((r) => r.mainSession === k.session);
+    if (rec === undefined) fail(`bot.records has no record on the old conversation ${k.session} (records: ${recs.map((r) => `${r.id}: ${r.mainSession} (${r.madeBy.kind})`).join(", ") || "none"})`);
+    // The engine's own page of her one conversation, newest last: back through the pages until the old reply.
+    let found = false;
+    let pages = 0;
+    let before: number | undefined;
+    for (; pages < 20 && !found; pages++) {
+      const page = await c.request<{ session: string; events: { seq?: number }[]; hasMore: boolean }>("bot.conversation", { id: rec!.id, limit: 200, ...(before !== undefined ? { before } : {}) });
+      if (page.session !== k.session) fail(`bot.conversation of ${rec!.id} is session ${page.session}, not the old conversation ${k.session}`);
+      found = JSON.stringify(page.events).includes("ACCEPTANCE-REPLY-OK");
+      const first = page.events.find((e) => typeof e.seq === "number")?.seq;
+      if (found || !page.hasMore || first === undefined) break;
+      before = first;
+    }
+    if (!found) fail(`bot.conversation of ${rec!.id} (${pages + 1} page(s)) holds no reply of the old run`);
+    const name = typeof rec!.name === "string" ? rec!.name : rec!.name.en;
+    // The old run's code sessions: what MOSS Code's window lists (session.list); the old build kept none in its index.
+    const listed = (await c.request<{ sessions: { id: string; mode?: string; kind?: string }[] }>("session.list", {}).catch(() => ({ sessions: [] }))).sessions;
+    const code = listed.filter((x) => (x.mode ?? x.kind) === "code");
+    if (target !== "source" && mossBundle === undefined) block(`${rec!.id}'s record and her old turns are on the engine (bot.records, bot.conversation); a packaged run takes the build's MOSS with --moss-app <MOSS.app> to draw them`);
+    const drawn = await mossShowsOldConversation(mossCtx(), { bot: rec!.id, name, text: "ACCEPTANCE-REPLY-OK" });
+    record(stepNo("the old conversation is listed"), "PASS", `bot.records: ${rec!.id} (made by ${rec!.madeBy.kind}) on the old conversation ${session}; bot.conversation holds the old run's reply; ${drawn}; the old run's code sessions listed for MOSS Code: ${code.length === 0 ? "none (the old build kept none)" : code.map((x) => x.id).join(", ")}`);
   } catch (err) {
     record(stepNo("the old conversation is listed"), statusOf(err), why(err));
     // A conversation not listed: the new turns go to the bot's current one, if there is one.
@@ -6072,7 +6104,12 @@ async function copyOffered(cdp: Cdp | undefined): Promise<{ notice: string[] } |
     if (offer.pluginId !== undefined) fail(`the offer names a plugin (${offer.pluginId}): it is the core's own card`);
     if (!JSON.stringify(offer.fields).includes("left exactly as it is")) fail(`the offer doesn't say the old install is left as it is: ${JSON.stringify(offer.fields).slice(0, 300)}`);
     restartingForCopy = true;
-    const exited = new Promise<number | null>((r) => upgradeDaemon!.proc.once("exit", (code) => r(code)));
+    // The boot the press ends (the fresh home's), for the bundled servers' row: its listing is cut by the restart.
+    const firstBoot = bundledBoots[bundledBoots.length - 1];
+    const exited = new Promise<number | null>((r) => upgradeDaemon!.proc.once("exit", (code) => {
+      if (firstBoot !== undefined && code === RESTART_EXIT) firstBoot.endedForCopy = Date.now();
+      r(code);
+    }));
     await approve(c, offer);
     c.close();
     const code = await Promise.race([exited, sleep(180_000).then(() => "timeout" as const)]);

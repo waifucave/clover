@@ -143,7 +143,7 @@ export const FULL_STEPS = [
 export const UPGRADE_STEPS = [
   "upgrade cold start: the app opens first on the old home, the daemon after, and the shell fills the window",
   "the old run's model key works with no re-entry",
-  "the old conversation is listed and opens in the window",
+  "the old conversation is listed and opens in MOSS: the default bot's record is on the old conversation, the engine's page of it holds the old turns, and MOSS (the bots app, beside MOSS Code) draws them in her conversation; the old run's code sessions, if any, are listed for MOSS Code",
   "a new turn runs on the upgraded home",
   "the old run's plugin is still installed and its tool answers, with no new OK card",
   "a fenced write still raises an approval card, then lands",
@@ -162,7 +162,7 @@ export const COPY_UPGRADE_STEPS = [
   "upgrade cold start: the app opens first on a fresh home beside the old install's, the daemon after, and the shell fills the window",
   "the copy from the old install's home is offered on the core's own card, taken on the press, and swapped in at the restart",
   "the old run's model key does not come over: the notice names it, it isn't signed in, and it works once entered again",
-  "the old conversation is listed and opens in the window",
+  "the old conversation is listed and opens in MOSS: the default bot's record is on the old conversation, the engine's page of it holds the old turns, and MOSS (the bots app, beside MOSS Code) draws them in her conversation; the old run's code sessions, if any, are listed for MOSS Code",
   "a new turn runs on the upgraded home",
   "the old run's plugin is still installed, asks for its OK again once (its files were updated), and its tool answers",
   "a fenced write still raises an approval card, then lands",

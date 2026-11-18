@@ -165,6 +165,44 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
   }
 }
 
+/** The upgrade's old conversation in MOSS (the upgrade's row "the old conversation is listed and opens"): MOSS started from
+ *  source on the upgraded home, beside MOSS Code, its list shows the bot, a click on its row opens its conversation, and a
+ *  bot bubble holding `text` (the old run's reply) is drawn there. MOSS is then put behind (its front file says `back`), so
+ *  the rows after it are MOSS Code's, and it stays up until the run ends (the run's children are ended then): today's
+ *  engine stops when the newest app connection goes. What it saw, in words. */
+export async function mossShowsOldConversation(x: MossUnitCtx, o: { bot: string; name: string; text: string }): Promise<string> {
+  const front = join(x.root, "moss-front");
+  const keyFile = join(x.root, "moss-answer-key");
+  writeFileSync(front, "front");
+  const port = x.freePort();
+  const built = x.mossApp();
+  const env = { ...x.env(), MOSS_USER_DATA: join(x.root, "moss-user-data"), MOSS_TEST_DEBUG: "1", MOSS_TEST_ANSWER_KEY: keyFile, MOSS_TEST_MAIN_FRONT_FILE: front };
+  const app = x.startChild("moss-app", built.exe, [...built.args, "--mute-audio", "--moss-headless", `--remote-debugging-port=${port}`], env);
+  let cdp: Cdp | undefined;
+  try {
+    await x.until("MOSS's DevTools port", 120_000, async () => {
+      if (!x.alive(app.proc)) x.fail(`MOSS exited (${app.proc.exitCode ?? app.proc.signalCode}): ${x.readLog(app.log).trim().split("\n").slice(-4).join(" | ").slice(0, 400)}`);
+      try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+    }, 500);
+    const w = new MossWindow(x, cdp!, app.log);
+    await w.main();
+    const listed = await w.waitFor<number>(`${o.name}'s row in MOSS's list`, `document.querySelector(${JSON.stringify(`[data-bot-row="${o.bot}"]`)}) ? document.querySelectorAll('[data-bot-row]').length : null`, 60_000);
+    await w.click(`[data-bot-row=${JSON.stringify(o.bot)}]`);
+    await w.waitFor(`${o.name}'s conversation open in MOSS`, `!!document.querySelector(${JSON.stringify(`main.conversation[aria-label="${o.name}'s conversation"]`)})`);
+    const said = await w.waitFor<string>(`the old reply ("${o.text}") drawn in ${o.name}'s conversation in MOSS`, `[...document.querySelectorAll('.bubble--bot')].map((b) => b.textContent).find((t) => t.includes(${JSON.stringify(o.text)})) ?? null`, 60_000)
+      .catch(async (err: unknown) => {
+        const seen = await w.eval<string>("(document.querySelector('.middle')?.innerText ?? document.body.innerText).replace(/\\s+/g, ' ').slice(0, 240)").catch(() => "");
+        const shot = await w.failureShot(x.logs, 0).catch(() => "");
+        return x.fail(`${x.why(err)}${seen !== "" ? ` [MOSS showed: ${seen}]` : ""}${shot}`);
+      });
+    const bubbles = await w.eval<number>("document.querySelectorAll('.bubble--bot, .bubble--user').length");
+    return `MOSS (from source, beside MOSS Code) lists ${listed} bot(s) with ${o.name}; her conversation opened from her row and drew ${bubbles} message(s), the old reply "${said.trim().slice(0, 60)}" among them`;
+  } finally {
+    writeFileSync(front, "back");
+    cdp?.close();
+  }
+}
+
 interface UnitState {
   x: MossUnitCtx;
   c: MossClient;
