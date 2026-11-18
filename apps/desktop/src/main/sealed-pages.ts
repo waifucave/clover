@@ -16,12 +16,21 @@ import type { CardSummary, PreviewBlock } from "./card-summary";
 
 /** What a sealed page says of a press, one word each: taken, or why not (the app logs it with the card's id). */
 /** How long a press waits for the visibility report it asks for (a new observer made at the press) before it is refused as not checked:
- *  well under half a second, so a press is never felt waiting; the report itself takes about a frame. */
+ *  FRESH_LIMIT_MS (below); the report itself takes about a frame. */
 /** A test build's switch (`MOSS_SMOKE_PIN_VISIBLE`, set by index.ts only in a test or acceptance build): the island button page's periodic verdict
  *  stays "visible" once seen, so a press reaches the fresh-report check and not the page's older gate. Off in every real build. */
 export const pinVisible = { on: false };
 
-export const FRESH_LIMIT_MS = 400;
+/** How long a press waits for the reading it asks for before the page says "late" ("Not ready yet — press again": the page was too busy to read
+ *  the button, which is "not ready", never "covered"). The reading is two (the first, then one FRESH_SETTLE_MS after the press), each a frame
+ *  and an IntersectionObserver report; on the GitHub macOS runners 608 presses (three full CI runs) took 5 to 373 ms (median about 140, p95 about
+ *  210; the longest were 373, 360 and 351), and 400 ms cost a real press its answer once (a `moss` row, run 44210352605). 800 ms is twice the longest of those
+ *  and about 6 times the median, so a busy Mac rarely reaches it, and it stays well inside FRESH_MAX_AGE_MS (sealed.ts: 1,500 ms from the report
+ *  to its answer). It decides only when a reading that has not come is given up: a reading that comes in the extra time passes the same two
+ *  checks (both readings after the press, none between them that says the button didn't show), so a longer wait can only turn a "late" into a
+ *  verdict: a cover that appears during it still spoils the press, and it never takes a press whose readings did not both say the button showed. The missed-press watch (sealed-miss.ts)
+ *  counts to the page's `received` word, which comes at the press, so it doesn't move with this. */
+export const FRESH_LIMIT_MS = 800;
 
 /** How long after the press the second reading is taken (lane SV). A reading made right after a press can be computed before an
  *  embedder's cover drawn a few ms before it has reached this page: the cover's occlusion passes down through each document above

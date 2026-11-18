@@ -2,6 +2,7 @@
 // "press again"; a press nowhere near a button, or one a sealed page heard, is nothing.
 import { describe, expect, test } from "bun:test";
 import { buttonAt, inWindow, MISS_BOUND_MS, MissWatch } from "../src/main/sealed-miss";
+import { FRESH_LIMIT_MS } from "../src/main/sealed-pages";
 
 describe("a press no sealed page heard", () => {
   const button = { token: "t1", box: inWindow({ x: 10, y: 5, width: 66, height: 34 }, [{ x: 200, y: 60 }, { x: 24, y: 0 }]) };
@@ -43,5 +44,24 @@ describe("a press no sealed page heard", () => {
     expect(buttonAt({ x: 300, y: 99 }, [button])?.token).toBe("t1");
     expect(buttonAt({ x: 301, y: 99 }, [button])).toBeUndefined();
     expect(buttonAt({ x: 0, y: 0 }, [{ token: "t0", box: { x: 0, y: 0, width: 0, height: 0 } }])).toBeUndefined();
+  });
+});
+
+describe("the missed-press watch and the reading's limit", () => {
+  test("a press a sealed page heard (its `received` word comes at the press) is never a missed one, however long its reading takes", () => {
+    let t = 0;
+    const w = new MissWatch(() => t);
+    w.down(1, { x: 260, y: 80 });
+    t += 5; // the page's word arrives a few ms after the mouse-down
+    w.heard(1);
+    // The page is still reading the button (up to FRESH_LIMIT_MS, then it says "late"): the watch looks at MISS_BOUND_MS + 30, and later.
+    t += MISS_BOUND_MS + 30;
+    expect(w.missed(1)).toBeUndefined();
+    t += FRESH_LIMIT_MS + MISS_BOUND_MS;
+    expect(w.missed(1)).toBeUndefined();
+  });
+
+  test("the watch looks after the bound and before the limit is spent, so a press nothing heard gets its notice while a reading would still be waited for", () => {
+    expect(MISS_BOUND_MS + 30).toBeLessThan(FRESH_LIMIT_MS);
   });
 });
