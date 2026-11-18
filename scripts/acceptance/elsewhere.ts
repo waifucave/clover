@@ -35,6 +35,7 @@ export const ROWS_ELSEWHERE: ReadonlyMap<string, Elsewhere> = new Map<string, El
   [ui("the Dispatch pill sends"), { owner: "MOSS", why: "the Dispatch pill sends to a bot" }],
   [ui("Alpha's tab is drawn by Alpha's own layout"), { owner: "retired", why: "Alpha's tab drawn by her own layout: her tab layout is retired with the bot tab (G8), and MOSS draws its bots in its own window" }],
   [ui("the bot editor opens the user's way"), { owner: "MOSS", why: "the bot editor, opened from a bot's tab and Settings › Bots" }],
+  [ui("a bot's question card (AskUserQuestion)"), { owner: "MOSS", why: "a bot's question card (AskUserQuestion) with Send answer, and Try again on a failed turn, both bots' features this round (the MOSS unit's own rows): MOSS's coding agent has no AskUserQuestion (MOSS_CODE_TOOLS), so a code session raises no question card, and a failed turn in one shows its error row with no Try again" }],
   [ui("Alpha's tab shows the stock sidebar"), { owner: "MC2", why: "Alpha's tab under Bots' plug: the stock sidebar, her top bar, her stage's fold" }],
   [ui("a bot plugin changes one thing in its tab"), { owner: "retired", why: "a bot plugin's own tab layout and another plugin's patch to it: the plug went with the bot tab (G8), and its fixtures (acceptance-layout-patch, acceptance-layout-mover) with it" }],
   [ui("a plugin with a bot (the plug rule)"), { owner: "retired", why: "a bot plugin's panel replacing a stock one on its bot's tab only: the plug went with the bot tab (G8)" }],

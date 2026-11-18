@@ -17,7 +17,7 @@ describe("rows that run elsewhere", () => {
   });
 
   test("the window rows that draw the avatar plugin's figure and the general point messages run in window-2 (they were marked elsewhere by number, wrongly)", () => {
-    for (const start of ["a plugin's point carries messages and files", "a home made by an earlier MOSS with the person's own models", "a third-party renderer for the avatar plugin", "the figure reacts", "a bot's question card (AskUserQuestion)"]) {
+    for (const start of ["a plugin's point carries messages and files", "a home made by an earlier MOSS with the person's own models", "a third-party renderer for the avatar plugin", "the figure reacts"]) {
       const rows = UI_STEPS.filter((s) => s.startsWith(start));
       expect(rows).toHaveLength(1);
       expect(unitOf(`window: ${rows[0]}`)).toBe("window-2");

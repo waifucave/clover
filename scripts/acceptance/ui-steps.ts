@@ -5,7 +5,6 @@
 // The inputs are trusted input events (`Input.dispatchKeyEvent`/`dispatchMouseEvent`), which the main process sees
 // as the person's key presses and clicks: if one doesn't register with the send gate, it is this driver that is wrong,
 // never the gate.
-import { partElsewhere } from "./elsewhere-parts";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1681,70 +1680,59 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // (main reads the log; the page names only the session), the turn completes with its own reply, the button is gone,
   // and the log holds exactly two of the user's messages with the same words (byte for byte) and nothing else sent.
   await step(16, async () => {
-    // Try again is a bots' feature this round (the MOSS unit's own row; elsewhere-parts.ts): a failed turn in a code session shows
-    // its error row with no Try again, so that half does not run here and the row does not wait for it. The question card runs.
-    const away = partElsewhere("window-2", "Try again");
-    if (away === undefined && ctx.healFake === undefined) fail("this run has no way to let the fake provider's failing turn succeed");
+    if (ctx.healFake === undefined) fail("this run has no way to let the fake provider's failing turn succeed");
     const tag = `ACCEPTANCE-FAIL-${randomBytes(4).toString("hex").toUpperCase()}`;
     const words = `${tag} say hello again,  with my  spacing`;
     // The code session the window shows (lane MC: MOSS Code's window has no bots).
     const bot = { mainSession: await windowSession(rpc) };
     const log = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: bot!.mainSession, limit: 500 })).events;
     const mine = (events: Record<string, unknown>[]) => events.filter((e) => e.type === "user_message" && typeof e.text === "string" && e.text.includes(tag));
-    let retryNote = `Try again ran in the MOSS unit (${away?.owner ?? ""}): ${away?.why ?? ""}`;
-    if (away !== undefined) {
-      // The question card below is drawn in the code session the window shows.
-      await escape();
-      await clickIn("the code session in the sidebar", SESSION_ROWS, undefined);
-    } else {
-      await escape();
-      await clickIn("the code session in the sidebar", SESSION_ROWS, undefined);
-      const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
-      await cdp.evaluate(box.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
-      await cdp.send("Input.insertText", { text: words }, box.session);
-      await sleep(300);
-      const send = await until("the send button", 10_000, () => cdp.centerOf(box.session, "button.cl-composer__send").catch(() => undefined));
-      await cdp.click(box.session, send.x, send.y);
-      const errorShown = () => until("the error row's Try again on screen", 90_000, async () => {
-        for (const d of await treeDocs(cdp)) {
-          const c = await cdp.centerOf(d.session, ".cl-conv-note[data-tone=error] button.cl-conv-note__retry", "Try again").catch(() => undefined);
-          if (c !== undefined) return { session: d.session, c };
-        }
-        return undefined;
-      }, async () => `${(await log()).slice(-6).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}`).join(" ")} || ${await dumpFrames(cdp)}`);
-      const button = await errorShown();
-      const first = await log();
-      const failedAt = first.filter((e) => e.type === "turn_completed").at(-1);
-      if (mine(first).length !== 1) fail(`the log holds ${mine(first).length} of the user's message before the click, not 1`);
-      if (failedAt?.stopReason !== "error") fail(`the last turn ended as ${String(failedAt?.stopReason)}, not an error`);
-      ctx.healFake!(tag.replace("ACCEPTANCE-FAIL-", ""));
-      // As a person would: the row is brought into view, and the click lands on what is there then.
-      const retrySel = ".cl-conv-note[data-tone=error] button.cl-conv-note__retry";
-      await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${retrySel}')].at(-1); if (b) b.scrollIntoView({ block: "center" }); return !!b; })()`);
-      await sleep(400);
-      const there = await cdp.centerOf(button.session, retrySel, "Try again");
-      if (there === undefined) fail("Try again went from the screen before the click");
-      const top = await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${retrySel}')].at(-1); const r = b.getBoundingClientRect(); const e = document.elementFromPoint(${there!.x}, ${there!.y}); return JSON.stringify({ hit: !!e && (e === b || b.contains(e)), y: Math.round(r.top), room: innerHeight, disabled: b.disabled, over: e ? e.className || e.tagName : null }); })()`);
-      const seenAt = JSON.parse(String(top)) as { hit: boolean; y: number; room: number; disabled: boolean; over: string | null };
-      if (!seenAt.hit) fail(`the click would land on something else (${JSON.stringify(seenAt)})`);
-      await cdp.click(button.session, there!.x, there!.y);
-      await until("the turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), async () => `log: ${(await log()).slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}${typeof e.text === "string" ? `(${e.text.slice(0, 40)})` : ""}`).join(" ")}; the fake answered ${ctx.requests().filter((r) => r.lastUserText.includes(tag)).map((r) => r.answered).join(",") || "nothing"} || ${await dumpFrames(cdp)}`);
-      // The reply is on screen while the turn is still ending: its `turn_completed` follows the text into the log, so the log is read
-      // until the turn that came after the error has ended (bounded; a turn that really failed shows no reply, and ends here as it did).
-      const after = await until("the retried turn's end in the log", 30_000, async () => {
-        const l = await log();
-        const ended = l.filter((e) => e.type === "turn_completed");
-        return ended.length >= 2 && ended.at(-1)?.stopReason === "end_turn" ? l : undefined;
-      }, async () => `log: ${(await log()).slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}`).join(" ")}`);
-      const sent = mine(after);
-      if (sent.length !== 2) fail(`the log holds ${sent.length} of the user's message after Try again, not 2`);
-      if (sent[1]!.text !== sent[0]!.text || !String(sent[0]!.text).includes("again,  with my  spacing")) fail(`the message sent again is not the first, byte for byte (${JSON.stringify(sent[0]!.text)} then ${JSON.stringify(sent[1]!.text)})`);
-      const ends = after.filter((e) => e.type === "turn_completed").map((e) => String(e.stopReason));
-      if (ends.at(-1) !== "end_turn" || ends.at(-2) !== "error") fail(`the turns ended ${ends.slice(-3).join(", ")}, not an error then a completed turn`);
-      const stale = await cdp.centerOf(button.session, ".cl-conv-note__retry").catch(() => undefined);
-      if (stale !== undefined || (await treeText(cdp)).includes("Try again")) fail("Try again is still on screen after the turn completed");
-      retryNote = `a failed turn (${tag}) showed Try again on its error row; one click sent the same words again (the log holds two, equal byte for byte, ${sent[1]!.device ? "as the user's own message" : "as a user message"}), the next turn completed with its own reply, and the button is gone`;
-    }
+    await escape();
+    await clickIn("the code session in the sidebar", SESSION_ROWS, undefined);
+    const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
+    await cdp.evaluate(box.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
+    await cdp.send("Input.insertText", { text: words }, box.session);
+    await sleep(300);
+    const send = await until("the send button", 10_000, () => cdp.centerOf(box.session, "button.cl-composer__send").catch(() => undefined));
+    await cdp.click(box.session, send.x, send.y);
+    const errorShown = () => until("the error row's Try again on screen", 90_000, async () => {
+      for (const d of await treeDocs(cdp)) {
+        const c = await cdp.centerOf(d.session, ".cl-conv-note[data-tone=error] button.cl-conv-note__retry", "Try again").catch(() => undefined);
+        if (c !== undefined) return { session: d.session, c };
+      }
+      return undefined;
+    }, async () => `${(await log()).slice(-6).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}`).join(" ")} || ${await dumpFrames(cdp)}`);
+    const button = await errorShown();
+    const first = await log();
+    const failedAt = first.filter((e) => e.type === "turn_completed").at(-1);
+    if (mine(first).length !== 1) fail(`the log holds ${mine(first).length} of the user's message before the click, not 1`);
+    if (failedAt?.stopReason !== "error") fail(`the last turn ended as ${String(failedAt?.stopReason)}, not an error`);
+    ctx.healFake!(tag.replace("ACCEPTANCE-FAIL-", ""));
+    // As a person would: the row is brought into view, and the click lands on what is there then.
+    const retrySel = ".cl-conv-note[data-tone=error] button.cl-conv-note__retry";
+    await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${retrySel}')].at(-1); if (b) b.scrollIntoView({ block: "center" }); return !!b; })()`);
+    await sleep(400);
+    const there = await cdp.centerOf(button.session, retrySel, "Try again");
+    if (there === undefined) fail("Try again went from the screen before the click");
+    const top = await cdp.evaluate(button.session, `(() => { const b = [...document.querySelectorAll('${retrySel}')].at(-1); const r = b.getBoundingClientRect(); const e = document.elementFromPoint(${there!.x}, ${there!.y}); return JSON.stringify({ hit: !!e && (e === b || b.contains(e)), y: Math.round(r.top), room: innerHeight, disabled: b.disabled, over: e ? e.className || e.tagName : null }); })()`);
+    const seenAt = JSON.parse(String(top)) as { hit: boolean; y: number; room: number; disabled: boolean; over: string | null };
+    if (!seenAt.hit) fail(`the click would land on something else (${JSON.stringify(seenAt)})`);
+    await cdp.click(button.session, there!.x, there!.y);
+    await until("the turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), async () => `log: ${(await log()).slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}${typeof e.text === "string" ? `(${e.text.slice(0, 40)})` : ""}`).join(" ")}; the fake answered ${ctx.requests().filter((r) => r.lastUserText.includes(tag)).map((r) => r.answered).join(",") || "nothing"} || ${await dumpFrames(cdp)}`);
+    // The reply is on screen while the turn is still ending: its `turn_completed` follows the text into the log, so the log is read
+    // until the turn that came after the error has ended (bounded; a turn that really failed shows no reply, and ends here as it did).
+    const after = await until("the retried turn's end in the log", 30_000, async () => {
+      const l = await log();
+      const ended = l.filter((e) => e.type === "turn_completed");
+      return ended.length >= 2 && ended.at(-1)?.stopReason === "end_turn" ? l : undefined;
+    }, async () => `log: ${(await log()).slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}`).join(" ")}`);
+    const sent = mine(after);
+    if (sent.length !== 2) fail(`the log holds ${sent.length} of the user's message after Try again, not 2`);
+    if (sent[1]!.text !== sent[0]!.text || !String(sent[0]!.text).includes("again,  with my  spacing")) fail(`the message sent again is not the first, byte for byte (${JSON.stringify(sent[0]!.text)} then ${JSON.stringify(sent[1]!.text)})`);
+    const ends = after.filter((e) => e.type === "turn_completed").map((e) => String(e.stopReason));
+    if (ends.at(-1) !== "end_turn" || ends.at(-2) !== "error") fail(`the turns ended ${ends.slice(-3).join(", ")}, not an error then a completed turn`);
+    const stale = await cdp.centerOf(button.session, ".cl-conv-note__retry").catch(() => undefined);
+    if (stale !== undefined || (await treeText(cdp)).includes("Try again")) fail("Try again is still on screen after the turn completed");
     // The bot asks a question (the fake calls AskUserQuestion): the card in the conversation shows its options; one is pressed and "Send answer"
     // pressed, in the window. The conversation part answers on its plugin's own connection (session.answer needs conversation.post, which its
     // OK lists), so the answer is accepted, the card shows it answered, and the turn goes on with that answer as the tool's result.
@@ -1780,7 +1768,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return ctx.requests().some((r) => r.toolResult?.text.includes(choice) && r.lastUserText.length >= 0) && (await treeText(cdp)).includes("ACCEPTANCE-DONE") ? true : undefined;
     }, async () => `tool results: ${ctx.requests().slice(-3).map((r) => r.toolResult?.text.slice(0, 120)).join(" | ")}`);
     const asked = ctx.requests().filter((r) => r.lastUserText.includes(tag));
-    return `the question card (${qTag}) took a pressed option and "Send answer" in the window and the turn went on with "${choice}" as the tool's result (no "didn't go through"); ${retryNote} (${asked.length} request(s) reached the fake)`;
+    return `the bot's question card (${qTag}) took a pressed option and "Send answer" in the window and the turn went on with "${choice}" as the tool's result (no "didn't go through"); a failed turn (${tag}) showed Try again on its error row; one click sent the same words again (the log holds two, equal byte for byte, ${sent[1]!.device ? "as the user's own message" : "as a user message"}), the next turn completed with its own reply, and the button is gone (${asked.length} request(s) reached the fake)`;
   });
   // 17: the avatar plugin's figure beside a coding session: a third-party pack (the placeholder Live2D files), drawn by the
   // bundled 2D renderer in the session's Avatar panel (figure-steps.ts).
