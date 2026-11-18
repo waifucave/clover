@@ -7,6 +7,7 @@
 // on the bridge serves the same scope. Temp homes, the fake broker, an in-memory secret store; nothing opens a window.
 import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { isContractError } from "../../contracts/common";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/moss-plugin-sdk";
@@ -614,6 +615,8 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     await waitFor(() => ended().length >= 1, "the first turn's end", 60_000);
     expect(ended()[0]!.end).toMatchObject({ reason: "failed", failure: "error" });
     expect(String(ended()[0]!.end.text)).toContain("without answering");
+    // This ruling (a failed coding turn leaves the session open): it is idle, not ended, and the failure is on its view.
+    expect(w.host.get(r.sessionId)).toMatchObject({ status: "idle", failure: "error" });
   });
 
   test("a turn the provider refused (the runtime's result is_error with subtype success, no tokens) fails with the provider's own words", async () => {
@@ -630,6 +633,145 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     await waitFor(() => ended().length >= 1, "the turn's end", 60_000);
     expect(ended()[0]!.end).toMatchObject({ reason: "failed", failure: "error" });
     expect(String(ended()[0]!.end.text)).toContain("no credential for the request");
+    expect(w.host.get(r.sessionId)).toMatchObject({ status: "idle", failure: "error" });
+    // The reason is a row in the conversation too (the wire's turn end carries no text).
+    expect(JSON.stringify(w.host.history(r.sessionId).filter((x) => x.type === "driver"))).toContain("no credential for the request");
+  });
+
+  /** A runtime that opens one agent per start; each answers each message as `how(agentNumber, messageNumber)` says. */
+  type How = "ok" | "empty" | "refuse" | "crash";
+  const agents = (how: (agent: number, message: number) => How, log: { opened: number; live: number; maxLive: number; prompts: string[] }) => ((args: { prompt: AsyncIterable<string> }) => {
+    const mine = ++log.opened;
+    async function* run() {
+      log.live++;
+      log.maxLive = Math.max(log.maxLive, log.live);
+      try {
+        yield { type: "system", subtype: "init", model: CODE_MODEL, permissionMode: "default" };
+        let n = 0;
+        for await (const text of args.prompt) {
+          log.prompts.push(`${mine}:${String(text).slice(0, 40)}`);
+          const h = how(mine, ++n);
+          if (h === "crash") throw new Error("the agent process died");
+          if (h === "empty") yield { type: "result", subtype: "success", is_error: false };
+          else if (h === "refuse") yield { type: "result", subtype: "success", is_error: true, result: "provider request failed (auth): no credential for the request: no key is stored for this model", usage: { input_tokens: 0, output_tokens: 0 } };
+          else {
+            yield { type: "assistant", message: { content: [{ type: "text", text: `answer ${mine}.${n}` }] } };
+            yield { type: "result", subtype: "success", is_error: false, usage: { input_tokens: 3, output_tokens: 2 } };
+          }
+        }
+      } finally { log.live--; }
+    }
+    return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
+  }) as unknown as MossCodeDeps["query"];
+  const newLog = () => ({ opened: 0, live: 0, maxLive: 0, prompts: [] as string[] });
+  const say = (w: World, id: string, text: string, n: number) => w.host.sendUser(id, { text, device: "d".repeat(16), clientMessageId: `m-fo-${n}-${Math.random()}`, sentAt: w.clock.now() });
+  const turnEnds = (w: World, id: string) => w.host.history(id).filter((x) => x.type === "turn_ended") as unknown as { end: { reason: string; failure?: string; text?: string } }[];
+
+  test("a failed turn leaves the session open: the next message runs a turn in the same session, the agent started afresh (it had said nothing), the failure cleared", async () => {
+    const log = newLog();
+    const { w } = await setup({ ...codeBackend(spawn, agents((a) => (a === 1 ? "empty" : "ok"), log)), long: true, level: "automatic" });
+    const r = await code(w, "say hello");
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 1, "the failed turn", 60_000);
+    await waitFor(() => w.host.get(r.sessionId)!.status === "idle", "idle", 10_000);
+    expect(w.host.get(r.sessionId)).toMatchObject({ status: "idle", failure: "error" });
+    // The failed agent's token and setup folder are gone.
+    expect(w.tokens.has(r.sessionId)).toBe(false);
+    expect(existsSync(w.manager.setupDir(r.sessionId))).toBe(false);
+    await say(w, r.sessionId, "try again", 2);
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 2, "the second turn", 60_000);
+    expect(turnEnds(w, r.sessionId)[1]!.end.reason).toBe("end_turn");
+    await waitFor(() => w.host.get(r.sessionId)!.failure === undefined, "the failure cleared", 10_000);
+    expect(w.host.get(r.sessionId)!.status).toBe("idle");
+    expect(log.opened).toBe(2);
+    expect(log.maxLive).toBe(1);
+    // The session's own history is whole: the failed turn and the one after, in one session.
+    expect(turnEnds(w, r.sessionId).map((x) => x.end.reason)).toEqual(["failed", "end_turn"]);
+    expect(w.tokens.has(r.sessionId)).toBe(true);
+  });
+
+  test("a provider refusal (no key), a switch to another model, then a message: the same session answers", async () => {
+    const log = newLog();
+    const { w } = await setup({ ...codeBackend(spawn, agents((a) => (a === 1 ? "refuse" : "ok"), log)), long: true, level: "automatic" });
+    const r = await code(w, "say hello");
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 1, "the refused turn", 60_000);
+    expect(String(turnEnds(w, r.sessionId)[0]!.end.text)).toContain("no key is stored");
+    await w.manager.setModel(r.sessionId, CODE_MODEL);
+    await say(w, r.sessionId, "now?", 2);
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 2, "the answer", 60_000);
+    expect(turnEnds(w, r.sessionId)[1]!.end.reason).toBe("end_turn");
+    expect(wire(w, r.transcript)).toContain("answer 2.1");
+  });
+
+  test("three failures in a row, a crash among them: the session is open after each, and the fourth message is answered", async () => {
+    const log = newLog();
+    const { w } = await setup({ ...codeBackend(spawn, agents((a) => (a === 1 ? "empty" : a === 2 ? "crash" : a === 3 ? "refuse" : "ok"), log)), long: true, level: "automatic" });
+    const r = await code(w, "say hello");
+    for (let i = 1; i <= 3; i++) {
+      await waitFor(() => turnEnds(w, r.sessionId).length >= i, `failed turn ${i}`, 60_000);
+      await waitFor(() => w.host.get(r.sessionId)!.status === "idle", "idle", 10_000);
+      expect(turnEnds(w, r.sessionId)[i - 1]!.end.reason).toBe("failed");
+      expect(w.tokens.has(r.sessionId)).toBe(false);
+      if (i < 3) await say(w, r.sessionId, `again ${i}`, i);
+    }
+    await say(w, r.sessionId, "once more", 9);
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 4, "the answer", 60_000);
+    expect(turnEnds(w, r.sessionId)[3]!.end.reason).toBe("end_turn");
+    expect(log.maxLive).toBe(1);
+  });
+
+  test("an agent that said something before its turn failed is taken up again by its history, not started afresh", async () => {
+    const log = newLog();
+    const { w } = await setup({ ...codeBackend(spawn, agents((a, n) => (a === 1 && n === 2 ? "crash" : "ok"), log)), long: true, level: "automatic" });
+    const r = await code(w, "say hello");
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 1, "the first turn", 60_000);
+    await say(w, r.sessionId, "second", 2);
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 2, "the crashed turn", 60_000);
+    expect(turnEnds(w, r.sessionId)[1]!.end.reason).toBe("failed");
+    expect(w.host.get(r.sessionId)!.status).toBe("idle");
+    await say(w, r.sessionId, "third", 3);
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 3, "the turn after", 60_000);
+    expect(turnEnds(w, r.sessionId)[2]!.end.reason).toBe("end_turn");
+    expect(log.opened).toBe(2);
+  });
+
+  test("an ended session stays ended: after the person stops it, a message is refused and no agent is started", async () => {
+    const log = newLog();
+    const { w } = await setup({ ...codeBackend(spawn, agents((a) => (a === 1 ? "empty" : "ok"), log)), long: true, level: "automatic" });
+    const r = await code(w, "say hello");
+    await waitFor(() => turnEnds(w, r.sessionId).length >= 1, "the failed turn", 60_000);
+    await w.host.stop(r.sessionId);
+    expect(w.host.get(r.sessionId)!.status).toBe("stopped");
+    expect(isContractError(await say(w, r.sessionId, "hello?", 5).catch((e: unknown) => e), "closed")).toBe(true);
+    expect(log.opened).toBe(1);
+    expect(w.tokens.has(r.sessionId)).toBe(false);
+  });
+
+  test("any order of failing turns, messages, model switches, interrupts and a stop: open until the person ends it, never two live agents, no token or setup folder of a stopped agent", async () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      let rnd = seed * 7919;
+      const next = (n: number) => { rnd = (rnd * 1103515245 + 12345) & 0x7fffffff; return rnd % n; };
+      const log = newLog();
+      const hows: How[] = ["ok", "empty", "refuse", "crash"];
+      const { w } = await setup({ ...codeBackend(spawn, agents(() => hows[next(4)]!, log)), long: true, level: "automatic" });
+      const r = await code(w, "say hello");
+      let stopped = false;
+      for (let step = 0; step < 8; step++) {
+        const before = turnEnds(w, r.sessionId).length;
+        const op = next(10);
+        if (op < 6) {
+          if (stopped) continue;
+          await say(w, r.sessionId, `m${step}`, step).catch(() => {});
+          await waitFor(() => turnEnds(w, r.sessionId).length > before || w.host.get(r.sessionId)!.status === "idle", "the turn", 60_000).catch(() => {});
+        } else if (op < 8) await w.manager.setModel(r.sessionId, CODE_MODEL).catch(() => {});
+        else if (op < 9) await w.host.interrupt(r.sessionId).catch(() => {});
+        else if (!stopped && step > 3) { await w.host.stop(r.sessionId); stopped = true; }
+        await waitFor(() => !["prompting", "ready", "cancelling"].includes(w.host.get(r.sessionId)!.status), "settled", 60_000).catch(() => {});
+        expect(log.maxLive).toBeLessThanOrEqual(1);
+        const status = w.host.get(r.sessionId)!.status;
+        if (stopped) expect([status, w.tokens.has(r.sessionId), existsSync(w.manager.setupDir(r.sessionId))]).toEqual(["stopped", false, false]);
+        else expect(status).not.toBe("failed");
+      }
+    }
   });
 
   test("a coding session started with no prompt (the user's New session): its first message is answered", async () => {

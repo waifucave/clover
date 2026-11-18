@@ -76,6 +76,18 @@ describe("a bot's state in the feed", () => {
     expect(heard).toEqual(["stuck"]);
     expect(code(feed)).toEqual([]);
   });
+
+  test("a coding session whose turn failed stays open: the bot reads stuck while it is idle with the failure, working in its next turn, and idle once a turn ends well", () => {
+    const { host, feed } = setup();
+    host.put(view({ id: "s_a", kind: "bot", bot: "alpha", status: "idle" }));
+    host.put(view({ id: "s_task", kind: "agent", bot: "alpha", status: "idle", failure: "crashed", title: "Fix the build" }));
+    expect(bots(feed)[0]!.state).toBe("stuck");
+    expect(code(feed)).toEqual([expect.objectContaining({ subject: expect.objectContaining({ id: "s_task" }), state: "stuck" })]);
+    host.put(view({ id: "s_task", kind: "agent", bot: "alpha", status: "prompting", failure: "crashed", title: "Fix the build" }));
+    expect(bots(feed)[0]!.state).not.toBe("stuck");
+    host.put(view({ id: "s_task", kind: "agent", bot: "alpha", status: "idle", title: "Fix the build" }));
+    expect(bots(feed)[0]!.state).not.toBe("stuck");
+  });
 });
 
 describe("a code session's state in the feed", () => {

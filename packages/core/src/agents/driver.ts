@@ -24,6 +24,9 @@ export interface AgentDriverOptions {
   promptOf(input: TurnInput): Promise<{ text: string; images?: { mimeType: string; data: string }[] }>;
   /** Called once the agent's process is gone for good: revoke the token, stop watching. */
   ended?(): void;
+  /** A turn failed and the agent's process was stopped, but the session stays open: revoke the token, stop watching,
+   *  clear what belonged to that process. The next turn's `start()` brings a new one. */
+  released?(): void;
   /** How long text may wait before it is recorded. */
   coalesceMs?: number;
   /** Applied to every record and to each turn's text before they leave the driver. */
@@ -110,7 +113,7 @@ export class AgentDriver implements SessionDriver {
 
   async #ensure(): Promise<AgentSession> {
     if (this.#session) return this.#session;
-    this.#starting ??= this.#opts.start().then(async (s) => {
+    const starting: Promise<AgentSession> = this.#opts.start().then(async (s) => {
       this.#session = s;
       if (this.#pendingModel) {
         const m = this.#pendingModel;
@@ -119,12 +122,20 @@ export class AgentDriver implements SessionDriver {
         if (m.effort !== undefined) await s.setConfig("effort", m.effort).catch(() => {});
       }
       return s;
+    }).catch((err: unknown) => {
+      // A start that failed is not kept: the next try starts again.
+      if (this.#starting === starting) this.#starting = undefined;
+      throw err;
     });
+    this.#starting ??= starting;
     return this.#starting;
   }
 
   async turn(input: TurnInput, ctl: TurnControl): Promise<TurnEnd> {
     const end = await this.#turn(input, ctl);
+    // A failed turn says why in the conversation (the wire's turn end carries no text): the provider's own words, or MOSS's, as a
+    // notice the person reads before they send again. The session is open, so what to do next is theirs to see.
+    if (end.reason === "failed" && end.text !== undefined && end.text.trim() !== "") this.#record(ctl, { type: "agent_notice", text: end.text.trim().slice(0, 600) });
     return this.#opts.redact && end.text !== undefined ? { ...end, text: this.#opts.redact(end.text) } : end;
   }
 
@@ -166,7 +177,8 @@ export class AgentDriver implements SessionDriver {
     let session: AgentSession;
     try {
       const fresh = !this.#session;
-      session = await this.#ensure();
+      // The agent that cannot be started is tried once more before the turn says so.
+      session = await this.#ensure().catch((err: unknown) => (isContractError(err, "refused") ? Promise.reject(err) : this.#ensure()));
       if (fresh) this.#record(ctl, { type: "agent_started", agentSessionId: session.agentSessionId });
     } catch (err) {
       this.#origin = undefined;
@@ -214,14 +226,14 @@ export class AgentDriver implements SessionDriver {
         case "refusal":
           return { reason: "refusal", text: end.text, ...usageOf(end) };
         case "error":
-          await this.#shutdown();
+          await this.#release();
           return { reason: "failed", failure: "error", text: end.text };
         default:
           // A turn that ends with no word, no event of any kind and no tokens never reached the model (an end the agent
           // took from something else than this message): the person typed and nothing came back. It is said, and the agent
           // starts afresh for the next message, instead of a silent end.
           if (!heard && end.text === "" && end.usage === undefined) {
-            await this.#shutdown();
+            await this.#release();
             return { reason: "failed", failure: "error", text: "The agent ended the turn without answering. Send your message again." };
           }
           return { reason: "end_turn", text: end.text, ...usageOf(end) };
@@ -240,12 +252,12 @@ export class AgentDriver implements SessionDriver {
   }
 
   async #failStalled(): Promise<TurnEnd> {
-    await this.#shutdown();
+    await this.#release();
     return { reason: "failed", failure: "stalled", text: "The agent made no progress for 10 minutes, so MOSS stopped it." };
   }
 
   async #fail(err: unknown): Promise<TurnEnd> {
-    await this.#shutdown();
+    await this.#release();
     const text = err instanceof Error ? err.message : String(err);
     if (isContractError(err, "sign_in")) return { reason: "failed", failure: "sign-in", text };
     if (isContractError(err, "closed")) return { reason: "failed", failure: "crashed", text: "The agent's process exited." };
@@ -284,6 +296,18 @@ export class AgentDriver implements SessionDriver {
     this.#ended = true;
     const s = this.#session ?? (await this.#starting?.catch(() => undefined));
     await s?.stop().catch(() => {});
+  }
+
+  /** A failed turn: the agent's process stops and what belonged to it is let go, and the session stays open: the next
+   *  turn starts the agent again (by its history if it has said anything, afresh if not). A real end is `#shutdown`'s. */
+  async #release(): Promise<void> {
+    if (this.#stopping || this.#ended) return;
+    const s = this.#session ?? (await this.#starting?.catch(() => undefined));
+    this.#session = undefined;
+    this.#starting = undefined;
+    this.#stalled = false;
+    await s?.stop().catch(() => {});
+    this.#opts.released?.();
   }
 
   async #shutdown(): Promise<void> {

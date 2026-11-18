@@ -437,7 +437,8 @@ describe("the stall watchdog", () => {
     await advanceAndSettle(w.clock, 2 * 60_000, 60_000);
     const n = await waitFor(() => notification(w), "the notification");
     expect(n.stopReason).toBe("stalled");
-    expect(w.host.get(r.sessionId)).toMatchObject({ status: "failed", failure: "stalled" });
+    // This ruling: a failed turn leaves the session open (idle), the failure kept on its view.
+    expect(w.host.get(r.sessionId)).toMatchObject({ status: "idle", failure: "stalled" });
   });
 
   test("an agent waiting on a card isn't stalled; the 10 minutes start again from the answer (review 3, the E1c probe)", async () => {
@@ -453,7 +454,7 @@ describe("the stall watchdog", () => {
     await advanceAndSettle(w.clock, 9 * 60_000, 60_000);
     expect(w.host.get(r.sessionId)!.status).toBe("prompting");
     await advanceAndSettle(w.clock, 2 * 60_000, 60_000);
-    await waitFor(() => w.host.get(r.sessionId)!.status === "failed", "the stall");
+    await waitFor(() => w.host.get(r.sessionId)!.failure === "stalled", "the stall");
     expect(w.host.get(r.sessionId)!.failure).toBe("stalled");
   });
 

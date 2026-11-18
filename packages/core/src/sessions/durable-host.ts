@@ -409,7 +409,9 @@ class Replay {
         break;
       case "status":
         this.status = r.status;
+        // A status that carries no failure clears one (a turn that ended well after a failed one); an ended one keeps its own.
         if (r.failure !== undefined) this.failure = r.failure;
+        else if (!isEnded(r.status) && r.status === "idle") this.failure = undefined;
         this.updatedAt = r.ts;
         if (isEnded(r.status)) {
           this.queue = [];
@@ -1184,7 +1186,8 @@ export class DurableSessionHost implements SessionHost {
     // A turn the runner has open is caught up only if this computer takes the session over.
     if (replay.running && replay.runningOn !== undefined && replay.runningOn !== this.#computer) hosted.foreignTurn = { on: replay.runningOn };
     else delete hosted.foreignTurn;
-    hosted.view = { ...hosted.view, status: replay.status, ...(replay.failure === undefined ? {} : { failure: replay.failure }) };
+    const { failure: _was, ...kept } = hosted.view;
+    hosted.view = { ...kept, status: replay.status, ...(replay.failure === undefined ? {} : { failure: replay.failure }) };
     if (isEnded(hosted.view.status) && hosted.meta.ended === undefined) this.#markEnded(hosted);
     this.#emitView(hosted);
   }
@@ -1533,11 +1536,18 @@ export class DurableSessionHost implements SessionHost {
     if (end.reason === "failed") {
       s.queue = [];
       s.pending = [];
+      if (s.meta.kind === "coding" || s.meta.kind === "agent") {
+        // A coding session stays open when its turn fails (a key missing, a provider's refusal, a dropped connection): its
+        // error row shows, it is idle, and the next message starts a new turn. The failure stays on its view, so a feed reads
+        // it stuck, until a turn ends well.
+        this.#setStatus(s, "idle", end.failure ?? "error");
+        if (s.meta.kind === "agent") this.#notifyParent(s, stopReasonOf(end), end);
+        return;
+      }
       this.#setStatus(s, "failed", end.failure ?? "error");
-      if (s.meta.kind === "agent") this.#notifyParent(s, stopReasonOf(end), end);
       return;
     }
-    this.#setStatus(s, "idle");
+    this.#setStatus(s, "idle", s.view.failure === undefined ? undefined : null);
     if (s.queue.length > 0 || s.deferredCompact.length > 0) {
       this.#pump(s);
       if (s.queue.length > 0 || s.running || s.compacting) return;
@@ -1693,10 +1703,11 @@ export class DurableSessionHost implements SessionHost {
   }
 
   /** The status is recorded first; the view follows the session's real state even when the disk refused the record. */
-  #setStatus(s: Hosted, status: SessionStatus, failure?: SessionFailure): void {
+  #setStatus(s: Hosted, status: SessionStatus, failure?: SessionFailure | null): void {
     if (s.view.status === status && failure === undefined) return;
-    this.#tryRecord(s, { type: "status", status, ...(failure === undefined ? {} : { failure }) });
-    s.view = { ...s.view, status, updatedAt: this.#clock.now(), ...(failure === undefined ? {} : { failure }) };
+    this.#tryRecord(s, { type: "status", status, ...(failure === undefined || failure === null ? {} : { failure }) });
+    const { failure: _was, ...rest } = s.view;
+    s.view = { ...(failure === null ? rest : s.view), status, updatedAt: this.#clock.now(), ...(failure === undefined || failure === null ? {} : { failure }) };
     if (isEnded(status)) this.#markEnded(s);
     this.#emitView(s);
   }

@@ -529,7 +529,7 @@ describe("calls that never ended", () => {
 });
 
 describe("a failed turn's cards", () => {
-  test("resolve cancelled, whether the session ends (an agent) or goes on (a bot)", async () => {
+  test("resolve cancelled, and the session goes on, an agent's and a bot's", async () => {
     const cancelled: string[] = [];
     const approvals = { withdrawSession: () => 0, cancelSession: (id: string) => (cancelled.push(id), 1) };
     const host = new DurableSessionHost({ home: tempHome(), clock: new FakeClock(), approvals });
@@ -542,7 +542,8 @@ describe("a failed turn's cards", () => {
     agent.end({ reason: "failed", failure: "crashed" });
     await flush();
     expect(cancelled).toEqual(["s_agent"]);
-    expect(host.get("s_agent")!.status).toBe("failed");
+    // This ruling (a failed coding turn leaves its session open): the agent's session is idle, with the failure on its view.
+    expect(host.get("s_agent")).toMatchObject({ status: "idle", failure: "crashed" });
     bot.end({ reason: "failed", failure: "error" });
     await flush();
     expect(cancelled).toEqual(["s_agent", "b_alpha"]);
