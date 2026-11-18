@@ -33,7 +33,7 @@
 // * Measuring units, serial after the parallel phase: the stage row (its narrow-window readings: a card's timing and
 //   a streamed reply's cost; its default-level turn runs with it), the tab flash, the cold start, the idle row.
 import { UI_STEPS } from "./ui-steps";
-import { COLD_START_STEP, FULL_STEPS, IDLE_STEP, REOPEN_STEPS, STAGE_STEP, finishTable, type Row } from "./steps";
+import { COLD_START_STEP, FULL_STEPS, IDLE_STEP, REOPEN_STEPS, finishTable, type Row } from "./steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
 import { TOOL_SETTING_STEP } from "./tool-setting-step";
@@ -41,7 +41,6 @@ import { CODE_TOOLS_STEP } from "./code-tools-step";
 import { CARDS_STEP } from "./cards-step";
 import { ROUTER_STEP } from "./router-step";
 import { WORKSHOP_STEP } from "./workshop-step";
-import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { ARRIVALS_STEP } from "./arrivals-step";
 import { CHILD_STEP, NOTIFY_STEP } from "./child-notify-step";
 import { LISTEN_STEP } from "./listen-step";
@@ -64,7 +63,7 @@ import { MOSS_STEPS } from "./moss-step";
 import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP } from "./host-step";
 import { ROWS_ELSEWHERE } from "./elsewhere";
 
-export type UnitId = "main" | "chain" | "window-1" | "window-2" | "window-3" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "release" | "browser" | "plugin-app" | "models" | "moss" | "stage" | "tab-flash" | "cold" | "idle" | "host" | "browser-host" | "surface-copy-host";
+export type UnitId = "main" | "chain" | "window-1" | "window-2" | "window-3" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "release" | "browser" | "plugin-app" | "models" | "moss" | "cold" | "idle" | "host" | "browser-host" | "surface-copy-host";
 
 export interface Unit {
   id: UnitId;
@@ -119,8 +118,6 @@ const OTHERS: readonly Unit[] = [
   { id: "models", rows: [CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP, OAUTH_SIGN_IN_STEP, SCHEDULED_ROUTINE_STEP], phase: "parallel", estimate: 90 },
   // MOSS, the bots app (moss-step.ts): its own app from source over the shard's engine, the bots as engine data.
   { id: "moss", rows: MOSS_STEPS, phase: "parallel", estimate: 240, ownHome: true },
-  { id: "stage", rows: [STAGE_STEP], phase: "serial", estimate: 125 },
-  { id: "tab-flash", rows: [TAB_FLASH_STEP], phase: "serial", estimate: 105 },
   { id: "cold", rows: [COLD_START_STEP], phase: "serial", estimate: 16 },
   { id: "idle", rows: [IDLE_STEP], phase: "serial", estimate: 45 },
   // lane HS: the background host's row, alone (its own daemon starts the host, host-step.ts).
@@ -143,7 +140,7 @@ export function units(steps: readonly string[] = FULL_STEPS): Unit[] {
   }));
   const others = OTHERS.map((u) => ({ ...u, rows: u.rows.filter(here) }));
   const taken = new Set([...OTHERS, ...windows].flatMap((u) => u.rows));
-  // A unit all of whose rows run elsewhere is left out (`stage`, `tab-flash`).
+  // A unit all of whose rows run elsewhere is left out (a unit whose rows all went elsewhere is removed from the table).
   return [{ id: "chain", rows: steps.filter((s) => !taken.has(s) && here(s)), phase: "parallel", estimate: 270 }, ...windows, ...others.filter((u) => u.rows.length > 0)];
 }
 

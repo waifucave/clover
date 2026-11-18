@@ -113,12 +113,12 @@ describe("the split", () => {
 
   test("run.ts runs a unit's rows only where the unit is its own, and every unit has a runner", () => {
     const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
-    for (const id of ["stage", "cold", "reopen", "idle"]) expect(run).toContain(`if (runs("${id}"))`);
-    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "tab-flash", "cold", "reopen", "stage", "idle"]) expect(run).toContain(`"${id}"`);
+    for (const id of ["cold", "reopen", "idle"]) expect(run).toContain(`if (runs("${id}"))`);
+    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "cold", "reopen", "idle"]) expect(run).toContain(`"${id}"`);
     // The rows an app over Alpha's conversation drives (uiRowRunners) start that app when their unit runs alone: a unit
     // left out of the list runs nothing (the first --units arrivals run: "not reached").
     const windowed = run.match(/const windowed = ids\.filter\(\(id\) => (.*)\);/)?.[1] ?? "";
-    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "tab-flash", "browser", "plugin-app"]) expect(windowed).toContain(`id === "${id}"`);
+    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "browser", "plugin-app"]) expect(windowed).toContain(`id === "${id}"`);
     // The appless rows run on the shard's daemon with no app, each its own clause.
     expect(run).toContain('if (ids.includes("models"))');
     // …answered over RPC only, as under their own --only-* (no app of the shard is up yet: the first 14f table's reds).

@@ -198,10 +198,10 @@ const shardUnits = unitsAsked === undefined ? undefined : expandUnitIds(unitsAsk
   if (unitsAsked !== undefined && (unitsAsked.length === 0 || bad.length > 0)) { console.error(`acceptance: --units takes unit ids (${known.join(", ")})${bad.length > 0 ? `, not ${bad.join(", ")}` : ""}`); process.exit(2); }
 }
 /** Whether this run runs a unit's rows: every unit, unless it is a shard. */
-// The tab-flash row alone (its own serial unit, or --only-tab-flash): its app's frames out of sight sleep after
+// The tab-flash row alone (--only-tab-flash; it is no unit now, its row runs elsewhere, elsewhere.ts): its app's frames out of sight sleep after
 // TAB_FLASH_SLEEP_MS (the test/acceptance build's seam), so its "a minute away" waits just past that, not a minute. A
 // run that holds other rows in the same app keeps the layer's own minute (a row there may count on a frame staying awake).
-const tabFlashAlone = tabFlashOnly || (shardUnits !== undefined && shardUnits.length === 1 && shardUnits[0] === "tab-flash");
+const tabFlashAlone = tabFlashOnly;
 const runs = (u: UnitId | undefined): boolean => shardUnits === undefined || (u !== undefined && shardUnits.includes(u));
 /** A run of the `moss` unit alone: MOSS Code's window isn't built (its rows drive MOSS's own window only). */
 const mossOnly = shardUnits !== undefined && shardUnits.length > 0 && shardUnits.every((u) => u === "moss");
@@ -3405,7 +3405,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (runs("stage")) await stageStep(c, botSession, turnsWork);
+  if (shardUnits === undefined) await stageStep(c, botSession, turnsWork);
   await agentStep(c, botSession, turnsWork);
 
   c.close();
@@ -3432,7 +3432,7 @@ async function main(): Promise<void> {
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
   if (runs("cold")) await coldStartStep(app, 1);
   if (runs("reopen")) await reopenSteps(app);
-  if (runs("stage")) await stageLevelsStep(app);
+  if (shardUnits === undefined) await stageLevelsStep(app);
   if (runs("idle")) await idleStep(app);
   // Last of all: its own daemon on the home, with records as the bots' source (lane BT), which moves the home's bots;
   // nothing runs on the home after it. A --keep-state run leaves the home as today's builds made it, so it skips the row.
@@ -3799,11 +3799,6 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
       try { await installEcho(c); } catch (err) { for (const r of REOPEN_STEPS) record(stepNumber(FULL_STEPS, r.name), statusOf(err), `the reopen shard's setup (step 4's plugin): ${why(err)}`); echoMissing = true; }
       // Its turns call the plugin's tool in the code session started before the plugin's OK (the one the window opens on).
     }
-    if (ids.includes("stage")) {
-      await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
-      await c.request("session.attach", { id: bot });
-      await stageStep(c, bot, true);
-    }
     if (ids.includes("models")) {
       // The rows that go over the app's methods with no app (appless): each its own clause, a failure its own row's.
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
@@ -3842,12 +3837,11 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
       await uiPhase(app, true, session, pressing, new Set(windowIds.flatMap((id) => windowIndexes(id)!)), bot);
     }
   }
-  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "tab-flash" || id === "browser" || id === "plugin-app");
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "browser" || id === "plugin-app");
   if (windowed.length > 0) await unitWindow(app, windowed, session, undefined, bot);
   if (ids.includes("release")) await releaseSteps(app);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
-  if (ids.includes("stage")) await stageLevelsStep(app);
   if (ids.includes("idle")) await idleStep(app);
 }
 
@@ -3898,8 +3892,8 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
-    }, ids[0] === "tab-flash" ? 100 : 500);
-    const launch = ids[0] === "tab-flash" ? await launchSamples(cdp!) : undefined;
+    }, 500);
+    const launch = undefined;
     rpc = (await appDriver()).client;
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
@@ -4603,10 +4597,10 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
     const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
     if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
-    const session = await until("the bot on the keyed model", 60_000, async () => {
-      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
-      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
-    }, 500);
+    // The Browser calls come from a code session on the keyed model (its tab is the one MOSS Code's panel may show; a bot's
+    // tab is never drawn there), started the app's way. With bots as records a fresh home's Alpha has no model until
+    // `bot.edit` gives her one, so waiting for "the bot on the keyed model" here could never end.
+    const session = await keyedCodeSession(c);
     c.close();
     c = undefined;
     // Her tab, not the welcome guide (stageLevelsStep's reason): the guide is marked done, as the app marks it once it is.
