@@ -253,6 +253,7 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
 
   onCi("a covered press does not land", async () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", cover: true } });
+    expect(r.output).toContain("sealed-click: cover put over the button: true");
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
     // The press waited for the app's own record that the cover hides the button (never a delay): a verdict that never flips is the
@@ -361,11 +362,15 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", opacity: 0 } });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
-    // A see-through button never reports itself visible (IntersectionObserver v2), so the page can never be ready for
-    // it; with the button fully transparent the press does not even reach the page in this Chromium (no pointerdown
-    // in the sealed, the plugin or the root document), and either way no answer is sent.
-    expect(r.output).toContain("seen=false");
+    // The card is never answered, first; then the dim really was on the page the press went to (run 44297022845: the dim was set
+    // before the page had its button, silently, and the undimmed button's press was answered); then why it was refused.
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
+    expect(r.output).toMatch(/sealed-click: dimmed the button to opacity 0 \(read back/);
+    expect(r.output).not.toContain("dim verdict never flipped");
+    expect(r.output).toMatch(/the button's opacity at the press: 0(?!\.)/);
+    // A see-through button never reports itself visible (IntersectionObserver v2): the page's own gate or the press's fresh readings
+    // refuse it (with the button fully transparent the press may not even reach the page in this Chromium).
+    expect(r.output).toMatch(/seen=false|: not-visible|fresh report covered after \d+ ms/);
   }, 120_000);
 
   onCi("a press while computer use is acting does not land (B3)", async () => {
