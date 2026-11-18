@@ -194,7 +194,9 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
  *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
 /** A background agent's report folded into a turn (`<task-notification …>…</task-notification>`, a mid-turn push) is not the user's
  *  message: its words (an earlier row's agent can finish during a later row's turn) carry no directive for this turn. */
-export const withoutNotifications = (text: string): string => text.replace(/<task-notification[\s\S]*?(?:<\/task-notification>|$)/g, "");
+export const withoutNotifications = (text: string): string => text
+  .replace(/<system-reminder>[\s\S]*?(?:<\/system-reminder>|$)/g, "")
+  .replace(/<task-notification[\s\S]*?(?:<\/task-notification>|$)/g, "");
 const DIRECTIVE = /ACCEPTANCE-(?:NETPROBE|NETCMD|ROUTINE|SLOW|STREAM|HOLDTOOL|ECHO|STDIO|FETCH|SEARCH|WRITE|EDIT|BASH|READ|TAG|REPLY|AGENT|CHILD|SHELL|FAIL)\b/;
 
 /** The echo plugin's tool on an agent's bridge: `mcp__<the session's bridge, moss_ and 16 hex>__<its server's key>__Echo`. */
@@ -294,7 +296,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const lastUser = carriesMessage ? last : [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
       record.lastUserText = (carriesMessage ? lastSaid : textOf(lastUser?.content)).slice(-4000);
-      if (carriesMessage && lastBlocks.some((b) => b.type === "tool_result")) console.error(`acceptance fake: a user turn with ${lastBlocks.filter((b) => b.type === "tool_result").length} tool result(s) and a new message: acting on the message`);
+      if (carriesMessage && lastBlocks.some((b) => b.type === "tool_result")) console.error(`acceptance fake: a user turn with ${lastBlocks.filter((b) => b.type === "tool_result").length} tool result(s) and a new message: acting on the message ${JSON.stringify(withoutNotifications(lastSaid).slice(0, 200))}`);
       // What the fake acts on: the newest directive in that text. A turn quit before its answer (the reopen steps')
       // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
       // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".

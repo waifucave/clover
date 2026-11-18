@@ -196,5 +196,6 @@ describe("a folded background-agent report", () => {
     expect(withoutNotifications(folded)).not.toContain("ACCEPTANCE-CHILD");
     expect(withoutNotifications("ACCEPTANCE-TAG-AB12 hello")).toBe("ACCEPTANCE-TAG-AB12 hello");
     expect(withoutNotifications("x <task-notification agent=\"a\">ACCEPTANCE-REPLY y")).toBe("x ");
+    expect(withoutNotifications("Loaded <system-reminder>The user sent a new message: ACCEPTANCE-CHILD</system-reminder> ok")).toBe("Loaded  ok");
   });
 });
