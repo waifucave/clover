@@ -87,6 +87,8 @@ export async function ensureCodingSession(ctx: Pick<Ctx, "rpc" | "home">, o: { w
 /** The window's own sidebar to a coding session: the session's row under its project (its id, the title a session with none
  *  of its own shows) listed and pressed, and the session's id then in the sidebar's current row. */
 export async function toCodingSession(cdp: Cdp, codeId: string, press: (what: string, selector: string, text?: string, ms?: number) => Promise<unknown>): Promise<string> {
+  // Its project group may be folded and its row below the list's fold: one helper opens and scrolls (cdp.sessionRowCenter), then the press.
+  for (const d of await treeDocs(cdp)) await cdp.sessionRowCenter(d.session, codeId).catch(() => undefined);
   await press(`the coding session ${codeId}'s row`, ".cl-sidebar__projects .cl-sidebar__row", codeId, 30_000);
   await until("the coding session shown (its id in the sidebar's current row)", 30_000, async () => ((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined ? true : undefined), async () => (await treeText(cdp)).replace(/\s+/g, " ").slice(0, 400));
   return `the sidebar listed the coding session ${codeId} started just before from outside the window, and its row went to it (the current row in the sidebar)`;
@@ -1682,7 +1684,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const card = (await rpc.request<{ cards: { id: string; kind: string; session?: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.find((c) => c.kind === "tool" && c.session === session && !cards.includes(c.id));
         if (card !== undefined && ctx.pressCard !== undefined) cards.push(await ctx.pressCard(`${tool}'s card`, (c) => c.id === card.id));
         return undefined;
-      }, async () => `cards pressed ${cards.length}; open cards of the session: ${(await rpc.request<{ cards: { kind: string; session?: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.filter((c) => c.session === session).map((c) => c.kind).join(",") || "none"}; requests since (what the model was told, then what it did): ${ctx.requests().slice(seen).map((r) => `${r.lastUserText.slice(0, 40)} [${(r as { tools?: string[] }).tools?.length ?? "?"} tools, ${((r as { tools?: string[] }).tools ?? []).filter((t) => t.endsWith(tool)).join("+") || `none ending ${tool}`}]${(r as { toolUse?: string }).toolUse !== undefined ? ` => call ${(r as { toolUse?: string }).toolUse}` : " => text"}${(r as { toolResult?: { text: string } }).toolResult !== undefined ? ` (carried a result: ${(r as { toolResult?: { text: string } }).toolResult!.text.slice(0, 60)})` : ""}`).join(" | ")}`);
+      }, async () => `cards pressed ${cards.length}; open cards of the session: ${(await rpc.request<{ cards: { kind: string; session?: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.filter((c) => c.session === session).map((c) => c.kind).join(",") || "none"}; requests since (what the model was told, then what it did): ${ctx.requests().slice(seen).map((r) => `${r.lastUserText.slice(0, 40)} {tail ${JSON.stringify(((r as { body?: { messages?: { role?: string; content?: unknown }[] } }).body?.messages ?? []).slice(-3).map((m) => ({ role: m.role, content: typeof m.content === "string" ? m.content.slice(0, 80) : Array.isArray(m.content) ? (m.content as { type?: string; text?: string }[]).map((b) => `${b.type}${b.text ? `:${b.text.slice(0, 60)}` : ""}`) : "?" })))}} [${(r as { tools?: string[] }).tools?.length ?? "?"} tools, ${((r as { tools?: string[] }).tools ?? []).filter((t) => t.endsWith(tool)).join("+") || `none ending ${tool}`}]${(r as { toolUse?: string }).toolUse !== undefined ? ` => call ${(r as { toolUse?: string }).toolUse}` : " => text"}${(r as { toolResult?: { text: string } }).toolResult !== undefined ? ` (carried a result: ${(r as { toolResult?: { text: string } }).toolResult!.text.slice(0, 60)})` : ""}`).join(" | ")}`);
       return { called: tool, result, cards };
     },
     pressCard: ctx.pressCard ?? (() => fail("this run can't press a card")),
@@ -2333,7 +2335,19 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       }
       return undefined;
     };
-    const waitFor = (what: string, sel: string, ms = 45_000) => until(what, ms, () => find(sel), () => dumpFrames(cdp));
+    // The row lands on its session's tab itself: a wait that finds nothing while another view is up (an earlier row, or a window document
+    // that loaded again, left the window elsewhere) puts the window on that session again, as a person would, and keeps waiting.
+    let landedOn: string | undefined;
+    const tabShown = async () => {
+      for (const d of await treeDocs(cdp)) if ((await cdp.evaluate(d.session, `!!document.querySelector('.cl-window__content .cl-agent-tab[data-place=main]') && [...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(landedOn ?? "")}))`).catch(() => false)) === true) return true;
+      return false;
+    };
+    const waitFor = (what: string, sel: string, ms = 45_000) => until(what, ms, async () => {
+      const f = await find(sel);
+      if (f !== undefined) return f;
+      if (landedOn !== undefined && !(await tabShown())) await showWindowSession(ctx, landedOn).catch(() => undefined);
+      return undefined;
+    }, () => dumpFrames(cdp));
     /** Where the plugin's frames are in the window, and whether each sleeps (a frame away from the screen sleeps and wakes when it comes near: §5.5). */
     const placed = async () => {
       const out: string[] = [];
@@ -2391,6 +2405,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until(`${id} running`, 30_000, async () => (((await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin.state === "running") ? true : undefined));
       // A turn that calls the plugin's tool, in that code session (running before its OK), open in the window while it runs.
       const session = await showWindowSession(ctx, running);
+      landedOn = session;
       const tag = `WINDOW-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
       await rpc.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL Window {"text":"${tag}"}`, clientMessageId: `window-${tag}` } }, 30_000);
       const carded = "a read-only tool of its own: it ran with no card";

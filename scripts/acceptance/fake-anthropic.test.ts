@@ -1,7 +1,7 @@
 // The acceptance fake's documented rules (`requestRefusal`): what the real API refuses with a 400 is refused, what its
 // docs accept is accepted. Each case names the rule in fake-anthropic.ts it exercises.
 import { describe, expect, test } from "bun:test";
-import { netCommand, netCommandCall, newestDirective, requestRefusal, startFakeAnthropic } from "./fake-anthropic";
+import { netCommand, netCommandCall, newestDirective, requestRefusal, startFakeAnthropic, withoutNotifications } from "./fake-anthropic";
 
 const BETA = "mid-conversation-output-config-2026-07-01";
 const effort = { role: "system", content: [], output_config: { effort: "high" } };
@@ -187,5 +187,14 @@ describe("toolNamed: the tool a call line names, among the offered names", () =>
     expect(toolNamed("mcp__x__save_place_extra", "save_place")).toBe(false);
     expect(toolNamed("mcp__x__unsave_place", "save_place")).toBe(false);
     expect(toolNamed("mcp__x__forecast2", "forecast")).toBe(false);
+  });
+});
+
+describe("a folded background-agent report", () => {
+  test("is not a directive for the turn it lands in", () => {
+    const folded = "Loaded, callable now: mcp__figure__set_expression <system-reminder>The user sent a new message while you were working: <task-notification agent=\"agent_x\">ACCEPTANCE-CHILD done</task-notification></system-reminder>";
+    expect(withoutNotifications(folded)).not.toContain("ACCEPTANCE-CHILD");
+    expect(withoutNotifications("ACCEPTANCE-TAG-AB12 hello")).toBe("ACCEPTANCE-TAG-AB12 hello");
+    expect(withoutNotifications("x <task-notification agent=\"a\">ACCEPTANCE-REPLY y")).toBe("x ");
   });
 });
