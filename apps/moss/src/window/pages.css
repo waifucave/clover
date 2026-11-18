@@ -101,7 +101,7 @@
 @media (max-width: 900px) {
   .ma2-settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   /* The bots' names wrap onto more rows rather than scroll sideways: a sideways bar takes room under classic scroll bars. */
-  .ma2-settings__nav { flex-direction: row; flex-wrap: wrap; align-items: center; overflow-x: hidden; overflow-y: auto; max-height: 40%; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; }
+  .ma2-settings__nav { flex-direction: row; flex-wrap: wrap; align-items: center; overflow: visible; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; }
   .ma2-settings__nav .nav-item { width: auto; flex: none; font-size: 13px; padding: 6px 10px; justify-content: flex-start; }
   .ma2-settings__nav .nav-item span { display: inline; }
   .ma2-settings__group { display: none; }
