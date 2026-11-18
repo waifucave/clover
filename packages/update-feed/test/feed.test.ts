@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { coreBinaryFile, coreFeedFile, CORE_TARGETS, FEED_NAME, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyFromRaw, publicKeyOf, rawPublicKey, signedMessage, signFeed, UPDATE_FEED_PUBLIC_KEY, verifyFeed } from "../src/index";
+import { coreBinaryFile, coreFeedFile, CORE_TARGETS, FEED_NAME, MOSS_APP_FEED_PREFIX, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyFromRaw, publicKeyOf, rawPublicKey, signedMessage, signFeed, UPDATE_FEED_PUBLIC_KEY, verifyFeed } from "../src/index";
 
 const feed = new TextEncoder().encode("version: 1.2.3\nfiles:\n  - url: MOSS-Code-1.2.3-mac.zip\n    sha512: abc\n");
 
@@ -48,6 +48,20 @@ describe("the update feed's signature", () => {
     if (UPDATE_FEED_PUBLIC_KEY !== null) expect(() => publicKeyFromRaw(UPDATE_FEED_PUBLIC_KEY!)).not.toThrow();
     const src = readFileSync(join(import.meta.dir, "..", "src", "key.ts"), "utf8");
     expect(src).not.toMatch(/PRIVATE KEY|MC4CAQAwBQYDK2Vw/);
+  });
+
+  test("MOSS's own update files (lane PK): a name of their own, and a signature for one app's file never passes for the other's", () => {
+    for (const ok of ["moss-latest-mac.yml", "moss-beta-mac.yml", "moss-latest.yml", "moss-beta-linux.yml", "moss-latest-linux-arm64.yml"]) expect(`${ok} ${FEED_NAME.test(ok)}`).toBe(`${ok} true`);
+    for (const bad of ["moss-latest-core-darwin-arm64.yml", "moss-moss-latest-mac.yml", "moss-latest-mac.yml.sig", "moss-nightly-mac.yml", "mosslatest-mac.yml"]) expect(`${bad} ${FEED_NAME.test(bad)}`).toBe(`${bad} false`);
+    expect(MOSS_APP_FEED_PREFIX).toBe("moss-");
+    const key = generateFeedKey();
+    const feed = new TextEncoder().encode("version: 1.2.3\npath: MOSS-1.2.3-mac.zip\n");
+    const forCode = signFeed("latest-mac.yml", feed, key.privateKey);
+    const forMoss = signFeed("moss-latest-mac.yml", feed, key.privateKey);
+    expect(verifyFeed("moss-latest-mac.yml", feed, forMoss, key.publicKey)).toEqual({ ok: true });
+    // MOSS Code's signed file served under MOSS's name, or MOSS's under MOSS Code's, is refused.
+    expect(verifyFeed("moss-latest-mac.yml", feed, forCode, key.publicKey)).toEqual({ ok: false, reason: "bad signature" });
+    expect(verifyFeed("latest-mac.yml", feed, forMoss, key.publicKey)).toEqual({ ok: false, reason: "bad signature" });
   });
 
   test("the names a signature covers: the app's update files, the daemon's, and the daemon's binaries", () => {

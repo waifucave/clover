@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // The sources run on Electron's Node in both apps' main processes, never Bun (test/no-bun.test.ts); the tests run on Bun.
+  "compilerOptions": { "types": ["node", "bun"] },
+  "include": ["src", "test"]
+}
