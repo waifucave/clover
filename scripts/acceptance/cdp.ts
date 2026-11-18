@@ -215,7 +215,23 @@ export class Cdp {
     })()`).catch(() => undefined);
     void v;
     await new Promise((r) => setTimeout(r, 150));
-    return this.centerOf(session, ".cl-sidebar .cl-sidebar__agent .cl-sidebar__row", id);
+    // The first row (or the one named) that a press would reach: scrolled into the list's view, with the row itself (or what it holds)
+    // under its centre. A row something else sits over (the list's own header, a sheet) is passed over, as a person presses the next one.
+    const at = (await this.evaluate(session, `(() => {
+      ${CLIPPED_AWAY_JS}
+      const id = ${JSON.stringify(id ?? null)};
+      const rows = [...document.querySelectorAll(".cl-sidebar .cl-sidebar__agent .cl-sidebar__row")].filter((e) => (id === null || (e.textContent || "").includes(id)) && e.getBoundingClientRect().width > 0);
+      for (const el of rows) {
+        el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+        const r = el.getBoundingClientRect();
+        const x = r.left + r.width / 2, y = r.top + r.height / 2;
+        if (clippedAway(el, x, y)) continue;
+        const hit = document.elementFromPoint(x, y);
+        if (hit !== null && (el === hit || el.contains(hit))) return { x, y };
+      }
+      return null;
+    })()`).catch(() => undefined)) as { x: number; y: number } | null | undefined;
+    return at ?? undefined;
   }
 
   /** The main window's pixels (a top-level target only: a frame's session can't capture). */
