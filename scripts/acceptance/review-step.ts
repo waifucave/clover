@@ -39,6 +39,11 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
   let roleSet = false;
   let settingsBefore: string | undefined;
   try {
+    // The fixture is the Plugins page row's too: a row that stopped part-way must not leave it installed for this one.
+    if (await rpc.request("plugin.get", { id: PLUGIN_ID }).then(() => true, () => false)) {
+      await rpc.request("plugin.remove", { id: PLUGIN_ID }).catch(() => undefined);
+      await until(`${PLUGIN_ID}, left by an earlier row, to be gone`, 30_000, async () => ((await rpc.request("plugin.get", { id: PLUGIN_ID }).then(() => false, () => true)) ? true : undefined));
+    }
     const r = await rpc.request<{ id: string; card?: string }>("plugin.install", { source: { from: "folder", path: FIXTURE_DIR } }, 60_000);
     if (r.id !== PLUGIN_ID) fail(`${PLUGIN_ID} installed as ${r.id}`);
     installed = true;

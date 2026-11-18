@@ -8,7 +8,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { parseIpcLine } from "../../apps/desktop/src/main/ui/ipc-stats";
 import type { Cdp } from "./cdp";
 import type { MossClient } from "./client";
@@ -58,23 +58,30 @@ export const UI_STEPS = [
 /** A tiny 1x1 PNG, for the Files panel's preview step. */
 const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
-/** A coding session in a folder of the run's user home (`alpha-code-work`, holding `tiny.png`), started with `agent.start` as the
- *  app starts one when the run has none; its id (the newest coding session `session.list` gives). It is started while the window
- *  is up and never announced to it: the window learns it from `conversation.watch`. */
+/** The folder of the run's user home that the Files row's coding session works in: its own, so no other row's coding session
+ *  (the avatar row's is in `alpha-code-work`) is ever the one handed to it, and `tiny.png` is in it whoever else ran before. */
+export const FILES_FOLDER = "alpha-files-work";
+
+/** A coding session started with `agent.start` as the app starts one when the run has none; its id (the newest coding session
+ *  `session.list` gives). With `withFile`, the session is the one in `FILES_FOLDER` (holding `tiny.png`, put there every time).
+ *  It is started while the window is up and never announced to it: the window learns it from `conversation.watch`. */
 export async function ensureCodingSession(ctx: Pick<Ctx, "rpc" | "home">, o: { withFile?: boolean } = {}): Promise<string | undefined> {
   const rpc = ctx.rpc;
-  const newestView = async () => (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number; root?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0];
-  const newest = async () => (await newestView())?.id;
-  const have = await newestView();
-  // With a file: the newest coding session must be the one in the run's folder that holds it (an earlier step's coding session, in another folder, has none).
-  if (have !== undefined && (o.withFile !== true || (have.root ?? "").endsWith("/alpha-code-work"))) return have.id;
+  const views = async () => (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number; root?: string }[] }>("session.list", { kinds: ["agent", "coding"] }).catch(() => ({ sessions: [] }))).sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0));
+  const dir = ctx.home === undefined ? undefined : join(dirname(ctx.home), o.withFile === true ? FILES_FOLDER : "alpha-code-work");
+  if (o.withFile === true && dir !== undefined) {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "tiny.png"), TINY_PNG);
+  }
+  // With a file: the newest coding session in that folder (an earlier row's coding session, in another folder, has no such file).
+  const have = (await views()).find((x) => o.withFile !== true || (x.root ?? "").endsWith(`/${FILES_FOLDER}`));
+  if (have !== undefined) return have.id;
   const computerName = (await rpc.request<{ computers: { name: string }[] }>("computer.list", {}).catch(() => ({ computers: [] }))).computers[0]?.name;
-  if (ctx.home === undefined || computerName === undefined) return undefined;
-  const dir = join(dirname(ctx.home), "alpha-code-work");
+  if (dir === undefined || computerName === undefined) return undefined;
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "tiny.png"), TINY_PNG);
-  await rpc.request("agent.start", { backend: "moss-code", computer: computerName, root: `home/${computerName}/alpha-code-work` }, 60_000);
-  return newest();
+  await rpc.request("agent.start", { backend: "moss-code", computer: computerName, root: `home/${computerName}/${basename(dir)}` }, 60_000);
+  return (await views())[0]?.id;
 }
 
 /** The window's own sidebar to a coding session: the session's row under its project (its id, the title a session with none
@@ -1124,6 +1131,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   await step(12, async () => {
     const pick = ctx.pickFolder;
     if (ctx.pressCard === undefined || pick === undefined) fail("this run can't press a card or has no folder for the picker");
+    // A step that stops part-way leaves nothing behind for the next row that installs the same fixture (the Review row's):
+    // the plugin goes at the end, removed or not by the page.
+    try {
     const clickText = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
       const at = await until(what, ms, async () => {
         for (const d of await treeDocs(cdp)) {
@@ -1164,6 +1174,16 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     // Its status-bar line is drawn by its own layer, which the window's document wasn't served to frame: the document
     // loads again, and the user is still where they were (the Plugins page, its Add tab), not on the first page.
     await until("the window's document loaded again for its layer", 30_000, async () => (reloads() > reloadsBefore ? true : undefined));
+    // How long the document served before stays in the window, inert, after main sent the reload (the app log's own time of the
+    // line to the moment the old document is gone): measured every run, printed in the row's detail, and held to 5 s (the root's cap).
+    const reloadLine = [...ctx.appLog().matchAll(/^(\S+) layers: \S+ loads again to frame a layer installed after it was served$/gm)].at(-1);
+    const reloadAt = reloadLine === undefined ? Date.now() : Date.parse(reloadLine[1]!);
+    let inertMs = -1;
+    for (const end = Date.now() + 15_000; Date.now() < end; ) {
+      if ((await inTree<boolean>(cdp, "window.__acceptanceServedBefore === true")) === undefined) { inertMs = Date.now() - reloadAt; break; }
+      await sleep(40);
+    }
+    if (inertMs < 0 || inertMs > 5_500) fail(`the document served before stayed in the window ${inertMs < 0 ? "past 15 s" : `${inertMs} ms`} after the reload (it is swapped out at the new document's first size, or after 5 s at the latest)`);
     await until("its status line, drawn by its own layer", 30_000, async () => ((await cdp.documents()).some((d) => d.url.startsWith(`moss-plugin://${pick!.id}/`)) ? true : undefined), () => dumpFrames(cdp));
     const kept = await until("the Plugins page in the document loaded again", 15_000, () => inTree<string>(cdp,
       "window.__acceptanceServedBefore === true || !document.querySelector('.cl-plugin-index__tabs') ? null : (document.querySelector('.cl-plugin-index [role=tab][aria-selected=true]')?.textContent ?? '(none)')"), () => dumpFrames(cdp));
@@ -1422,7 +1442,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (dataDir !== undefined) await until("its data folder gone with it", 15_000, async () => (existsSync(dataDir) ? undefined : true), async () => `${dataDir} still holds ${JSON.stringify(readdirSync(dataDir))}`);
     const dataSaid = dataDir !== undefined ? "Remove and delete its data… pressed on its card, the plugin and its data folder gone" : "Remove and delete its data… pressed on its card, the plugin gone";
     const controls = ctx.setPick !== undefined ? await pluginsPageControls() : "development folders and adult not driven (no picker control)";
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; ${labelsSaid}, the detail the same; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer (the old one, inert, left ${inertMs} ms after the reload was sent) and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; ${labelsSaid}, the detail the same; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    } finally {
+      await rpc.request("plugin.remove", { id: pick!.id }).catch(() => undefined);
+    }
   });
 
   // 13: a third-party plugin with UI (the acceptance-ui fixture), installed from its folder as it is: its client is TSX
