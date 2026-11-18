@@ -22,7 +22,7 @@
 import { randomBytes } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { Cdp } from "./cdp";
+import { CLIPPED_AWAY_JS, type Cdp } from "./cdp";
 import type { MossClient } from "./client";
 import { scaled } from "./time-scale";
 import { toolNamed } from "./fake-anthropic";
@@ -134,14 +134,17 @@ export async function clickExact(cdp: Cdp, what: string, selector: string, text:
   const at = await until(what, ms, async () => {
     for (const d of await treeDocs(cdp)) {
       const c = await cdp.evaluate(d.session, `(() => {
+        ${CLIPPED_AWAY_JS}
         const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => (e.innerText || '').split('\\n').some((l) => l.trim() === ${JSON.stringify(text)}) || e.getAttribute('aria-label') === ${JSON.stringify(text)});
         if (!el) return null;
         // A long list (the sidebar on a home with many sessions) scrolls: the entry is brought into view first, as a person does,
         // or its centre lies outside the pane and the press lands on nothing.
         el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
         const r = el.getBoundingClientRect();
+        if (clippedAway(el, r.left + r.width / 2, r.top + r.height / 2)) return { clipped: true };
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      })()`).catch(() => null) as { x: number; y: number } | null;
+      })()`).catch(() => null) as { x: number; y: number; clipped?: boolean } | null;
+      if (c !== null && c !== undefined && c.clipped === true) throw new Error(`${what}: the target is not on screen (it stays outside its pane's visible box after scrolling)`);
       if (c !== null && c !== undefined) return { session: d.session, c };
     }
     return undefined;
@@ -669,7 +672,11 @@ export async function toSessionTab(ctx: ExampleCtx, rowText?: string): Promise<v
     }
     await until("a code session's tab", 15_000, async () => ((await drawn()) ? true : undefined)).catch(() => undefined);
   }
-  if (!(await drawn())) fail("no code session's tab is up, and the sidebar's session row didn't bring one back");
+  if (!(await drawn())) {
+    const seen: string[] = [];
+    for (const d of await treeDocs(cdp)) seen.push(String(await cdp.evaluate(d.session, `(() => { const cur = [...document.querySelectorAll('.cl-sidebar [aria-current]')].map((e) => (e.textContent || '').trim().slice(0, 30)); const rows = document.querySelectorAll('.cl-sidebar .cl-sidebar__agent .cl-sidebar__row').length; const tabs = [...document.querySelectorAll('.cl-window__content [class*=tab]')].map((e) => e.className).slice(0, 3); const r0 = document.querySelector('.cl-sidebar .cl-sidebar__agent .cl-sidebar__row'); let at = ''; if (r0) { const b = r0.getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); at = ' first row at ' + Math.round(b.left + b.width / 2) + ',' + Math.round(b.top + b.height / 2) + ' (' + innerWidth + 'x' + innerHeight + ') under the point: ' + (e ? e.tagName + '.' + String(e.className).slice(0, 40) + ' ' + (e.textContent || '').slice(0, 30) : 'nothing') + ' main: ' + (document.querySelector('.cl-window__content')?.textContent || '').slice(0, 60); } return 'current=' + JSON.stringify(cur) + ' rows=' + rows + ' tabs=' + JSON.stringify(tabs) + at; })()`).catch(() => "?")));
+    fail(`no code session's tab is up, and the sidebar's session row didn't bring one back (${seen.join(" || ")}; the row asked for: ${rowText ?? "the first"})`);
+  }
 }
 
 /** Puts the app where a row of the shared plugin-app window needs it: any plugin OK card an earlier row left waiting answered

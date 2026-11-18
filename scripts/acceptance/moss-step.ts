@@ -1212,7 +1212,12 @@ async function tryAgainRow(s: UnitState): Promise<string> {
   const sentBefore = (await s.c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 })).events.filter((e) => e.type === "user_message" && e.text === words).length;
   s.x.fake.heal(id);
   await s.w.click(".messages [data-try-again]");
-  const said = await botSaid(s, `ACCEPTANCE-REPLY-OK ${words}`);
+  const said = await botSaid(s, `ACCEPTANCE-REPLY-OK ${words}`, 120_000).catch(async (err) => {
+    // What the press did: how many times the words are in her conversation now, whether the button is still there, and the app's last lines.
+    const now = (await s.c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 }).catch(() => ({ events: [] }))).events.filter((e) => e.type === "user_message" && e.text === words).length;
+    const still = await s.w.eval<boolean>("!!document.querySelector('.messages [data-try-again]')").catch(() => "?");
+    return s.x.fail(`${String((err as Error).message).slice(0, 200)} [the words are in her conversation ${now} time(s) (sent before the press: ${sentBefore}); Try again still shown: ${String(still)}]`);
+  });
   await s.w.waitFor("Try again gone", "!document.querySelector('.messages [data-try-again]') ? 'gone' : null", 15_000);
   const page = await s.c.request<{ session: string; events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 });
   const sent = page.events.filter((e) => e.type === "user_message" && e.text === words).length;

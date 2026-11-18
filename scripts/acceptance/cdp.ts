@@ -10,6 +10,19 @@ export interface FrameInfo { session: string; url: string; type: string; targetI
 
 type Pending = { method: string; resolve(v: any): void; reject(e: Error): void };
 
+/** In-page source of `clippedAway(el, x, y)`: whether the point lies outside the visible box of the page or of any ancestor that clips
+ *  (overflow auto, scroll, hidden or clip), as a press there would land on something else or on nothing. */
+export const CLIPPED_AWAY_JS = `const clippedAway = (el, x, y) => {
+  if (x < 0 || y < 0 || x > window.innerWidth || y > window.innerHeight) return true;
+  for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+    const cs = getComputedStyle(a);
+    if (!/(auto|scroll|hidden|clip)/.test(cs.overflowX + cs.overflowY)) continue;
+    const ar = a.getBoundingClientRect();
+    if (x < ar.left || x > ar.right || y < ar.top || y > ar.bottom) return true;
+  }
+  return false;
+};`;
+
 export class Cdp {
   private seq = 0;
   private readonly pending = new Map<number, Pending>();
@@ -148,6 +161,7 @@ export class Cdp {
    *  (scrolled into view first when it lies outside it). */
   async centerOf(session: string, selector: string, text?: string): Promise<{ x: number; y: number } | undefined> {
     const v = await this.evaluate(session, `(() => {
+      ${CLIPPED_AWAY_JS}
       const els = [...document.querySelectorAll(${JSON.stringify(selector)})].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
       const el = ${text === undefined ? "els[0]" : `els.find((e) => (e.innerText || e.getAttribute('aria-label') || '').includes(${JSON.stringify(text)}))`};
       if (!el) return null;
@@ -174,6 +188,8 @@ export class Cdp {
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         r = el.getBoundingClientRect();
       }
+      // Still clipped by a pane it sits in (it doesn't scroll to the target): not a place a press can land.
+      if (clippedAway(el, r.left + r.width / 2, r.top + r.height / 2)) return null;
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
     })()`);
     // Still outside the window after the scroll (its pane doesn't scroll to it): not a place a press can land, so not an answer.
@@ -199,7 +215,23 @@ export class Cdp {
     })()`).catch(() => undefined);
     void v;
     await new Promise((r) => setTimeout(r, 150));
-    return this.centerOf(session, ".cl-sidebar .cl-sidebar__agent .cl-sidebar__row", id);
+    // The first row (or the one named) that a press would reach: scrolled into the list's view, with the row itself (or what it holds)
+    // under its centre. A row something else sits over (the list's own header, a sheet) is passed over, as a person presses the next one.
+    const at = (await this.evaluate(session, `(() => {
+      ${CLIPPED_AWAY_JS}
+      const id = ${JSON.stringify(id ?? null)};
+      const rows = [...document.querySelectorAll(".cl-sidebar .cl-sidebar__agent .cl-sidebar__row")].filter((e) => (id === null || (e.textContent || "").includes(id)) && e.getBoundingClientRect().width > 0);
+      for (const el of rows) {
+        el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+        const r = el.getBoundingClientRect();
+        const x = r.left + r.width / 2, y = r.top + r.height / 2;
+        if (clippedAway(el, x, y)) continue;
+        const hit = document.elementFromPoint(x, y);
+        if (hit !== null && (el === hit || el.contains(hit))) return { x, y };
+      }
+      return null;
+    })()`).catch(() => undefined)) as { x: number; y: number } | null | undefined;
+    return at ?? undefined;
   }
 
   /** The main window's pixels (a top-level target only: a frame's session can't capture). */

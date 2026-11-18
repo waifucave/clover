@@ -118,7 +118,12 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
     await until("the user's words and the reply in the copy", 60_000, async () => {
       const t = await copyText(ctx);
       return t.includes(hello) && t.includes("ACCEPTANCE-REPLY-OK") ? true : undefined;
-    }, async () => (await copyText(ctx)).replace(/\s+/g, " ").slice(-300));
+    }, async () => {
+      const units: string[] = [];
+      for (const d of await layerDocs(cdp, COPY_ID)) units.push(String(await cdp.evaluate(d.session, `[...document.querySelectorAll('[data-unit]')].map((e) => e.getAttribute('data-unit') + ':' + (e.textContent || '').slice(0, 40)).join(' | ') + ' vis=' + document.visibilityState`).catch(() => "?")));
+      const ev = (await log()).slice(-8).map((e) => e.type === "turn_completed" || e.type === "error" || e.type === "agent_error" ? JSON.stringify(e).slice(0, 300) : `${String(e.type)}${typeof e.text === "string" ? `:${e.text.slice(0, 30)}` : ""}`).join(" ") + ` || session: ${JSON.stringify((await rpc.request<{ session: Record<string, unknown> }>("session.get", { id: session }).catch(() => ({ session: {} }))).session).slice(0, 400)}`;
+      return `${(await copyText(ctx)).replace(/\s+/g, " ").slice(-200)} || units: ${units.join(" // ")} || log: ${ev} || refused: ${refusals().slice(-2).join(" | ")}`;
+    });
     said.push(`the copy drew the code session's turn (${hello} and its reply) in its own document (${doc.url.slice(0, 40)}…)`);
 
     // 4. Try again, and the door's press rule on it: a bots' feature this round (a failed turn in a code session shows its error
