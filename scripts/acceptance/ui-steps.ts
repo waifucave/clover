@@ -1163,8 +1163,16 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await waitText("the chosen folder's name", `Chosen: ${pick!.path.split("/").pop()}`);
     const shownPath = await cdp.evaluate(page!.session, `document.body.innerText.includes(${JSON.stringify(pick!.path)})`);
     if (shownPath === true) fail("the page shows the picked folder's path: it should hold only a token and the name");
-    const reloads = () => (ctx.appLog().match(/layers: \S+ loads again to frame a layer installed after it was served/g) ?? []).length;
-    const reloadsBefore = reloads();
+    // The reload this install makes is the first one after the app's log says the plugin's OK card was answered: a reload
+    // that lands from an earlier cause (a layer installed just before the unit began, the app's first start) is another one.
+    const reloadLine = /^(\S+) layers: \S+ loads again to frame a layer installed after it was served$/m;
+    const reloadAfterOk = (): { at: number; earlier: number } | undefined => {
+      const log = ctx.appLog();
+      const ok = log.lastIndexOf("sealed: answer accepted");
+      if (ok < 0) return undefined;
+      const m = reloadLine.exec(log.slice(ok));
+      return m === null ? undefined : { at: Date.parse(m[1]!), earlier: (log.slice(0, ok).match(/layers: \S+ loads again to frame a layer installed after it was served/g) ?? []).length };
+    };
     // The document showing now is marked, so the check after the install reads the one loaded again, never this one.
     await cdp.evaluate(page!.session, "window.__acceptanceServedBefore = true");
     await clickText("the chosen folder's Install", "button", `Install ${pick!.path.split("/").pop()}`);
@@ -1175,17 +1183,32 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     });
     // Its status-bar line is drawn by its own layer, which the window's document wasn't served to frame: the document
     // loads again, and the user is still where they were (the Plugins page, its Add tab), not on the first page.
-    await until("the window's document loaded again for its layer", 30_000, async () => (reloads() > reloadsBefore ? true : undefined));
+    const reloaded = await until("the window's document loaded again for its layer (after its OK card was answered)", 30_000, async () => reloadAfterOk());
     // How long the document served before stays in the window, inert, after main sent the reload (the app log's own time of the
-    // line to the moment the old document is gone): measured every run, printed in the row's detail, and held to 5 s (the root's cap).
-    const reloadLine = [...ctx.appLog().matchAll(/^(\S+) layers: \S+ loads again to frame a layer installed after it was served$/gm)].at(-1);
-    const reloadAt = reloadLine === undefined ? Date.now() : Date.parse(reloadLine[1]!);
+    // reload this install made, to the moment the old document is gone): measured every run, printed in the row's detail, and
+    // held to 5 s (the root's cap).
+    const reloadAt = reloaded.at;
+    // How long after the reload line the row first looked: a late first look is the row's own delay, not the window's.
+    const lookedAfter = Date.now() - reloadAt;
     let inertMs = -1;
+    // A look that doesn't finish quickly says nothing: the harness's CDP call to a frame main removed mid-call gets no answer
+    // for its own 20 s limit, and the helper that lists the documents swallows that, so "no document holds the mark" came back
+    // 20.6 s late on a CI run (run 44366218389) while the app log shows the new document drawn a second after the reload.
+    // Each look is cut at 1.5 s and counts as "not looked" then; only a look that finished and found no mark means it left.
     for (const end = Date.now() + 15_000; Date.now() < end; ) {
-      if ((await inTree<boolean>(cdp, "window.__acceptanceServedBefore === true")) === undefined) { inertMs = Date.now() - reloadAt; break; }
+      const looked = await Promise.race([
+        inTree<boolean>(cdp, "window.__acceptanceServedBefore === true").then((r) => ({ stays: r !== undefined })),
+        sleep(1_500).then(() => undefined),
+      ]);
+      if (looked !== undefined && !looked.stays) { inertMs = Date.now() - reloadAt; break; }
       await sleep(40);
     }
-    if (inertMs < 0 || inertMs > 5_500) fail(`the document served before stayed in the window ${inertMs < 0 ? "past 15 s" : `${inertMs} ms`} after the reload (it is swapped out at the new document's first size, or after 5 s at the latest)`);
+    if (inertMs < 0 || inertMs > 5_500) {
+      // The app's own lines from the OK card's answer on, so a slow runner's failure says what the time was spent on.
+      const log = ctx.appLog();
+      const since = log.slice(Math.max(0, log.lastIndexOf("sealed: answer accepted"))).split("\n").filter((l) => l !== "").slice(0, 30).map((l) => l.slice(0, 150)).join(" | ");
+      fail(`the document served before stayed in the window ${inertMs < 0 ? "past 15 s" : `${inertMs} ms`} after the reload was sent (it is swapped out at the new document's first size, or after 5 s at the latest; the row first looked ${lookedAfter} ms after the reload line was logged; ${reloaded.earlier} earlier reload(s); the app's lines from the OK's answer: ${since})`);
+    }
     await until("its status line, drawn by its own layer", 30_000, async () => ((await cdp.documents()).some((d) => d.url.startsWith(`moss-plugin://${pick!.id}/`)) ? true : undefined), () => dumpFrames(cdp));
     const kept = await until("the Plugins page in the document loaded again", 15_000, () => inTree<string>(cdp,
       "window.__acceptanceServedBefore === true || !document.querySelector('.cl-plugin-index__tabs') ? null : (document.querySelector('.cl-plugin-index [role=tab][aria-selected=true]')?.textContent ?? '(none)')"), () => dumpFrames(cdp));
@@ -1444,7 +1467,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (dataDir !== undefined) await until("its data folder gone with it", 15_000, async () => (existsSync(dataDir) ? undefined : true), async () => `${dataDir} still holds ${JSON.stringify(readdirSync(dataDir))}`);
     const dataSaid = dataDir !== undefined ? "Remove and delete its data… pressed on its card, the plugin and its data folder gone" : "Remove and delete its data… pressed on its card, the plugin gone";
     const controls = ctx.setPick !== undefined ? await pluginsPageControls() : "development folders and adult not driven (no picker control)";
-    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer (the old one, inert, left ${inertMs} ms after the reload was sent) and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; ${labelsSaid}, the detail the same; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
+    return `installed ${pick!.id} from a picked folder (the page held a token and the name, never the path), its OK card ${okCard} pressed (now ${running}); the window's document loaded again for its layer (the old one, inert, left ${inertMs} ms after the reload was sent; ${reloaded.earlier} reload(s) were logged before this install's OK) and kept the Plugins page on its Add tab; the page's own calls with no click refused (${refusals.replace(/plugin\.|ui\./g, "").slice(0, 160)}…); its detail showed ${pick!.tool}; ${labelsSaid}, the detail the same; its icon ${iconSeen}; ${logSaid}; ${dataSaid} (card ${removeCard}); ${grantsSaid}; ${controls}${rendered.length > 0 ? `; rendered ${rendered.length} pictures` : ""}`;
     } finally {
       await rpc.request("plugin.remove", { id: pick!.id }).catch(() => undefined);
     }
