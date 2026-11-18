@@ -1,7 +1,7 @@
 // The upgrade's new half, for the bots (lane BT, round 4): on the engine a copied plugin-era home started, every bot the
 // OLD home holds a conversation of is in MOSS exactly once, listed or archived, with that conversation; and a copied
 // plugin that brings one of them and waits for its OK again: after its OK, its bot is listed with its old conversation.
-// Lane M's upgrade rows call `botMoveUpgradeCheck` (scripts/acceptance/run.ts, the new half): this file adds no row.
+// The copy's upgrade runs it as the row after the old conversation's (scripts/acceptance/run.ts, `BOT_MOVE_UPGRADE_STEP`).
 //
 // What it reads of the OLD home (read only, the copy's source `MOSS_OLD_HOME`), on its own, not through the engine's
 // reader: each `transcripts/<seg>/b_<seg>.meta.json` of `kind: "bot"` (the bot's one conversation; its id is the meta's
@@ -12,7 +12,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const BOT_MOVE_UPGRADE_STEP = "the old home's bots are in MOSS once each, listed or archived, with their conversations; a copied bot plugin waiting for its OK: after the OK its bot is listed with its old conversation";
+export const BOT_MOVE_UPGRADE_STEP = "every bot the old home recorded is named once in the move's journal and is listed or archived with its conversation; an archived one is brought back and reads its old turns; MOSS's Settings list the archived ones under Archived bots";
 
 interface Rpc { request<T>(method: string, params?: unknown): Promise<T> }
 
