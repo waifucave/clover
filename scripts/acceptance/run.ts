@@ -91,6 +91,7 @@ import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, SIDEBAR_ITEMS, exampleNotesSt
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { TOOL_SETTING_STEP, toolSettingStep } from "./tool-setting-step";
 import { CODE_TOOLS_STEP, codeToolsStep } from "./code-tools-step";
+import { FAILED_TURN_STEP, failedTurnStep } from "./failed-turn-step";
 import { CARDS_STEP, cardsStep } from "./cards-step";
 import { ROUTER_STEP, routerStep } from "./router-step";
 import { ARRIVALS_STEP, arrivalsStep } from "./arrivals-step";
@@ -3987,6 +3988,8 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [TOOL_SETTING_STEP, () => toolSettingStep(ctx, bot)],
     // A change to the plugins' tools reaches a coding session on MOSS's own agent that is already running (lane AG).
     [CODE_TOOLS_STEP, () => codeToolsStep(ctx)],
+    // A coding session whose turn failed stays open: the provider's reason, then the same session answers after a model switch (lane MC1k).
+    [FAILED_TURN_STEP, () => failedTurnStep(ctx)],
     [CARDS_STEP, () => cardsStep(ctx)],
     // The engine's router (lane RT): a card with no session in the focused window's strip, the island with the window unfocused.
     [ROUTER_STEP, () => routerStep(ctx)],
