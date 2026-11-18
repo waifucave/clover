@@ -40,7 +40,8 @@ const profile = resolveProfile(process.env);
 const identity = mossIdentity(profile);
 const args = parseLaunchArgs(process.argv);
 const headless = args.headless;
-const testBuild = typeof __MOSS_TEST_BUILD__ === "string";
+// A test-marked build: the compile-time label tested INLINE at every use (never through a const), so a release build's
+// bundler folds each test-only path out and the release build's marker gate finds none of it (scripts/test-build.ts).
 // The dev overrides (the engine binary, the token, the user-data folder) count only in an unpackaged or dev run.
 const devOverrides = !app.isPackaged || profile === "dev";
 const home = engineHome(process.env);
@@ -50,7 +51,7 @@ if (process.platform === "win32") app.setAppUserModelId(identity.appId);
 // Its own user data: never MOSS Code's, never a real one from a test (MOSS_USER_DATA, a dev or test run's temp folder).
 const userDataOverride = devOverrides ? process.env.MOSS_USER_DATA : undefined;
 if (userDataOverride !== undefined && userDataOverride !== "") app.setPath("userData", userDataOverride);
-if (testBuild) {
+if ((typeof __MOSS_TEST_BUILD__ === "string")) {
   // A test build keeps off the login keychain (Chromium's mock keychain) and refuses a real user-data folder.
   app.commandLine.appendSwitch("use-mock-keychain");
   if (userDataOverride === undefined || userDataOverride === "") {
@@ -94,8 +95,8 @@ const presence = new PresenceReporter(log);
 const answerKey = new ProgramAnswerKey((() => {
   // The acceptance's kept key is read only in a test-marked build (the label tested inline, so a real build has none of it).
   const testKeyFile = typeof __MOSS_TEST_BUILD__ === "string" ? process.env.MOSS_TEST_ANSWER_KEY : undefined;
-  const linuxPlainText = process.platform === "linux" && app.isPackaged && !headless && !testBuild ? (() => { try { return safeStorage.getSelectedStorageBackend() === "basic_text"; } catch { return true; } })() : false;
-  const choice = vaultChoice({ packaged: app.isPackaged, headless, testBuild, profile, platform: process.platform, ...(testKeyFile !== undefined && isAbsolute(testKeyFile) ? { testKeyFile } : {}), linuxPlainText });
+  const linuxPlainText = process.platform === "linux" && app.isPackaged && !headless && !(typeof __MOSS_TEST_BUILD__ === "string") ? (() => { try { return safeStorage.getSelectedStorageBackend() === "basic_text"; } catch { return true; } })() : false;
+  const choice = vaultChoice({ packaged: app.isPackaged, headless, testBuild: typeof __MOSS_TEST_BUILD__ === "string", profile, platform: process.platform, ...(testKeyFile !== undefined && isAbsolute(testKeyFile) ? { testKeyFile } : {}), linuxPlainText });
   if (choice.kind === "file") return fileVault(choice.file);
   if (choice.kind === "safe-storage") return safeStorageVault(join(app.getPath("userData"), "answer-key"), safeStorage, process.platform, log);
   return memoryVault();
@@ -125,13 +126,13 @@ let updateReady: string | undefined;
  *  installed (one the person turned off stays off), then `autostart start`. A test build never does. */
 async function startEngine(): Promise<boolean> {
   const binary = installedEngine ?? bundledEngine;
-  if (binary === undefined || testBuild) return false;
+  if (binary === undefined || (typeof __MOSS_TEST_BUILD__ === "string")) return false;
   return await startEngineThroughOs(profile, cliLauncher({ binary, home, profile }), log);
 }
 /** The release notice now (behind: updating, offline, can't; ahead: waiting, switching, engine down), or none. */
 let releaseNow: ReleaseNotice | undefined;
 const { catchUp, bringWatch } = createRelease({
-  ...(testBuild ? { stand: { outcome: process.env.MOSS_TEST_UPDATE_OUTCOME, retryMs: process.env.MOSS_TEST_RELEASE_RETRY_MS } } : {}),
+  ...((typeof __MOSS_TEST_BUILD__ === "string") ? { stand: { outcome: process.env.MOSS_TEST_UPDATE_OUTCOME, retryMs: process.env.MOSS_TEST_RELEASE_RETRY_MS } } : {}),
   updater: () => updater,
   // The way out for a MOSS that can never connect: its own engine takes the home's out (`engine reset`); the next start installs its own.
   resetCommand: () => (bundledEngine === undefined ? undefined : `"${bundledEngine}" engine reset`),
@@ -165,7 +166,7 @@ const connection = new EngineConnection({
   release,
   pid: process.pid,
   // A test build never starts an engine through the OS: its engine is the test's.
-  ...(bundledEngine !== undefined && !testBuild ? { launcher: { start: async () => ({ ok: await startEngine(), code: null }) } } : {}),
+  ...(bundledEngine !== undefined && !(typeof __MOSS_TEST_BUILD__ === "string") ? { launcher: { start: async () => ({ ok: await startEngine(), code: null }) } } : {}),
   log,
   onConnected: (client, hello) => connected(client, hello),
   // Ahead of the engine: only the release door is open; MOSS asks for its own release to be brought in, from its own bundle.
@@ -346,7 +347,7 @@ async function openWindow(): Promise<BrowserWindow> {
   windowSession ??= session.fromPartition(WINDOW_PARTITION);
   // A test-marked headless run draws offscreen (a never-shown window paints nothing, and a card's visibility reading would
   // never say it shows); a real headless run is never one a person presses in.
-  const offscreen = args.render !== undefined || args.smoke !== undefined || (testBuild && headless);
+  const offscreen = args.render !== undefined || args.smoke !== undefined || ((typeof __MOSS_TEST_BUILD__ === "string") && headless);
   const win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 640, minHeight: 480, show: false, title: identity.productName,
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#121212" : "#FFFFFF",
@@ -409,7 +410,7 @@ function frameKey(f: WebFrameMain | null | undefined): string | undefined {
 }
 
 /** The test build may say the window is in front while headless (the renders and the UI test place cards in it). */
-const testFront = testBuild && process.env.MOSS_TEST_FRONT === "1";
+const testFront = (typeof __MOSS_TEST_BUILD__ === "string") && process.env.MOSS_TEST_FRONT === "1";
 /** A test-marked headless run's stand-in for the window coming to the front and going behind (a headless window is never
  *  the focused one): the file `MOSS_TEST_MAIN_FRONT_FILE` names holds `front` or `back`, read every 100 ms; each change
  *  is reported to the router at once. Compiled out of a real build (the label is tested inline). */
@@ -484,7 +485,7 @@ function personPressed(w: BrowserWindow): boolean {
   const mainFrame = frameKey(w.webContents.mainFrame);
   if (mainFrame === undefined) return false;
   if (record.take(w.id, mainFrame) !== undefined) return true;
-  return testBuild && process.env.MOSS_TEST_PRESSES === "1";
+  return (typeof __MOSS_TEST_BUILD__ === "string") && process.env.MOSS_TEST_PRESSES === "1";
 }
 
 const talk = new Talk(async (held) => {
@@ -952,10 +953,10 @@ if (!app.requestSingleInstanceLock()) {
     wireSealed();
     const win = await openWindow();
     // Where this copy is, under the home, before the first dial (a packaged run or a test build; a source run records nothing).
-    if (app.isPackaged || testBuild) writeOwnRecord(home, { bundlePath: ownBundle(), release, carriesEngine: carriesEngine(), carriesHost: ownHost() }, log);
+    if (app.isPackaged || (typeof __MOSS_TEST_BUILD__ === "string")) writeOwnRecord(home, { bundlePath: ownBundle(), release, carriesEngine: carriesEngine(), carriesHost: ownHost() }, log);
     // Then its engine under the home, under the install lock (`engine install`), so the login item and every start use the NEWEST
     // installed copy, whichever app placed it; an item already registered is registered again from it (MOSS Code's same steps).
-    if (bundledEngine !== undefined && app.isPackaged && !testBuild) {
+    if (bundledEngine !== undefined && app.isPackaged && !(typeof __MOSS_TEST_BUILD__ === "string")) {
       const placed = await adoptHomeEngine(profile, {
         install: () => installEngineCopy({ binary: bundledEngine, home, profile, bundlePath: ownBundle() }),
         launcherFor: (binary) => cliLauncher({ binary, home, profile }),
@@ -967,7 +968,7 @@ if (!app.requestSingleInstanceLock()) {
     // MOSS's own updates: its own update files of the same release (`moss-<channel>-mac.yml`), packaged builds only, never a
     // headless or test run (no network from those). A downloaded update installs at the person's Quit: quitting MOSS stops no
     // work, and the next MOSS, newer than the engine, brings its engine in when nothing is mid-work.
-    if (app.isPackaged && !headless && !testBuild) {
+    if (app.isPackaged && !headless && !(typeof __MOSS_TEST_BUILD__ === "string")) {
       void startUpdater({
         packaged: true, resourcesPath: process.resourcesPath, feedPrefix: MOSS_APP_FEED_PREFIX, log,
         onReady: (version) => {
@@ -977,8 +978,8 @@ if (!app.requestSingleInstanceLock()) {
       }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
     }
     void connection.start();
-    if (testBuild && args.smoke !== undefined) void runSmoke({ win, engine, file: args.smoke, log, logLines, connection });
-    else if (testBuild && args.render !== undefined) void runRender({ win, engine, dir: args.render, log, logLines });
+    if ((typeof __MOSS_TEST_BUILD__ === "string") && args.smoke !== undefined) void runSmoke({ win, engine, file: args.smoke, log, logLines, connection });
+    else if ((typeof __MOSS_TEST_BUILD__ === "string") && args.render !== undefined) void runRender({ win, engine, dir: args.render, log, logLines });
   });
 }
 
