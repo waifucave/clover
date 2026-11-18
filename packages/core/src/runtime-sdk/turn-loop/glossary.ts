@@ -356,6 +356,30 @@ function line(item: GlossaryItem): string {
   return `- ${item.name} (${item.kind}): ${item.description || "no description"}`;
 }
 
+/** What a `Glossary` call asks of an index, resolved: each search's matches, each load's item (a name found exactly, or
+ *  in any case), and the tools the loads make callable (a tool's own name, and a plugin's tools with it, each still judged
+ *  as that tool). The one place a bot's `Glossary` and an agent's bridge `Glossary` both read their index, so what a load
+ *  reaches cannot drift between them; each formats its own answer. */
+export function resolveGlossary(items: readonly GlossaryItem[], input: { query?: unknown; load?: unknown }): {
+  empty: boolean;
+  searches: { query: string; items: GlossaryItem[] }[];
+  loads: { name: string; item?: GlossaryItem }[];
+  toolNames: string[];
+} {
+  const queries = asList(input.query).slice(0, 20);
+  const loadNames = [...new Set(asList(input.load))].slice(0, 50);
+  const searches = queries.map((query) => ({ query, items: searchGlossary(items, query) }));
+  const toolNames: string[] = [];
+  const loads = loadNames.map((name) => {
+    const item = items.find((i) => i.name === name) ?? items.find((i) => i.name.toLowerCase() === name.toLowerCase());
+    if (item === undefined) return { name };
+    if (item.kind === "tool") toolNames.push(item.name);
+    else if (item.loads !== undefined) toolNames.push(...item.loads);
+    return { name, item };
+  });
+  return { empty: queries.length === 0 && loadNames.length === 0, searches, loads, toolNames: [...new Set(toolNames)] };
+}
+
 /** The `Glossary` core tool. Its result asks the runtime to load the tools it names (`_meta["clover/load"]`). */
 export function glossaryTool(deps: GlossaryDeps): CoreToolDef {
   return {
@@ -375,34 +399,18 @@ export function glossaryTool(deps: GlossaryDeps): CoreToolDef {
     },
     async run(input) {
       const rec = (input ?? {}) as { query?: unknown; load?: unknown };
-      const queries = asList(rec.query).slice(0, 20);
-      const loads = [...new Set(asList(rec.load))].slice(0, 50);
-      if (queries.length === 0 && loads.length === 0) return { text: "Give a query to search, or names to load.", isError: true };
-      const items = glossaryIndex(deps);
+      const asked = resolveGlossary(glossaryIndex(deps), { query: rec.query, load: rec.load });
+      if (asked.empty) return { text: "Give a query to search, or names to load.", isError: true };
       const out: string[] = [];
-      for (const q of queries) {
-        const found = searchGlossary(items, q);
-        out.push(found.length === 0 ? `No matches for ${JSON.stringify(q)}.` : [`Matches for ${JSON.stringify(q)}:`, ...found.map(line)].join("\n"));
-      }
-      const toolNames: string[] = [];
-      for (const name of loads) {
-        const item = items.find((i) => i.name === name) ?? items.find((i) => i.name.toLowerCase() === name.toLowerCase());
-        if (item === undefined) {
-          out.push(`${name}: nothing by that name. Search for it first.`);
-          continue;
-        }
-        if (item.kind === "tool") {
-          toolNames.push(item.name);
-          continue;
-        }
-        // A plugin's own tools become callable with it (each call still judged as that tool).
-        if (item.loads !== undefined) toolNames.push(...item.loads);
-        const body = item.body ?? item.description;
+      for (const s of asked.searches) out.push(s.items.length === 0 ? `No matches for ${JSON.stringify(s.query)}.` : [`Matches for ${JSON.stringify(s.query)}:`, ...s.items.map(line)].join("\n"));
+      for (const l of asked.loads) {
+        if (l.item === undefined) { out.push(`${l.name}: nothing by that name. Search for it first.`); continue; }
+        if (l.item.kind === "tool") continue;
+        const body = l.item.body ?? l.item.description;
         const capped = body.length > SKILL_BODY_MAX_CHARS ? `${body.slice(0, SKILL_BODY_MAX_CHARS)}\n[cut at ${SKILL_BODY_MAX_CHARS} characters]` : body;
-        out.push(item.kind === "skill" ? `<skill name="${item.name}">\n${capped.trim()}\n</skill>` : `${item.name} (${item.kind}):\n${capped.trim()}`);
+        out.push(l.item.kind === "skill" ? `<skill name="${l.item.name}">\n${capped.trim()}\n</skill>` : `${l.item.name} (${l.item.kind}):\n${capped.trim()}`);
       }
-      const load = [...new Set(toolNames)];
-      return { text: out.join("\n\n"), isError: false, ...(load.length > 0 ? { meta: { "clover/load": load } } : {}) };
+      return { text: out.join("\n\n"), isError: false, ...(asked.toolNames.length > 0 ? { meta: { "clover/load": asked.toolNames } } : {}) };
     },
   };
 }

@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import type { McpSdkServerConfigWithInstance, WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import type { BridgeHandlers } from "./handlers";
-import { glossaryResultText, listedBridgeTool, type BridgeToolDef } from "./tools";
+import { GLOSSARY, glossaryResultText, listedBridgeTool, type BridgeToolDef } from "./tools";
 
 export interface InProcessBridgeOptions {
   /** The server's name: the session's bridge server name (`moss_<id>`), as the stdio bridge's. */
@@ -41,7 +41,10 @@ export async function inProcessBridgeServer(h: BridgeHandlers, o: InProcessBridg
             ...(args["query"] === undefined ? {} : { query: args["query"] as string | string[] }),
             ...(args["load"] === undefined ? {} : { load: args["load"] as string | string[] }),
           });
-          return result(glossaryResultText(r), false);
+          // MOSS's own agent's runtime holds every tool the bridge doesn't flag until it is loaded: the tools this load names go
+          // to it under the runtime's names (`mcp__<bridge server>__<bridge name>`), which it loads in this turn.
+          const load = (r.load ?? []).map((n) => `mcp__${o.name}__${n}`);
+          return { ...result(glossaryResultText(r), false), ...(load.length > 0 ? { _meta: { "clover/load": load } } : {}) };
         }
         const r = await h.call(o.sessionId, { callId: randomUUID(), tool: name, input: args });
         return { content: r.content, isError: r.isError };
@@ -50,5 +53,6 @@ export async function inProcessBridgeServer(h: BridgeHandlers, o: InProcessBridg
       }
     },
   };
-  return { type: "sdk", name: o.name, instance };
+  // `Glossary` is the runtime's host tool search (`hostToolSearch`), which it takes by its plain name.
+  return { type: "sdk", name: o.name, instance, toolNames: { [GLOSSARY.name]: GLOSSARY.name } };
 }

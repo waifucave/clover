@@ -58,6 +58,8 @@ export interface WorldOptions {
   /** The plugins' turn hooks, as the manager reads them (`AgentManagerOptions.hooks`). */
   hooks?: AgentManagerOptions["hooks"];
   quirks?: AgentQuirks;
+  /** The bridge's `Glossary` (the daemon's `lateAgentPlugins` one), for a world that tests loads. */
+  glossary?: ConstructorParameters<typeof AgentManager>[0]["glossary"];
   script?: FakeAcpStep[][];
   history?: AgentEvent[];
   level?: Level;
@@ -189,6 +191,7 @@ export class World {
       ...(o.watchTools ? { watchTools: o.watchTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
+      ...(o.glossary ? { glossary: o.glossary } : {}),
       ...(o.log ? { log: o.log } : {}),
       ...(o.turnStarted ? { turnStarted: o.turnStarted } : {}),
       ...(o.hooks ? { hooks: o.hooks } : {}),

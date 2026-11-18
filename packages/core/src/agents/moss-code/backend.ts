@@ -37,6 +37,7 @@ import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 import { runtimeDenyForms } from "../../fence/runtime-deny-forms";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
+import { GLOSSARY } from "../bridge/tools";
 import { botSandbox, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
 import { MISPLACED_SANDBOX_FLAG_REFUSAL, misplacedSandboxFlag, outsideSandboxFlagOf, realFileWriteInput } from "../../approvals/bot-check";
 import { botChildSandboxOf, botChildWriteRefusal, type BotChildSandbox } from "../../runtime-sdk/turn-loop/subagent-backend";
@@ -75,7 +76,9 @@ export const MOSS_CODE_QUIRKS: AgentQuirks = {
     // The runtime takes an in-process server's tools once, when its query opens (agent SDK 0.0.80/0.0.81: `toWireMcpServers`,
     // nothing re-reads `listTools()`), so a changed list reaches it by opening it again, which the manager does before
     // the next turn (a `session/resume`, no replay), as the bot driver does for its own servers (`#serversChanged`).
-    toolListChanges: "next-turn" },
+    toolListChanges: "next-turn",
+    // Its runtime defers every MCP tool the bridge does not flag, and the bridge's Glossary loads them in place of ToolSearch.
+    toolSearch: "host" },
   // `session/resume` opens the transcript with no replay; there is no `load`.
   sessions: { load: { supported: false, replays: false }, resume: { supported: true, replays: false }, replayKeepsToolCallIds: true, listFiltersHonestly: false, close: true },
   // A refused call's result is an error (`failed`); a cancel interrupts the turn, which may leave calls open.
@@ -417,6 +420,10 @@ export class MossCodeBackend implements AgentBackend {
     const options: Options = {
       ...base,
       tools: [...MOSS_CODE_TOOLS],
+      // Every MCP tool the bridge doesn't flag starts deferred (a plugin tool set "on demand"), and the bridge's `Glossary` loads
+      // it in the turn (`_meta["clover/load"]`), as a bot's does; the flagged ones (always on, `anthropic/alwaysLoad`) are up front.
+      toolSearchEnabled: true,
+      hostToolSearch: GLOSSARY.name,
       abortController: abort,
       hooks,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
@@ -448,7 +455,9 @@ export class MossCodeBackend implements AgentBackend {
         // A bot's child never writes a run-later place: refused before any card, with the bot's own message.
         const runLater = botChildWriteRefusal(spec as AcpStartSpec, deps.botChild, name, input as Record<string, unknown>);
         if (runLater !== undefined) return { behavior: "deny", message: runLater };
-        const onBridge = bridgePrefix !== undefined && name.startsWith(bridgePrefix) ? name.slice(bridgePrefix.length) : undefined;
+        // The bridge's `Glossary` is the runtime's host tool search, which it names plainly (`hostToolSearch`); the rest are
+        // `mcp__<bridge server>__<name>`.
+        const onBridge = bridgePrefix !== undefined && name.startsWith(bridgePrefix) ? name.slice(bridgePrefix.length) : bridge !== undefined && name === GLOSSARY.name ? GLOSSARY.name : undefined;
         // Every tool of the session's bridge names its server and tool in the ACP request: a plugin's (judged where the
         // bridge runs it) and the bridge's own (Glossary, SendMessage), which the broker lets through (rule 2) as the
         // engine's cardless tools are for a bot.

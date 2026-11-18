@@ -49,7 +49,8 @@ import { acpHookCall } from "./acp-hook-call";
 import { BridgeTokens } from "./bridge/tokens";
 import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
-import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type AgentSessionFacts, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
+import { exposureOf, listChangeModeOf } from "./exposure";
+import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type AgentSessionFacts, type GlossaryAnswer, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
 import { AgentToolDisplays } from "./tool-shows";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
@@ -98,7 +99,7 @@ export interface AgentManagerOptions {
   clock: Clock;
   pluginTools?: BridgeToolSource;
   /** `Glossary` on the bridge: the plugins' skills, agent definitions and tools in the session's scope. */
-  glossary?: (sessionId: string, q: { query?: string | string[]; load?: string | string[] }, session?: AgentSessionFacts) => Promise<{ results: unknown[]; loaded: unknown[] }>;
+  glossary?: (sessionId: string, q: { query?: string | string[]; load?: string | string[] }, session?: AgentSessionFacts) => Promise<GlossaryAnswer>;
   /** The user's OKs for agents with no admitted sandbox (sandbox/oks.ts): `FileAgentOks` in the daemon. */
   oks?: AgentOks;
   /** The plugins' skills, agent definitions and hooks per session (B-M2's registry); none until then. */
@@ -181,6 +182,8 @@ interface Entry {
    *  (no unsandboxed command, its writes to the agent's root), so at ask for risky actions one runs without asking (R5). */
   sandboxHeld?: boolean;
   backend: AgentBackend;
+  /** The on-demand tools this session has loaded through the bridge's Glossary (their bridge names; `exposure: "list"`). */
+  loaded?: Set<string>;
   /** Its title (the bot's description, or its definition's name): how its cards name it. */
   title?: string;
   bot?: string;
@@ -320,7 +323,10 @@ export class AgentManager {
 
   /** What decides which plugins reach the session, and where its calls are judged. */
   #facts(e: Entry): AgentSessionFacts {
-    return { id: e.id, kind: e.bot === undefined ? "coding" : "agent", backend: e.backend.id, ...(e.bot === undefined ? {} : { bot: e.bot }), computer: e.computer, root: e.rootPath };
+    return {
+      id: e.id, kind: e.bot === undefined ? "coding" : "agent", backend: e.backend.id, ...(e.bot === undefined ? {} : { bot: e.bot }), computer: e.computer, root: e.rootPath,
+      exposure: exposureOf(e.backend.quirks), loaded: e.loaded ?? new Set<string>(),
+    };
   }
 
   /** The plugins' skills and agent definitions for each running session, read again and placed again where its backend
@@ -1326,9 +1332,19 @@ export class AgentManager {
         await this.#holdForBridge(id);
         return this.agentMessage(id, m.text, m.to);
       },
-      glossary: (id, q) => {
+      glossary: async (id, q) => {
         const e = this.#entries.get(id);
-        return this.#o.glossary && e !== undefined ? this.#o.glossary(id, q, this.#facts(e)) : Promise.resolve({ results: [], loaded: [] });
+        if (!this.#o.glossary || e === undefined) return { results: [], loaded: [] };
+        const r = await this.#o.glossary(id, q, this.#facts(e));
+        // An agent whose list can change holds an on-demand tool back until it is loaded: the load puts it on the list, which
+        // the agent then takes (live, or at its next turn). Every other agent's loads are the runtime's (`load`) or nothing.
+        if (exposureOf(e.backend.quirks) === "list" && r.load !== undefined && r.load.length > 0) {
+          e.loaded ??= new Set<string>();
+          for (const n of r.load) e.loaded.add(n);
+          await this.#syncTools(e).catch(() => {});
+          return { ...r, note: `The tools you loaded are on your tool list now${this.#listChangeMode(e) === "next-turn" ? ": you have them from your next message" : ""}.` };
+        }
+        return r;
       },
     };
   }
@@ -1345,13 +1361,9 @@ export class AgentManager {
     return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
   }
 
-  /** How a running session takes a changed tool list: what its backend declares (`mcp.toolListChanges`), and `next-turn`
-   *  only where the agent can be opened again with its history (an honest `resume`, or a `load`). Nothing declared: `next-session`. */
+  /** How a running session takes a changed tool list (`listChangeModeOf`). */
   #listChangeMode(e: Entry): "live" | "next-turn" | "next-session" {
-    const q = e.backend.quirks;
-    const declared = q.mcp.toolListChanges ?? "next-session";
-    if (declared !== "next-turn") return declared;
-    return q.sessions.load.supported || (q.sessions.resume.supported && !q.sessions.resume.replays) ? "next-turn" : "next-session";
+    return listChangeModeOf(e.backend.quirks);
   }
 
   /** The plugins' tools changed for some sessions (an install, an update, a removal, an enable or disable, the tool

@@ -46,7 +46,8 @@
       "passesEnvironment": false,
       "instructionsReachPrompt": "unknown",
       "systemPromptChannel": "_meta.systemPrompt",
-      "tellsConversationId": false
+      "tellsConversationId": false,
+      "toolSearch": "own"
     },
     "sessions": {
       "load": {

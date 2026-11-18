@@ -139,7 +139,7 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
             }
             if (name === "Glossary") {
               const r = await fromDaemon("glossary.query", { ...(args["query"] === undefined ? {} : { query: args["query"] }), ...(args["load"] === undefined ? {} : { load: args["load"] }) });
-              return textResult(glossaryResultText(r as { results: unknown[]; loaded: unknown[] }), false);
+              return textResult(glossaryResultText(r as { results: unknown[]; loaded: unknown[]; note?: string }), false);
             }
             const r = (await fromDaemon("bridge.call", { callId: randomUUID(), tool: name, input: args })) as { content: unknown[]; isError: boolean };
             return { content: r.content, isError: r.isError };

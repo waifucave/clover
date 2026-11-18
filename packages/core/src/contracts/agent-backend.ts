@@ -60,6 +60,12 @@ export interface AgentQuirks {
      *  next turn with the list as it is now, on a `session/resume`), `next-session` (neither: the change reaches its
      *  next session, and the person is told). Left out: `next-session`, since nothing says it does better. */
     toolListChanges?: "live" | "next-turn" | "next-session";
+    /** Whether the agent has a search for tools of its own, which holds back the tools MOSS's list leaves unflagged and loads
+     *  one when the model asks: `own` (Claude Code's Tool Search, which keeps a tool carrying `anthropic/alwaysLoad` up front),
+     *  `host` (MOSS's own agent: its runtime defers every tool but the flagged ones and the bridge's `Glossary` loads them,
+     *  `hostToolSearch`). Left out: none, so on demand is the bridge's `Glossary` only where the list can change in a session
+     *  (`toolListChanges`), and nothing holds a tool back otherwise (`agents/exposure.ts`). */
+    toolSearch?: "own" | "host";
   };
   sessions: {
     load: { supported: boolean; replays: boolean };

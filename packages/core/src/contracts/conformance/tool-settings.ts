@@ -50,6 +50,7 @@ export function runToolSettingsConformance(make: ToolSettingsFactory): void {
       expect(s.exposure("blender", "Export", {})).toBe("glossary");
       expect(s.exposure("blender", "Export", { agent: { toolSearch: false } })).toBe("glossary");
       expect(s.exposure("blender", "Export", { agent: { toolSearch: true } })).toBe("agent-search");
+      expect(s.exposure("blender", "Export", { agent: { toolSearch: false, holdsBack: false } })).toBe("preloaded");
       expect(s.exposure("blender", "Bake", { agent: { toolSearch: true } })).toBe("hidden");
       expect(s.exposure("blender", "Missing", {})).toBe("hidden");
     });

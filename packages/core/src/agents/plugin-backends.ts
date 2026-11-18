@@ -48,6 +48,7 @@ export const AgentQuirksSchema = z.strictObject({
     systemPromptChannel: z.enum(["_meta.antigravity.systemPrompt.append", "acp.systemPrompt", "_meta.systemPrompt"]).nullable(),
     tellsConversationId: z.boolean(),
     toolListChanges: z.enum(["live", "next-turn", "next-session"]).optional(),
+    toolSearch: z.enum(["own", "host"]).optional(),
   }),
   sessions: z.strictObject({
     load: z.strictObject({ supported: z.boolean(), replays: z.boolean() }),
