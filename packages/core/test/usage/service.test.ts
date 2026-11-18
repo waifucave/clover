@@ -91,7 +91,7 @@ describe("MOSS turns in the usage DB", () => {
     const { db, svc } = service(() => now);
     const rows = [
       { model: "anthropic/claude-sonnet-4.5", provider: "anthropic", inputTokens: 100, outputTokens: 10, cacheReadTokens: 1000, cacheWriteTokens: 0, costUsd: 0.5, costBasis: "list" as const },
-      { model: "codex-oauth/gpt-6-sol", canonicalModel: "codex-oauth/gpt-6-sol", inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      { model: "codex-oauth/gpt-6-sol", canonicalModel: "codex-oauth/gpt-6-sol", inputTokens: 250_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
       { model: "winter-test/echo", inputTokens: 5, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 },
     ];
     svc.recordMossTurn("sid-1", "code", "rs:b:0", rows);
@@ -100,12 +100,12 @@ describe("MOSS turns in the usage DB", () => {
     const twin = loadCatalog().models.find((m) => m.key === "openai/gpt-6-sol")!.pricing!.value.inputPerMTokUsd;
     expect(r).toEqual([
       { model: "anthropic/claude-sonnet-4.5", provider: "anthropic", mode: "code", cost_usd: 0.5, cost_basis: "list" },
-      { model: "codex-oauth/gpt-6-sol", provider: "codex-oauth", mode: "code", cost_usd: twin, cost_basis: "estimate" },
+      { model: "codex-oauth/gpt-6-sol", provider: "codex-oauth", mode: "code", cost_usd: twin * 0.25, cost_basis: "estimate" },
       { model: "winter-test/echo", provider: "winter-test", mode: "code", cost_usd: null, cost_basis: "unknown" },
     ]);
     const s = svc.series("24h", ["winter"]);
     expect(s.totals.records).toBe(3);
-    expect(s.totals.costUsd).toBeCloseTo(0.5 + twin, 9);
+    expect(s.totals.costUsd).toBeCloseTo(0.5 + twin * 0.25, 9);
     expect(s.models[0]!.model).toBe("codex-oauth/gpt-6-sol");
     expect(s.models.find((m) => m.model === "winter-test/echo")!.costBasis).toBe("unknown");
   });

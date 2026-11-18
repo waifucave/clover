@@ -39,6 +39,7 @@ import type { BotMcpServer } from "../../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeToolSource } from "../bridge/tools";
 import type { PluginPartsSource } from "../placement";
 import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
+import { projectRecords } from "../../sessions/wire";
 import { waitFor, World, type WorldOptions } from "./world";
 
 setDefaultTimeout(60_000);
@@ -773,6 +774,35 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
       }
     }
   });
+
+  // SDK 0.0.83 (the ACP adapter keys an is_error result on its terminal_reason): the wrapper that made `subtype: "success"` an
+  // error result is gone, and the SDK's own path ends these turns. A refusal is an answer (stop reason `refusal`), not a failure.
+  for (const [name, streamed] of [["nothing streamed before it", false], ["its words streamed before it", true]] as const) {
+    test(`a turn the model refused (terminal_reason refusal, ${name}) ends as a refusal and the refusal's words reach the person once`, async () => {
+      const words = "I can't help with that one.";
+      const query = ((args: { prompt: AsyncIterable<string> }) => {
+        async function* run() {
+          yield { type: "system", subtype: "init", model: CODE_MODEL, permissionMode: "default" };
+          for await (const _ of args.prompt) {
+            if (streamed) yield { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: words } } };
+            yield { type: "result", subtype: "success", is_error: true, terminal_reason: "refusal", result: words, usage: { input_tokens: 4, output_tokens: 6 } };
+          }
+        }
+        return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
+      }) as unknown as MossCodeDeps["query"];
+      const { w } = await setup({ ...codeBackend(spawn, query), long: true, level: "automatic" });
+      const r = await code(w, "do the thing");
+      const ended = () => w.host.history(r.sessionId).filter((x) => x.type === "turn_ended") as unknown as { end: { reason: string; failure?: string; text?: string } }[];
+      await waitFor(() => ended().length >= 1, "the turn's end", 60_000);
+      expect(ended()[0]!.end).toMatchObject({ reason: "refusal", text: words });
+      expect(ended()[0]!.end.failure).toBeUndefined();
+      // The person's view: the words are shown in ONE text event, and appear once in every event a client is sent.
+      const said = w.host.history(r.sessionId).filter((x) => x.type === "driver" && (x as unknown as { event: { type: string } }).event.type === "agent_text") as unknown as { event: { text: string } }[];
+      expect(said.map((x) => x.event.text)).toEqual([words]);
+      const wire = projectRecords(w.host.history(r.sessionId) as never, { kind: "coding" });
+      expect(JSON.stringify(wire).split(words).length - 1).toBe(1);
+    });
+  }
 
   test("a coding session started with no prompt (the user's New session): its first message is answered", async () => {
     const { w } = await setup({ ...codeBackend(spawn), long: true, level: "automatic" });

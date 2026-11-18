@@ -353,7 +353,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     for (const role of ["titles.model", "reviewer.model", "pins.dream", "pins.cleaner"]) {
       const info = res.result.roles[role];
       expect(info.problem).toBeNull();
-      expect(info.model).toBe("codex-oauth/gpt-5.6-terra");
+      expect(info.model).toBe("codex-oauth/gpt-6.1-terra");
       expect(info.permitted.length).toBeGreaterThan(1);
       const ids = info.permitted.map((p: any) => p.providerId);
       expect(ids).toContain("codex-oauth");
@@ -540,7 +540,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     // The role's own model is the pin, reported verbatim so the user can see and change it.
     expect(info.model).toBe("deepseek/deepseek-flash");
     expect(info.problem?.reason).toBe("no-credential");
-    expect(info.problem?.detail).toBe("no credential is stored for DeepSeek — reviewing on codex-oauth/gpt-5.6-terra meanwhile");
+    expect(info.problem?.detail).toBe("no credential is stored for DeepSeek — reviewing on codex-oauth/gpt-6.1-terra meanwhile");
     expect(info.problem?.model).toBe("deepseek/deepseek-flash");
     c.close();
   });
@@ -553,7 +553,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     await c.hello(harnessToken, "cli");
     const info = (await c.request(METHODS.settingsModelRoles, {})).result.roles["reviewer.model"];
     expect(info.problem?.reason).toBe("provider-unsupported");
-    expect(info.problem?.detail).toBe("AWS Bedrock can't be used for MOSS's own jobs yet — reviewing on codex-oauth/gpt-5.6-terra meanwhile");
+    expect(info.problem?.detail).toBe("AWS Bedrock can't be used for MOSS's own jobs yet — reviewing on codex-oauth/gpt-6.1-terra meanwhile");
     c.close();
   });
 
@@ -710,9 +710,9 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
 
-    const set = await c.request(METHODS.settingsSetModelRole, { role: "pins.dispatch", model: "codex-oauth/gpt-5.6-terra", effort: "high" });
+    const set = await c.request(METHODS.settingsSetModelRole, { role: "pins.dispatch", model: "codex-oauth/gpt-6.1-terra", effort: "high" });
     expect(set.error).toBeUndefined();
-    expect(set.result.roles["pins.dispatch"]).toMatchObject({ model: "codex-oauth/gpt-5.6-terra", effort: "high", effortExplicit: true });
+    expect(set.result.roles["pins.dispatch"]).toMatchObject({ model: "codex-oauth/gpt-6.1-terra", effort: "high", effortExplicit: true });
     // The wire's `role` IS the settings key — that is the whole point of the block's shape.
     let written = JSON.parse(readFileSync(settingsPath, "utf8"));
     expect(written.roleEfforts).toEqual({ "pins.dispatch": "high" });
@@ -722,7 +722,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     expect(read.result.roles["pins.dispatch"]).toMatchObject({ effort: "high", effortExplicit: true });
     expect(read.result.roles["pins.dispatch"].efforts).toContain("high");
 
-    const cleared = await c.request(METHODS.settingsSetModelRole, { role: "pins.dispatch", model: "codex-oauth/gpt-5.6-terra", effort: null });
+    const cleared = await c.request(METHODS.settingsSetModelRole, { role: "pins.dispatch", model: "codex-oauth/gpt-6.1-terra", effort: null });
     expect(cleared.error).toBeUndefined();
     expect(cleared.result.roles["pins.dispatch"]).toMatchObject({ effort: null, effortExplicit: false });
     written = JSON.parse(readFileSync(settingsPath, "utf8"));
@@ -737,9 +737,9 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     await c.request(METHODS.settingsSetModelRole, { role: "pins.dream", model: "codex-oauth/gpt-5.6-luna", effort: "low" });
 
     // A model-only write on the SAME role — no `effort` key at all.
-    const modelOnly = await c.request(METHODS.settingsSetModelRole, { role: "pins.dream", model: "codex-oauth/gpt-5.6-terra" });
+    const modelOnly = await c.request(METHODS.settingsSetModelRole, { role: "pins.dream", model: "codex-oauth/gpt-6.1-terra" });
     expect(modelOnly.error).toBeUndefined();
-    expect(modelOnly.result.roles["pins.dream"]).toMatchObject({ model: "codex-oauth/gpt-5.6-terra", effort: "low", effortExplicit: true });
+    expect(modelOnly.result.roles["pins.dream"]).toMatchObject({ model: "codex-oauth/gpt-6.1-terra", effort: "low", effortExplicit: true });
     const written = JSON.parse(readFileSync(settingsPath, "utf8"));
     expect(written.roleEfforts["pins.dream"]).toBe("low");
 
@@ -792,12 +792,12 @@ describe("settings.modelRoles / settings.setModelRole", () => {
 
     // A level no role could STORE (outside `REASONING_EFFORTS`) refuses at the door too, rather than
     // throwing out of `saveSettings`' own validation pass.
-    const unstorable = await c.request(METHODS.settingsSetModelRole, { role: "pins.dispatch", model: "codex-oauth/gpt-5.6-terra", effort: "minimal" });
+    const unstorable = await c.request(METHODS.settingsSetModelRole, { role: "pins.dispatch", model: "codex-oauth/gpt-6.1-terra", effort: "minimal" });
     expect(unstorable.error.code).toBe(-32602);
     expect(unstorable.error.message).toContain("is not a reasoning effort this daemon can store");
 
     // "none" IS accepted on a row with a vocabulary, even though the catalog never lists it.
-    const none = await c.request(METHODS.settingsSetModelRole, { role: "pins.dispatch", model: "codex-oauth/gpt-5.6-terra", effort: "none" });
+    const none = await c.request(METHODS.settingsSetModelRole, { role: "pins.dispatch", model: "codex-oauth/gpt-6.1-terra", effort: "none" });
     expect(none.error).toBeUndefined();
     expect(none.result.roles["pins.dispatch"].effort).toBe("none");
     c.close();
@@ -826,10 +826,10 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
     for (const [role, model] of [
-      ["pins.dispatch", "codex-oauth/gpt-5.6-terra"],
+      ["pins.dispatch", "codex-oauth/gpt-6.1-terra"],
       ["provider.model", "codex-oauth/gpt-5.6-sol"],
       ["pins.dream", "codex-oauth/gpt-5.6-luna"],
-      ["runtimes.advisorModel", "codex-oauth/gpt-5.6-terra"],
+      ["runtimes.advisorModel", "codex-oauth/gpt-6.1-terra"],
     ] as const) {
       const refused = await c.request(METHODS.settingsSetModelRole, { role, model, effort: "ultra" });
       expect(refused.error).toBeDefined();
@@ -862,9 +862,9 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     expect(after.runtimes?.advisorModel).toBeUndefined();
 
     // …and the read side never offers a control for it, even once the role names a model WITH a vocabulary.
-    const set = await c.request(METHODS.settingsSetModelRole, { role: "runtimes.advisorModel", model: "codex-oauth/gpt-5.6-terra" });
+    const set = await c.request(METHODS.settingsSetModelRole, { role: "runtimes.advisorModel", model: "codex-oauth/gpt-6.1-terra" });
     expect(set.error).toBeUndefined();
-    expect(set.result.roles["runtimes.advisorModel"]).toMatchObject({ model: "codex-oauth/gpt-5.6-terra", effort: null, efforts: null });
+    expect(set.result.roles["runtimes.advisorModel"]).toMatchObject({ model: "codex-oauth/gpt-6.1-terra", effort: null, efforts: null });
     c.close();
   });
 
@@ -916,13 +916,13 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
 
-    // pins.dream's default (unpinned) is codex-oauth/gpt-5.6-terra (pinsFor's own terra/luna rule —
+    // pins.dream's default (unpinned) is codex-oauth/gpt-6.1-terra (pinsFor's own terra/luna rule —
     // dream/cleaner/dispatch default to terra; only research/researchFallback default to luna).
-    roleHealth.recordFailure("pins.dream", "codex-oauth/gpt-5.6-terra", { reason: "usage-limit", detail: "the plan's usage window is exhausted", retryAt: "2026-09-19T00:00:00.000Z" });
+    roleHealth.recordFailure("pins.dream", "codex-oauth/gpt-6.1-terra", { reason: "usage-limit", detail: "the plan's usage window is exhausted", retryAt: "2026-09-19T00:00:00.000Z" });
     let result = await c.request(METHODS.settingsModelRoles, {});
     expect(result.result.roles["pins.dream"].problem).toEqual({
       reason: "usage-limit", detail: "the plan's usage window is exhausted",
-      model: "codex-oauth/gpt-5.6-terra", at: result.result.roles["pins.dream"].problem.at, retryAt: "2026-09-19T00:00:00.000Z",
+      model: "codex-oauth/gpt-6.1-terra", at: result.result.roles["pins.dream"].problem.at, retryAt: "2026-09-19T00:00:00.000Z",
     });
     // Every OTHER role is unaffected.
     expect(result.result.roles["pins.cleaner"].problem).toBeNull();
@@ -946,7 +946,7 @@ describe("settings.modelRoles / settings.setModelRole", () => {
 
     // Pin it to a DIFFERENT model — the note is about a model this role no longer runs, so it reads
     // as problem-free (without being deleted — role-health.test.ts covers that half directly).
-    set = await c.request(METHODS.settingsSetModelRole, { role: "pins.cleaner", model: "codex-oauth/gpt-5.6-terra" });
+    set = await c.request(METHODS.settingsSetModelRole, { role: "pins.cleaner", model: "codex-oauth/gpt-6.1-terra" });
     expect(set.result.roles["pins.cleaner"].problem).toBeNull();
     c.close();
   });
@@ -961,9 +961,9 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
     await c.request(METHODS.settingsSetModelRole, { role: "pins.dream", model: "codex-oauth/gpt-5.6-luna", effort: "low" });
-    const modelOnly = await c.request(METHODS.settingsSetModelRole, { role: "pins.dream", model: "codex-oauth/gpt-5.6-terra" });
+    const modelOnly = await c.request(METHODS.settingsSetModelRole, { role: "pins.dream", model: "codex-oauth/gpt-6.1-terra" });
     expect(modelOnly.error).toBeUndefined();
-    expect(modelOnly.result.roles["pins.dream"]).toMatchObject({ model: "codex-oauth/gpt-5.6-terra", effort: "low" });
+    expect(modelOnly.result.roles["pins.dream"]).toMatchObject({ model: "codex-oauth/gpt-6.1-terra", effort: "low" });
     c.close();
   });
 
@@ -1060,18 +1060,18 @@ describe("settings.modelRoles / settings.setModelRole", () => {
       const { settingsPath, socketPath, harnessToken } = await boot("codex-oauth/gpt-5.6-sol");
       const c = await TestClient.connect(socketPath);
       await c.hello(harnessToken, "cli");
-      const pinned = await c.request(METHODS.settingsSetModelRole, { role, model: "codex-oauth/gpt-5.6-terra" });
+      const pinned = await c.request(METHODS.settingsSetModelRole, { role, model: "codex-oauth/gpt-6.1-terra" });
       expect(pinned.error).toBeUndefined();
-      expect(pinned.result.roles[role]).toMatchObject({ explicit: true, model: "codex-oauth/gpt-5.6-terra" });
+      expect(pinned.result.roles[role]).toMatchObject({ explicit: true, model: "codex-oauth/gpt-6.1-terra" });
 
       // Simulates a SECOND client pinning the role between this client's last read and its next
       // write — the effort-only write must not clobber it (model absent, not null).
       const effortOnly = await c.request(METHODS.settingsSetModelRole, { role, effort: "high" });
       expect(effortOnly.error).toBeUndefined();
-      expect(effortOnly.result.roles[role]).toMatchObject({ explicit: true, model: "codex-oauth/gpt-5.6-terra", effort: "high" });
+      expect(effortOnly.result.roles[role]).toMatchObject({ explicit: true, model: "codex-oauth/gpt-6.1-terra", effort: "high" });
       const block = role === "titles.model" ? "titles" : "reviewer";
       const written = JSON.parse(readFileSync(settingsPath, "utf8"));
-      expect(written[block].model).toBe("codex-oauth/gpt-5.6-terra"); // the pin SURVIVED
+      expect(written[block].model).toBe("codex-oauth/gpt-6.1-terra"); // the pin SURVIVED
     });
   }
 

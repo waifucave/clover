@@ -383,7 +383,8 @@ export async function planAndApplySwitch(deps: HandoffDeps, sessionId: string, m
    *
    * WS-23 (reasoning-state, decision 9): the prose names what the review would have checked -- whether the
    * conversation fits the new model and whether it holds anything that model cannot read -- and no longer
-   * suggests the current model's reasoning is lost: it stays with that model in any case.
+   * suggests the current model's reasoning is lost: it stays with that model in any case. SDK 0.0.83: the NEW model does not
+   * see it (nothing is "recovered" into its request; the review's `portable` line says so), and the prose here claims neither.
    */
   const unreviewablePrompt = (): SwitchReview => ({
     prompt: true,

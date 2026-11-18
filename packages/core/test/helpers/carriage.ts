@@ -7,28 +7,16 @@
 // destination can read, with the source's opaque state left behind. These are the three questions,
 // asked of the bytes that actually went out.
 //
-// THE CARRIAGE'S FORM IS CHOSEN BY THE DESTINATION'S OWN READABLE STATE, not by its adapter (review
-// correction — the first pass of this comment said "per-adapter", which happens to agree on every
-// row we exercise and is the wrong rule). The SDK's `doorFor` picks the THINKING CHANNEL for a
-// destination whose `readableState` is `full-exposed`, and the TAG for every other destination;
-// `kind` is then the SOURCE's own readableState. MEASURED 2026-09-15 against the pinned SDK 0.0.12 /
-// router 0.0.7 through real `dist/winter` children:
+// SDK 0.0.83 (the owner's rule: "when reasoning cant be carried natively across models and providers we just remove it"):
+// an earlier model's reasoning goes into a request ONLY in its native form and ONLY where the destination takes it as it
+// is (the same model on the same provider, or the same continuation domain). Everywhere else it is left out: there is no
+// `<recovered_reasoning>` tag, no "prior-model reasoning, carried as data" prefix and no summary of it any more. What
+// still carries is the visible text, the tool calls and their results, in order. These predicates ask the bytes that
+// went out those questions: `reasoningLeaks` (nothing of another model's reasoning, no carried-as-data form) and
+// `outOfOrder` (the conversation is the same conversation continued).
 //
-//   - TAG door (a destination that is not full-exposed — the `openai` rows we drive here, and a
-//     Claude destination): W18-19's literal
-//       <recovered_reasoning kind="exposed" provider="deepseek" model="deepseek/deepseek-reasoner">…</recovered_reasoning>
-//     with `kind="summary"` for a Claude source and `kind="exposed"` for DeepSeek/GLM.
-//   - THINKING-CHANNEL door (a full-exposed destination — the deepseek and zai rows we drive here):
-//     the same fact as a labelled plain-text prefix on the assistant message,
-//       [prior-model reasoning, carried as data — provider: deepseek, model: deepseek/deepseek-reasoner]
-//     followed by the reasoning text. This door renders NO `kind` at all, which is why
-//     `carriesReasoning` cannot check one on it and the tests that need `kind` proven use a
-//     tag-door destination.
-//
-// Both carry the same three things (the text, the source provider, the source model), so
-// `carriesReasoning` accepts either and each test says which door its destination takes. Asserting
-// only the angle-bracket form would have made every thinking-channel hop unprovable and read as a
-// defect.
+// Before 0.0.83 this file held `carriesReasoning`, which asked the opposite question (the reasoning WAS re-rendered as
+// data for the destination, as a tag or a labelled prefix, with its provenance).
 
 /**
  * The CONVERSATION part of a request body — messages/input/system — with the tool schemas left out.
@@ -86,19 +74,13 @@ export function outOfOrder(body: string, needles: readonly string[]): string[] {
   return bad;
 }
 
-/** Is the prior model's reasoning carried, in either adapter's rendering, with its own provenance?
- *  See this file's header for the two forms and why both are accepted. */
-export function carriesReasoning(body: string, opts: { kind: "summary" | "exposed"; provider: string; text: string }): boolean {
-  if (!body.includes(opts.text)) return false;
-  // ASSOCIATED on the tag branch too (review N6): `kind` and `provider` must be in the SAME tag, so
-  // a body carrying two prior models of different kinds cannot satisfy a claim about one of them
-  // using the other one's `kind`.
-  const responsesTag = `<recovered_reasoning kind=\\"${opts.kind}\\" provider=\\"${opts.provider}\\"`;
-  const responsesTagRaw = `<recovered_reasoning kind="${opts.kind}" provider="${opts.provider}"`;
-  if (body.includes(responsesTag) || body.includes(responsesTagRaw)) return true;
-  // ASSOCIATED, not merely both-present (review nit): the label and the provider must be in the SAME
-  // prefix, so a body carrying two prior models cannot satisfy a claim about one of them using the
-  // other one's label.
-  return body.includes(`prior-model reasoning, carried as data — provider: ${opts.provider}`)
-    || body.includes(`prior-model reasoning, carried as data \\u2014 provider: ${opts.provider}`);
+/** What of an earlier model's reasoning is in this body: each given reasoning TEXT that appears, and each carried-as-data
+ *  form the runtime used to paste in (the `<recovered_reasoning` tag, the "prior-model reasoning, carried as data"
+ *  prefix). `[]` is the required answer for a destination that is not the reasoning's own model on its own provider. */
+export function reasoningLeaks(body: string, texts: readonly string[] = []): string[] {
+  return [
+    ...texts.filter((text) => body.includes(text)).map((text) => `the reasoning text "${text}"`),
+    ...(body.includes("recovered_reasoning") ? ["a recovered_reasoning tag"] : []),
+    ...(body.includes("prior-model reasoning") ? ["a prior-model reasoning prefix"] : []),
+  ];
 }

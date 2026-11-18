@@ -186,7 +186,7 @@ function makeCleaner(
     bgWork: () => false,
     home,
     enabled: () => true,
-    settings: () => null, // WS-20: pinsFor(null) -> the DEFAULT_PROVIDER-derived pin (codex-oauth/gpt-5.6-terra)
+    settings: () => null, // WS-20: pinsFor(null) -> the DEFAULT_PROVIDER-derived pin (codex-oauth/gpt-6.1-terra)
     now: () => Date.now(),
     ...over,
   });
@@ -259,7 +259,7 @@ describe("SessionCleaner — the happy path (session-activity-hygiene T7)", () =
 
     expect(provider.requests).toHaveLength(1);
     const req = provider.requests[0]!;
-    expect(req.model).toBe("gpt-5.6-terra"); // WS-20: pinsFor(null).cleaner split to its bare modelId
+    expect(req.model).toBe("gpt-6.1-terra"); // WS-20: pinsFor(null).cleaner split to its bare modelId
     expect(req.reasoningEffort).toBe(CLEANER_EFFORT);
     expect(req.instructions).toBe(CLEANER_INSTRUCTION);
     const content = (req.input[0] as { content: string }).content;
