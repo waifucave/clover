@@ -48,8 +48,6 @@ export const MOUNT_TOKEN_TTL_MS = 60_000;
 
 const frameKey = (f: Pick<FrameRef, "processId" | "routingId">) => `${f.processId}:${f.routingId}`;
 
-/** The spots keyed by bot: the cell's context is that bot's tab. */
-const KEYED_BY_BOT = new Set(["bot.tab", "sidebar.bot"]);
 /** The window's own spots that offer `when.bot` (and a bot's own plugin's panel for its tab): the `moss` shell says which bot's tab shows (`forBot`). */
 const BOT_FROM_SHELL = new Set(["sidebar", "bar", "bot.side", "panel"]);
 
@@ -725,13 +723,11 @@ export class UiRuntime {
   // Spots
   // ----------------------------------------------------------------------------------------------
 
-  /** Whether a part declares a spot: its entry's `declares` or the root's own. `bot.tab`, the app's core point, is
-   *  shown by the shell (it shows it in `main`, the panel an agent's), so the `moss` tree's parts may show it without
-   *  declaring it; any other part must declare it. A bot's whole tab, composer included, in a frame whose size and
-   *  covering a third party controls would be a clickjacking surface for the sends E-M3 counts as the user's. */
+  /** Whether a part declares a spot: its entry's `declares` or the root's own. A session's whole tab, composer included, in a
+   *  frame whose size and covering a third party controls would be a clickjacking surface for the sends E-M3 counts as the
+   *  user's, so only a part that declares the spot (the shell, for `main`) shows it. */
   private declares(m: Mount, spot: string): boolean {
     if (m.kind === "root") return m.rootSpots?.includes(spot) ?? false;
-    if (spot === "bot.tab" && m.plugin?.topId === "moss") return true;
     // The slim column of a bot's stock tab is the shell's own (it draws it beside the tab, for the bot that shows), though the tab declares it.
     if (spot === "bot.side" && m.plugin?.topId === "moss" && m.plugin.source === "bundled") return true;
     // Where a bot's layout places `chrome.panels`, the shell's own part draws the panels the user opens: it holds the `panel` spot as the shell does.
@@ -746,8 +742,7 @@ export class UiRuntime {
     const cellKey = shape === "keyed" ? key : undefined;
     const session = doc.layer === "moss" && hints.session !== undefined ? hints.session : part.session ?? part.ctx.session;
     const ctx: CellContext = { ...part.ctx, safeMode: this.safeModeValue, ...(session !== undefined ? { session } : {}) };
-    if (cellKey !== undefined && KEYED_BY_BOT.has(spot)) ctx.bot = cellKey;
-    else if (BOT_FROM_SHELL.has(spot) && doc.layer === "moss" && hints.bot !== undefined) ctx.bot = hints.bot;
+    if (BOT_FROM_SHELL.has(spot) && doc.layer === "moss" && hints.bot !== undefined) ctx.bot = hints.bot;
     delete ctx.prefer;
     return { shape, cellKey, session, ctx };
   }
@@ -1583,7 +1578,7 @@ export class UiRuntime {
     const part = this.actInThisLayer(frame, mountId);
     if (part.spot !== "composer" || part.plugin === undefined) return undefined;
     // The session and bot are the declaring document's say (props), so they count only when that document is the bundled
-    // moss tree's: a third-party bot tab that fills the spot (with the default composer, or any) could name any session.
+    // moss tree's: a third-party session tab that fills the spot (with the default composer, or any) could name any session.
     const parent = part.parent === undefined ? undefined : this.mounts.get(part.parent);
     const pp = parent?.plugin;
     if (pp === undefined || pp.topId !== "moss" || pp.layer !== "moss" || pp.source !== "bundled") return undefined;
