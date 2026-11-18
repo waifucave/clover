@@ -74,19 +74,18 @@ describe("single spots and keyed defaults", () => {
     expect(shownRefs(resolveCell({ plugins: all, ctx }, "file.preview", "text/plain"))).toEqual(["x-files#file.preview"]);
   });
 
-  test("a bot plugin's part beside its bot (`app`, §5.5) follows the app's rules: not held to its own tab", () => {
-    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", id: "every", component: "Everyone", app: true }], { isBot: true });
+  test("a bot plugin's part beside its bot (`app`, §5.5) follows the app's rules", () => {
+    const luna = plugin("luna", [{ spot: "composer", id: "every", component: "Everyone", app: true }], { isBot: true });
     const e = luna.entries.find((x) => x.id === "every")!;
     expect([e.app, e.fields]).toEqual([true, {}]);
-    // Its own tab look stays its own; the part beside it dresses every bot's composer, as any plugin's entry would.
-    expect(shownRefs(resolveCell({ plugins: [composer, luna], ctx }, "bot.tab", "alpha"))).toEqual([]);
+    // The part beside it dresses every bot's composer, as any plugin's entry would.
     expect(shownRefs(resolveCell({ plugins: [composer, luna], ctx: inTab("alpha") }, "composer"))).toEqual(["luna#every"]);
   });
 
   test("a part that looks the same on every tab (§5.5) takes no per-bot scope: no `when.bot`, no user's ticks; a bot's own entry there shows nowhere", () => {
     const tied = plugin("x-tied", [{ spot: "settings.section", id: "s", title: "Tied", component: "S", when: { bot: "luna" } }]);
     const ticked = plugin("x-ticked", [{ spot: "settings.section", id: "t", title: "Ticked", component: "T" }], { bots: ["luna"] });
-    const lunaApp = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "settings.section", id: "app", title: "Luna app", component: "A", app: true }, { spot: "settings.section", id: "own", title: "Luna own", component: "O" }], { isBot: true });
+    const lunaApp = plugin("luna", [{ spot: "settings.section", id: "app", title: "Luna app", component: "A", app: true }, { spot: "settings.section", id: "own", title: "Luna own", component: "O" }], { isBot: true });
     for (const c of [ctx, inTab("alpha"), inTab("luna")]) {
       expect(shownRefs(resolveCell({ plugins: [tied, ticked, lunaApp], ctx: c }, "settings.section")).sort()).toEqual(["luna#app", "x-ticked#t", "x-tied#s"]);
     }
@@ -140,7 +139,7 @@ describe("which entry shows: the seven rules", () => {
     // The bot's plugin fills its tab and its own composer: it dresses the whole tab, a bigger part than the composer
     // plugin's. But its entries are limited to that bot and the composer plugin's are for every bot, so the bot's own wins
     // on its tab (rule 2, before the smaller part), and the composer plugin still dresses every other bot's.
-    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", component: "LunaComposer" }], { isBot: true });
+    const luna = plugin("luna", [{ spot: "composer", component: "LunaComposer" }], { isBot: true });
     const everyone = plugin("every-composer", [{ spot: "composer", component: "Every" }]);
     const r = resolveCell({ plugins: [...DEFAULT, luna, everyone], ctx: inTab("luna") }, "composer");
     expect(shownRefs(r)).toEqual(["luna#composer"]);
@@ -164,21 +163,20 @@ describe("which entry shows: the seven rules", () => {
   });
 
   test("2: more scoped wins for style entries too: the bot's own style applies last (it wins), an all-bots one under it", () => {
-    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", id: "pane", style: "pane.json" }], { isBot: true });
+    const luna = plugin("luna", [{ spot: "composer", id: "pane", style: "pane.json" }], { isBot: true });
     const everyone = plugin("every-style", [{ spot: "composer", id: "paint", style: "paint.json" }], { enabledAt: 1e12 });
     const r = resolveCell({ plugins: [...DEFAULT, luna, everyone], ctx: inTab("luna") }, "composer");
     expect(r.styles.map((c) => entryRef(c.entry))).toEqual(["every-style#paint", "luna#pane"]);
     expect(resolveCell({ plugins: [...DEFAULT, luna, everyone], ctx: inTab("alpha") }, "composer").styles.map((c) => entryRef(c.entry))).toEqual(["every-style#paint"]);
   });
 
-  test("3: the smaller part — a composer plugin turned on for a bot takes the composer from the bot's tab look", () => {
-    // The bot's plugin fills its tab and its own composer: it dresses the whole tab. The composer plugin, ticked for the
-    // bot, is as limited as the bot's own entries (rule 2 ties) and dresses only the composer, so it wins there.
-    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", component: "LunaComposer" }], { isBot: true });
+  test("a composer plugin turned on for a bot shows over the bot's own composer entry (the later one)", () => {
+    // Retired with the bot tab: the old claim that the bot's plugin dressed its whole tab, so the ticked composer plugin
+    // won by being the smaller part (rule 3). With no tab, both are limited to the bot (rule 2 ties) and the later one wins.
+    const luna = plugin("luna", [{ spot: "composer", component: "LunaComposer" }], { isBot: true });
     const quiet = plugin("quiet-composer", [{ spot: "composer", component: "Quiet" }], { bots: ["luna"] });
     const r = resolveCell({ plugins: [shell, luna, quiet], ctx: inTab("luna") }, "composer");
     expect(shownRefs(r)).toEqual(["quiet-composer#composer"]);
-    expect(r.decidedBy).toBe(3);
     // With the bundled composer in the running too, the composer plugin still wins (it is limited to the bot).
     expect(shownRefs(resolveCell({ plugins: [...DEFAULT, luna, quiet], ctx: inTab("luna") }, "composer"))).toEqual(["quiet-composer#composer"]);
     // In another bot's tab, neither the bot's composer nor the ticked plugin applies.
@@ -382,7 +380,7 @@ describe("list spots", () => {
 describe("safe mode", () => {
   test("only the app's own plugins run", () => {
     const vn = plugin("vn-composer", [{ spot: "composer", component: "VnComposer" }]);
-    const alphaTab = plugin("alpha", [{ spot: "bot.tab", component: "AlphaTab" }], { isBot: true });
+    const alphaTab = plugin("alpha", [{ spot: "main", key: "agent", component: "AlphaTab" }], { isBot: true });
     const r = resolveCell({ plugins: [...DEFAULT, vn, alphaTab], ctx: inTab("alpha", { safeMode: true }) }, "composer");
     expect(shownRefs(r)).toEqual(["moss/composer#composer"]);
     expect(r.skipped).toEqual([{ ref: "vn-composer#composer", reason: "safe-mode" }]);

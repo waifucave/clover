@@ -7,6 +7,6 @@
   "capabilities": ["approvals"],
   "client": { "entry": "client/index.js" },
   "contributes": {
-    "ui": [{ "spot": "bot.tab", "id": "card", "component": "CardEntry" }]
+    "ui": [{ "spot": "main", "key": "agent", "id": "card", "component": "CardEntry" }]
   }
 }

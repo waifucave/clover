@@ -6,7 +6,7 @@
 //   ex-settings, ex-point, ex-board, ex-buddy's part beside its bot: their Settings sections (the Settings dialog, by title);
 //   ex-status: its line in the status bar; ex-app, ex-timeline, ex-fit: their pages, from their sidebar entries;
 //   ex-board-widget: its widget inside ex-board's section; ex-fit-tile: its tile inside ex-fit's page;
-//   ex-buddy, ex-bot: in `bot.list` (a bot has no tab in MOSS Code's window);
+//   ex-buddy, ex-bot: installed and running, and no bot in `bot.list` (bots are the engine's records; the move runs once);
 //   ex-theme: listed as a theme (`plugin.ui`); ex-model: its model listed (`models.list`);
 //   ex-tool, ex-timeline: the tool answers one call from Alpha; ex-trigger: installed and running.
 // All fifteen are installed first and then looked at: a plugin with UI installed after the window was served loads the
@@ -183,20 +183,17 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     return `its page drawn from its sidebar entry ("${page.text.replace(/\s+/g, " ").trim().slice(0, 50)}") with ex-fit-tile's tile in it ("${tile.text.replace(/\s+/g, " ").trim().slice(0, 40)}"); its frame is ${fill.frame}px tall in a ${fill.col}px column (the page inside reads ${inside}px; its content ends at ${Math.round(content)}px)`;
   });
 
-  // The bots: listed.
-  await check("ex-bot", async () => {
-    const bots = (await rpc.request<{ bots: { id: string; name?: unknown }[] }>("bot.list", {})).bots;
-    const mine = bots.find((b) => b.id === "ex-bot" || b.id === "ex-bot/bot");
-    if (mine === undefined) fail(`bot.list lists ${bots.map((b) => b.id).join(", ")}`);
-    return `listed in bot.list as ${mine!.id}`;
-  });
-  await check("ex-buddy", async () => {
-    const bots = (await rpc.request<{ bots: { id: string }[] }>("bot.list", {})).bots;
-    const mine = bots.find((b) => b.id === "ex-buddy" || b.id === "ex-buddy/bot");
-    if (mine === undefined) fail(`bot.list lists ${bots.map((b) => b.id).join(", ")}`);
-    // A bot has no tab in MOSS Code's window (G8): what it draws is beside it (its Settings section, checked above).
-    return `listed in bot.list as ${mine!.id}`;
-  });
+  // The bots: with bots as the engine's records, the move that makes a plugin's bot a record happens once, at a home's first
+  // start; a bot plugin installed afterwards runs (installed and enabled above, ex-buddy's Settings section drawn) but makes no
+  // bot. Old claim: each "listed in bot.list". New claim: neither is a bot, and the default bot is still listed.
+  for (const id of ["ex-bot", "ex-buddy"]) {
+    await check(id, async () => {
+      const bots = (await rpc.request<{ bots: { id: string }[] }>("bot.list", {})).bots;
+      if (bots.some((b) => b.id === id || b.id === `${id}/bot`)) fail(`bot.list lists ${id}, which a plugin installed after the bots' move should not make a bot (${bots.map((b) => b.id).join(", ")})`);
+      if (!bots.some((b) => b.id === "alpha")) fail(`bot.list lists ${bots.map((b) => b.id).join(", ") || "no bot"}, not the default bot`);
+      return "installed and running, and no bot (bots are the engine's records; the move runs once, at a home's first start)";
+    });
+  }
   await check("ex-theme", async () => {
     // `plugin.ui` is the app's own call: a packaged core's CLI-role connection may not make it, and the plugin's record
     // (`plugin.get`: its manifest's themes) says the same of the theme there.

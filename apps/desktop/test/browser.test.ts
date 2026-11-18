@@ -1,4 +1,4 @@
-// The MOSS Browser in a real Electron (spec §12.1, lane L): bot tabs offscreen with no window, one shown through
+// The MOSS Browser in a real Electron (spec §12.1, lane L): tabs offscreen with no window, one shown through
 // the viewport without reloading, the person's selecting and copying through it, the app's own allow list and URL
 // rule, a page's windows and dialogs, and the screen-reader hybrid. CI ONLY, like the UI test: it shows a window, so
 // it needs both CI=true and MOSS_UI_TESTS=1, which only the app job in .github/workflows/ci.yml sets (under xvfb

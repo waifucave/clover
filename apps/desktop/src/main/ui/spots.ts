@@ -62,9 +62,6 @@ export function nodeId(spot: string, key?: string): string {
   return key === undefined ? spot : `${spot}[${key}]`;
 }
 
-/** The keyed spots whose key is a bot, so the cell's context is that bot. */
-const KEYED_BY_BOT = new Set(["bot.tab", "sidebar.bot"]);
-
 /** Where each catalog spot's declarer sits (spec §5.5): the shell fills `app.root`, the settings part `main` keyed
  *  `settings`, a session's tab `main` keyed `agent`, and so on. */
 const CATALOG_PARENT: Readonly<Record<string, string | undefined>> = {
@@ -134,10 +131,6 @@ export class SpotTree {
     return common[0];
   }
 
-  /** The bot tab a node sits in (`bot.tab` or one of its keys), if any. */
-  tabOf(node: string): string | undefined {
-    return this.chain(node).find((n) => n === "bot.tab" || n.startsWith("bot.tab["));
-  }
 }
 
 /** The capabilities a spot's read means, by kind of data (`kindCapability`'s family `conversation.*`). */
@@ -219,11 +212,9 @@ export function applies(plugin: UiPlugin, e: UiEntry, ctx: CellContext): boolean
   return true;
 }
 
-/** The key an entry fills: its own, or in a bot's own plugin, a keyless `bot.tab` entry takes the bot's id. */
-export function effectiveKey(plugin: UiPlugin, e: UiEntry): string | undefined {
-  if (e.key !== undefined) return e.key;
-  if (plugin.isBot && e.spot === "bot.tab" && e.app !== true) return plugin.id;
-  return undefined;
+/** The key an entry fills: its own. */
+export function effectiveKey(_plugin: UiPlugin, e: UiEntry): string | undefined {
+  return e.key;
 }
 
 /** How closely an entry's key covers a cell's key: 2 exact, 1 a `*` pattern, 0 no key; undefined when it doesn't. */
@@ -286,18 +277,14 @@ function runs(plugin: UiPlugin, ctx: CellContext): boolean {
   return ctx.safeMode !== true || SAFE_MODE_PLUGINS.includes(plugin.topId);
 }
 
-/** The part each plugin dresses around a cell: the smallest node holding its entries in that tab (or in the whole
- *  window outside tabs), a bot's own tab look counting as the whole tab. */
+/** The part each plugin dresses around a cell: the smallest node holding its entries in the window. */
 export function partOf(plugin: UiPlugin, cellNode: string, input: Pick<ResolveInput, "ctx">, tree: SpotTree): string | undefined {
-  const tab = tree.tabOf(cellNode);
   const nodes: string[] = [];
   for (const e of plugin.entries) {
     if (!applies(plugin, e, input.ctx)) continue;
     const node = nodeId(e.spot, effectiveKey(plugin, e));
-    if (tab !== undefined && tree.tabOf(node) === undefined) continue;
     nodes.push(node);
   }
-  if (plugin.isBot && input.ctx.bot === plugin.id && tab !== undefined) nodes.push(nodeId("bot.tab", plugin.id));
   return tree.smallestHolding(nodes);
 }
 
@@ -404,8 +391,8 @@ export function resolveCell(input: ResolveInput, spot: string, key?: string): Ce
   const decl = declarationOf(spot, input.plugins);
   const shape: Shape = decl?.shape ?? "single";
   const cellKey = shape === "keyed" ? key : undefined;
-  const ctx: CellContext = cellKey !== undefined && KEYED_BY_BOT.has(spot) ? { ...input.ctx, bot: cellKey } : input.ctx;
-  const inner: ResolveInput = { ...input, ctx, tree };
+  const ctx: CellContext = input.ctx;
+  const inner: ResolveInput = { ...input, tree };
   const node = nodeId(spot, cellKey);
   const choices = input.choices ?? NO_CHOICES;
   const result: CellResult = { spot, ...(cellKey !== undefined ? { key: cellKey } : {}), shape, shown: [], styles: [], hidden: false, conflict: false, hiddenByUser: [], hiddenByPlugin: [], runnersUp: [], skipped: [], decidedBy: 0 };

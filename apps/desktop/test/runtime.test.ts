@@ -14,17 +14,6 @@ import { FIXTURES, alphaView, mossViews, folderView } from "./fake-core/registry
 
 const WIN = 1;
 
-/** The bundled tree's views with the bot tab the shell filled before bots left MOSS Code's window (lane MC): the runtime
- *  still serves the catalog's `bot.tab` spot (frames, tokens, a tab's theme and layout), so these tests mount it on the
- *  shell as a fixture (`fixtures/shell-bot-tab.json`). */
-function withBotTab(views: ReturnType<typeof mossViews>): ReturnType<typeof mossViews> {
-  const fixture = JSON.parse(readFileSync(join(FIXTURES, "..", "shell-bot-tab.json"), "utf8")) as { ui: Record<string, unknown>[]; rootDeclares: Record<string, unknown> };
-  return views.map((v) => {
-    if (v.pluginId !== "moss/shell") return v;
-    const ui = v.ui.map((u) => (u.spot === "app.root" ? { ...u, declares: { ...(u.declares as Record<string, unknown>), ...fixture.rootDeclares } } : u));
-    return { ...v, ui: [...ui, ...fixture.ui], capabilities: [...new Set([...(v.capabilities ?? []), "bots.read", "conversation.read"])] };
-  });
-}
 let pid = 100;
 function frame(url: string, parent: FrameRef | null = null, osPid = ++pid): FrameRef {
   return { processId: osPid, routingId: ++pid, url, osPid, parent };
@@ -34,7 +23,7 @@ function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => n
   const sent: { to: string; m: LayerMessage }[] = [];
   let n = 0;
   const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), ...(opts.log ? { log: opts.log } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
-  const plugins = [...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...extra];
+  const plugins = [...readUiPlugins([...mossViews(), alphaView()] as never), ...extra];
   rt.setRegistry(plugins);
   rt.openWindow(WIN, { material: "vibrancy", ...(opts.render ? { render: true } : {}) });
   const rootFrame = frame("moss-core://app/");
@@ -92,7 +81,7 @@ describe("a part from another layer: a frame with a single-use token", () => {
   function withFixture() {
     const s = setup(composerFixture());
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const view = s.rt.resolve(shell.shellFrame, tab.mount, "composer");
     const item = view.items[0]!;
     if (item.kind !== "frame") throw new Error(`not a frame: ${JSON.stringify(view)}`);
@@ -129,7 +118,7 @@ describe("a part from another layer: a frame with a single-use token", () => {
     let now = 1_000;
     const s = setup(composerFixture(), { now: () => now });
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0]!;
     now += MOUNT_TOKEN_TTL_MS + 1;
     expect(s.rt.serveDocument("fixture-composer", new URL((item as { url: string }).url).searchParams.get("mount"))).toBeUndefined();
@@ -232,7 +221,7 @@ describe("a bot's shell skin reaches the window while its tab shows", () => {
   test("a bot's own tab never carries the shell's names (the chrome is the shell's to dress)", () => {
     const s = setup([...composerFixture(), skinned("luna", meadow)]);
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     expect(Object.keys((tab as { tokens?: Record<string, unknown> }).tokens ?? {}).some((k) => k.startsWith("shell."))).toBe(false);
   });
 });
@@ -277,7 +266,7 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
     const s = setup([dresser]);
     s.rt.setChoices({ picks: [], lists: [], overrides: { css: `.x { color: blue; background: url(https://x.example/a.png) }` } } as never);
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     s.sent.length = 0;
     const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0]!;
     expect(composer).toMatchObject({ kind: "inline", ref: "moss/composer#composer", styled: true });
@@ -291,7 +280,7 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
     const s = setup([lunaBot()]);
     expect(s.root.sheets).toBeUndefined();
     const shell = mountShell(s);
-    s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna");
+    s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent");
     s.sent.length = 0;
     s.rt.setAppearance("dark", "#FF0000");
     expect(sheetsSent(s, shell.shellFrame)).toEqual([]);
@@ -307,7 +296,7 @@ describe("each document's strings (§5.5's translations)", () => {
     const s = setup(fixture);
     expect(s.root.strings).toMatchObject({ lang: "en", strings: { "moss.core.root.reload": "Reload" } });
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string };
     const token = new URL(item.url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-composer", token);
@@ -373,10 +362,10 @@ describe("lane B's #179 hooks in the runtime", () => {
 
   test("a spot's entries for the part that declares it, in the spot's order, with their fields; one shown by its ref", () => {
     const s = setup([tabbed("vn", "Visual novel", 2), tabbed("timer", "Timer", 1)]);
-    // The tab's part declares bot.header.action (the fake shell's bot.tab declares the tab's spots).
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "bot.header.action": { shape: "list" } } })) })));
+    // The tab's part declares bot.header.action (the shell's main[agent] tab declares the tab's spots).
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => ((e.spot !== "main" || e.key !== "agent") ? e : { ...e, declares: { ...e.declares, "bot.header.action": { shape: "list" } } })) })));
     const shell = mountShell(s);
-    const fresh = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const fresh = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const entries = s.rt.entries(shell.shellFrame, fresh.mount, "bot.header.action");
     expect(entries.map((e) => [e.ref, e.pluginName, e.bundled, e.fields.title])).toEqual([["timer#act", "timer", false, "Timer"], ["vn#act", "vn", false, "Visual novel"]]);
     const one = s.rt.resolve(shell.shellFrame, fresh.mount, "bot.header.action", undefined, { entry: "vn#act" });
@@ -405,9 +394,9 @@ describe("lane B's #179 hooks in the runtime", () => {
   test("a message action is data: the declaring part lists it, and nothing is ever mounted for it (no frame per message)", () => {
     const pin = readUiPlugins([{ pluginId: "pinner", name: "Pinner", treeHash: `sha256:${"5".repeat(64)}`, layer: "pinner", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "conversation.message.action", id: "pin", title: "Pin", icon: "assets/pin.png", call: "pinReply" }], themes: [], locales: [], bots: "all" }] as never, { pinner: { enabledAt: 3, source: "installed" } })[0]!;
     const s = setup([pin]);
-    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => (e.spot !== "bot.tab" ? e : { ...e, declares: { ...e.declares, "conversation.message.action": { shape: "list" } } })) })));
+    s.rt.setRegistry(s.rt.registry.map((p) => (p.id !== "moss/shell" ? p : { ...p, entries: p.entries.map((e) => ((e.spot !== "main" || e.key !== "agent") ? e : { ...e, declares: { ...e.declares, "conversation.message.action": { shape: "list" } } })) })));
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     // MOSS Voice's speak button is the bundled tree's own entry beside it.
     expect(s.rt.entries(shell.shellFrame, tab.mount, "conversation.message.action").map((e) => [e.ref, e.fields.call, e.fields.title])).toEqual([["moss/voice#speak", "speak", "Speak"], ["pinner#pin", "pinReply", "Pin"]]);
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "conversation.message.action").items).toEqual([]);
@@ -423,7 +412,7 @@ describe("lane B's #179 hooks in the runtime", () => {
     const reader = tabbed("reader", "Reader", 3, { capabilities: ["conversation.read"] });
     const s = setup([...composerFixture(), reader]);
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
     const token = new URL(composer.url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-composer", token);
@@ -450,7 +439,7 @@ describe("lane B's #179 hooks in the runtime", () => {
     const shell2 = mountShell(granted);
     expect(granted.rt.userSender(shell2.shellFrame, shell2.info.mount)).toMatchObject({ pluginId: "moss/shell" });
     // A third-party part in its own layer's document is not a tree part, and sends only if it holds the capability too.
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
     const token = new URL(composer.url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-composer", token);
@@ -471,7 +460,7 @@ describe("a held key binding's documents (§5.4 `hold`)", () => {
       const s = setup(composerFixture());
       s.rt.setRegistry(s.rt.registry.map((p) => (!granted.includes(p.id) ? p : { ...p, capabilities: new Set([...p.capabilities, "user.send"]) })));
       const shell = mountShell(s);
-      const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+      const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
       const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
       const token = new URL(composer.url).searchParams.get("mount")!;
       s.rt.serveDocument("fixture-composer", token);
@@ -499,7 +488,7 @@ describe("the composer spot's mount record", () => {
     const shell = mountShell(s);
     expect(s.rt.composerOf(shell.shellFrame, shell.info.mount)).toBeUndefined();
     expect(s.rt.mainShell(shell.shellFrame, shell.info.mount)).toMatchObject({ windowId: WIN });
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const comp = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
     const token = new URL(comp.url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-composer", token);
@@ -522,7 +511,7 @@ describe("safe mode and the registry", () => {
   test("in safe mode a third-party part isn't mounted; the bundled one shows", () => {
     const s = setup(composerFixture(), { safeMode: true });
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items).toMatchObject([{ kind: "inline", ref: "moss/composer#composer" }]);
   });
 
@@ -556,11 +545,11 @@ describe("what a conversation's inner spots need is the data's own kind (spec re
   const bots = filler("bots-only", ["conversation.read"], "conversation.message.extra");
   const code = filler("code-only", ["sessions.read"], "conversation.message.extra");
 
-  /** The conversation part's own document (the moss layer), as the bot tab places it. */
+  /** The conversation part's own document (the moss layer), as the session's tab places it. */
   function conversationPart() {
     const s = setup([bots, code]);
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const conv = s.rt.resolve(shell.shellFrame, tab.mount, "conversation").items[0]!;
     return { s, shell, conv };
   }
@@ -581,7 +570,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
   function withFixtureFrame() {
     const s = setup(composerFixture());
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { mount: string; url: string };
     const token = new URL(item.url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-composer", token);
@@ -617,7 +606,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     let t = 1_000_000;
     const s = setup(composerFixture(), { now: () => t });
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { mount: string; url: string };
     const token = new URL(item.url).searchParams.get("mount")!;
     const reloads = () => s.sent.filter((x) => x.m.type === "child-reload").map((x) => x.m as { child: string; url: string });
@@ -664,7 +653,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const { s, item } = withFixtureFrame();
     s.sent.length = 0;
     // The same plugins: nothing loads again.
-    s.rt.setRegistry([...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...composerFixture()]);
+    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...composerFixture()]);
     expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
     // Its client is now the core's build: the frame's document is served again, for the module it has now.
     const built = composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: "cd".repeat(32) } }));
@@ -919,17 +908,17 @@ describe("the E-M1 review's fixes", () => {
     expect(lines.join("\n")).toContain("refused a plugin view that isn't one");
   });
 
-  test("bot.tab: the moss tree's parts may show it; any other part only if it declares it", () => {
+  test("main[agent]: the shell, which declares it, shows it; any other part only if it declares it", () => {
     const s = setup(composerFixture());
     const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0]!;
     const token = new URL((item as { url: string }).url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-composer", token);
     const composerFrame = frame((item as { url: string }).url, shell.shellFrame);
     const info = s.rt.describe(composerFrame, WIN, token);
-    expect(s.rt.resolve(composerFrame, info.mount, "bot.tab", "alpha")).toMatchObject({ items: [], undeclared: true });
-    expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items.length).toBe(1);
+    expect(s.rt.resolve(composerFrame, info.mount, "main", "agent")).toMatchObject({ items: [], undeclared: true });
+    expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items.length).toBe(1);
   });
 
   test("a document names the installed layers it may frame, and loads again to frame one installed after it", () => {
@@ -938,9 +927,9 @@ describe("the E-M1 review's fixes", () => {
     const mounts = (s.rt as unknown as { mounts: Map<string, Parameters<UiRuntime["mountForDocument"]>[0]> }).mounts;
     expect(s.rt.mountForDocument(mounts.get(shell.info.mount)!).layers).toEqual(["alpha", "moss"]);
     // A composer from a new layer is installed while the shell shows.
-    s.rt.setRegistry([...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...composerFixture()]);
+    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...composerFixture()]);
     s.sent.length = 0;
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     s.rt.resolve(shell.shellFrame, tab.mount, "composer");
     const reload = s.sent.find((x) => x.m.type === "child-reload");
     expect(reload?.to).toBe(`${s.rootFrame.processId}:${s.rootFrame.routingId}`);
@@ -963,7 +952,7 @@ describe("a plugin's sealed frames: its own cards only (the core's `ownedBy`: it
     const plugins = readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never).map((p) => (all ? { ...p, capabilities: new Set([...p.capabilities, "approvals.all"]) } : p));
     const s = setup(plugins, { render });
     const shell = mountShell(s);
-    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     if (item.kind !== "frame") throw new Error("not a frame");
     const token = new URL(item.url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-card", token);
@@ -1003,7 +992,7 @@ describe("a plugin's sealed frames: its own cards only (the core's `ownedBy`: it
     const plugins = readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never).map((p) => ({ ...p, capabilities: new Set(["approvals.all"]) }));
     const s = setup(plugins);
     const shell = mountShell(s);
-    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     if (item.kind !== "frame") throw new Error("not a frame");
     const token = new URL(item.url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-card", token);
@@ -1075,7 +1064,7 @@ describe("a part's Review on a plugin's card: the app's own page for it, by the 
   test("a plugin's OK card that is its own (its moved bot's) opens; another's is refused; a tool card or an unknown one doesn't open", async () => {
     const s = setup([...readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never)]);
     const shell = mountShell(s);
-    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "main", "agent").items[0]!;
     if (item.kind !== "frame") throw new Error("not a frame");
     const token = new URL(item.url).searchParams.get("mount")!;
     s.rt.serveDocument("fixture-card", token);
@@ -1101,13 +1090,13 @@ describe("the row diagnosis log lines (ids only, once per pair, no change of wha
   test("a part asked of a document that isn't its own is refused as before and named once; an unbound frame is named once, without its address", () => {
     const lines: string[] = [];
     const s = setup([], { log: (l) => lines.push(l) });
-    expect(() => s.rt.resolve(s.rootFrame, "nope", "bot.tab")).toThrow("that part isn't in this document");
-    expect(() => s.rt.resolve(s.rootFrame, "nope", "bot.tab")).toThrow("that part isn't in this document");
+    expect(() => s.rt.resolve(s.rootFrame, "nope", "main")).toThrow("that part isn't in this document");
+    expect(() => s.rt.resolve(s.rootFrame, "nope", "main")).toThrow("that part isn't in this document");
     expect(lines.filter((l) => l.includes("asked of document"))).toHaveLength(1);
     expect(lines.find((l) => l.includes("asked of document"))).toContain("no such mount");
     const stray = frame("moss-plugin://moss/?mount=secrettoken");
-    expect(() => s.rt.resolve(stray, "nope", "bot.tab")).toThrow("this document isn't bound to a mount");
-    expect(() => s.rt.resolve(stray, "nope", "bot.tab")).toThrow("this document isn't bound to a mount");
+    expect(() => s.rt.resolve(stray, "nope", "main")).toThrow("this document isn't bound to a mount");
+    expect(() => s.rt.resolve(stray, "nope", "main")).toThrow("this document isn't bound to a mount");
     const unbound = lines.filter((l) => l.includes("bound to no mount"));
     expect(unbound).toHaveLength(1);
     expect(unbound[0]).not.toContain("secrettoken");

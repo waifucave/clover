@@ -84,9 +84,17 @@ describe("the split", () => {
     expect(run).toContain('if (runs("moss"))');
   });
 
+  test("the host units start their own daemon: beside any other unit each is a run of its own, so a mixed set runs every unit", () => {
+    const hosts = ["host", "browser-host", "surface-copy-host"] as const;
+    for (const h of hosts) expect(units().find((u) => u.id === h)!.ownHome).toBe(true);
+    expect(homePlan(["cold", "idle", ...hosts, "arrivals", "models"])).toEqual({ shared: ["cold", "idle", "arrivals", "models"], ownRuns: [...hosts] });
+    expect(homePlan(["browser-host"])).toEqual({ shared: ["browser-host"], ownRuns: [] });
+    expect(homePlan([...hosts])).toEqual({ shared: [], ownRuns: [...hosts] });
+  });
+
   test("the moss unit's rows are never scheduled into a home another unit uses", () => {
     const all = units();
-    const ids = all.map((u) => u.id).filter((id) => id !== "moss");
+    const ids = all.filter((u) => u.ownHome !== true).map((u) => u.id);
     expect(all.find((u) => u.id === "moss")!.ownHome).toBe(true);
     // Alone, the run's home is its own; beside any other unit, or all of them (the full run's list), a run of its own.
     expect(homePlan(["moss"])).toEqual({ shared: ["moss"], ownRuns: [] });
@@ -113,12 +121,12 @@ describe("the split", () => {
 
   test("run.ts runs a unit's rows only where the unit is its own, and every unit has a runner", () => {
     const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
-    for (const id of ["stage", "cold", "reopen", "idle"]) expect(run).toContain(`if (runs("${id}"))`);
-    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "tab-flash", "cold", "reopen", "stage", "idle"]) expect(run).toContain(`"${id}"`);
+    for (const id of ["cold", "reopen", "idle"]) expect(run).toContain(`if (runs("${id}"))`);
+    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "cold", "reopen", "idle"]) expect(run).toContain(`"${id}"`);
     // The rows an app over Alpha's conversation drives (uiRowRunners) start that app when their unit runs alone: a unit
     // left out of the list runs nothing (the first --units arrivals run: "not reached").
     const windowed = run.match(/const windowed = ids\.filter\(\(id\) => (.*)\);/)?.[1] ?? "";
-    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "tab-flash", "browser", "plugin-app"]) expect(windowed).toContain(`id === "${id}"`);
+    for (const id of ["examples", "bundled-tools", "cards", "workshop", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "browser", "plugin-app"]) expect(windowed).toContain(`id === "${id}"`);
     // The appless rows run on the shard's daemon with no app, each its own clause.
     expect(run).toContain('if (ids.includes("models"))');
     // …answered over RPC only, as under their own --only-* (no app of the shard is up yet: the first 14f table's reds).

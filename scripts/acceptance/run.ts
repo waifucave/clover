@@ -198,10 +198,10 @@ const shardUnits = unitsAsked === undefined ? undefined : expandUnitIds(unitsAsk
   if (unitsAsked !== undefined && (unitsAsked.length === 0 || bad.length > 0)) { console.error(`acceptance: --units takes unit ids (${known.join(", ")})${bad.length > 0 ? `, not ${bad.join(", ")}` : ""}`); process.exit(2); }
 }
 /** Whether this run runs a unit's rows: every unit, unless it is a shard. */
-// The tab-flash row alone (its own serial unit, or --only-tab-flash): its app's frames out of sight sleep after
+// The tab-flash row alone (--only-tab-flash; it is no unit now, its row runs elsewhere, elsewhere.ts): its app's frames out of sight sleep after
 // TAB_FLASH_SLEEP_MS (the test/acceptance build's seam), so its "a minute away" waits just past that, not a minute. A
 // run that holds other rows in the same app keeps the layer's own minute (a row there may count on a frame staying awake).
-const tabFlashAlone = tabFlashOnly || (shardUnits !== undefined && shardUnits.length === 1 && shardUnits[0] === "tab-flash");
+const tabFlashAlone = tabFlashOnly;
 const runs = (u: UnitId | undefined): boolean => shardUnits === undefined || (u !== undefined && shardUnits.includes(u));
 /** A run of the `moss` unit alone: MOSS Code's window isn't built (its rows drive MOSS's own window only). */
 const mossOnly = shardUnits !== undefined && shardUnits.length > 0 && shardUnits.every((u) => u === "moss");
@@ -3405,7 +3405,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (runs("stage")) await stageStep(c, botSession, turnsWork);
+  if (shardUnits === undefined) await stageStep(c, botSession, turnsWork);
   await agentStep(c, botSession, turnsWork);
 
   c.close();
@@ -3432,7 +3432,7 @@ async function main(): Promise<void> {
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
   if (runs("cold")) await coldStartStep(app, 1);
   if (runs("reopen")) await reopenSteps(app);
-  if (runs("stage")) await stageLevelsStep(app);
+  if (shardUnits === undefined) await stageLevelsStep(app);
   if (runs("idle")) await idleStep(app);
   // Last of all: its own daemon on the home, with records as the bots' source (lane BT), which moves the home's bots;
   // nothing runs on the home after it. A --keep-state run leaves the home as today's builds made it, so it skips the row.
@@ -3731,7 +3731,7 @@ async function unitsRun(app: { exe: string; args: string[] }, allIds: readonly U
   // run of its own after them (shards.ts `homePlan`, `ownHome`): its own temp home, never the one they used.
   if (allIds.length === 1 && allIds[0] === "moss") return mossRun(true);
   const plan = homePlan(allIds);
-  await otherUnitsRun(app, plan.shared);
+  if (plan.shared.length > 0) await otherUnitsRun(app, plan.shared);
   for (const id of plan.ownRuns) await ownHomeRun(id);
 }
 
@@ -3799,11 +3799,6 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
       try { await installEcho(c); } catch (err) { for (const r of REOPEN_STEPS) record(stepNumber(FULL_STEPS, r.name), statusOf(err), `the reopen shard's setup (step 4's plugin): ${why(err)}`); echoMissing = true; }
       // Its turns call the plugin's tool in the code session started before the plugin's OK (the one the window opens on).
     }
-    if (ids.includes("stage")) {
-      await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
-      await c.request("session.attach", { id: bot });
-      await stageStep(c, bot, true);
-    }
     if (ids.includes("models")) {
       // The rows that go over the app's methods with no app (appless): each its own clause, a failure its own row's.
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
@@ -3842,12 +3837,11 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
       await uiPhase(app, true, session, pressing, new Set(windowIds.flatMap((id) => windowIndexes(id)!)), bot);
     }
   }
-  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "tab-flash" || id === "browser" || id === "plugin-app");
+  const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "browser" || id === "plugin-app");
   if (windowed.length > 0) await unitWindow(app, windowed, session, undefined, bot);
   if (ids.includes("release")) await releaseSteps(app);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
-  if (ids.includes("stage")) await stageLevelsStep(app);
   if (ids.includes("idle")) await idleStep(app);
 }
 
@@ -3898,8 +3892,8 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     await until("the window's DevTools port", 120_000, async () => {
       if (!alive(proc!.proc)) fail(`the app exited (${proc!.proc.exitCode ?? proc!.proc.signalCode}): ${lastLines(proc!.log)}`);
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
-    }, ids[0] === "tab-flash" ? 100 : 500);
-    const launch = ids[0] === "tab-flash" ? await launchSamples(cdp!) : undefined;
+    }, 500);
+    const launch = undefined;
     rpc = (await appDriver()).client;
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
@@ -3989,7 +3983,7 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
     // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3, 3.26).
-    [ADDONS_STEP, () => addonsStep(ctx, session)],
+    [ADDONS_STEP, () => addonsStep(ctx, session, bot)],
     // The previous app's session, read on the Archive page (checklist 4.14).
     [ARCHIVE_STEP, () => archiveStep(ctx)],
     // An agent backend a plugin brings (ACP), on a fake agent in place of a vendor's CLI (checklist 1.51, 4.25).
@@ -4059,6 +4053,14 @@ async function stageOnlyRun(app: { exe: string; args: string[] }): Promise<void>
 /** The workshop row alone (--only-workshop): the daemon, the dummy key through the app's own methods, Alpha on the
  *  keyed model, then the app over it (headless, its DevTools port, cards pressed in its window, main's picker for the
  *  peer bot's folder) and the row, as the full run's UI phase gives it. */
+/** Puts Alpha back on the model she had before a row moved her (`bot.setUserLayer`). With bots as records the move writes her
+ *  record, so clearing the user layer leaves her on the moved-to model: the model her record named is picked again the person's
+ *  way (`bot.edit`), as `pickKeyedModel` first gave it. */
+async function restoreAlphaModel(c: MossClient, before: string | null, kept: string | undefined): Promise<void> {
+  await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+  if (before === null && kept !== undefined) await c.request("bot.edit", { id: "alpha", patch: { model: kept } }).catch(() => undefined);
+}
+
 /** One provider's turn on a running daemon: its bundled plugin signed in with the run's dummy key through its own
  *  sign-in (`plugin.auth.signIn`), Alpha moved to its model, one turn (`check` gives the verdict on the events and the
  *  requests its fake saw during it), and Alpha's model and the sign-in put back, so no later turn sees the key. */
@@ -4067,6 +4069,8 @@ async function providerTurn(c: MossClient, session: string, p: { plugin: string;
   let signedIn: number | undefined;
   /** Alpha's own model setting before the turn (null: none, the default's). */
   let before: string | null = null;
+  /** The model her record names (picked by `bot.edit`), which the user layer's clearing does not bring back. */
+  let kept: string | undefined;
   try {
     const auth = await c.request<{ auth: { index: number; method: string }[] }>("plugin.auth.list", { id: p.plugin });
     const entry = auth.auth.find((a) => a.method === "api-key");
@@ -4076,6 +4080,7 @@ async function providerTurn(c: MossClient, session: string, p: { plugin: string;
     signedIn = entry!.index;
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    kept = alpha.model;
     await c.request("bot.setUserLayer", { id: "alpha", patch: { model: p.model } });
     moved = true;
     await until(`Alpha on ${p.model}`, 30_000, async () => {
@@ -4088,7 +4093,7 @@ async function providerTurn(c: MossClient, session: string, p: { plugin: string;
     if (wrong !== undefined) fail(wrong);
     return `${p.model} (${p.seen() - from} request(s), key matched${carded.length ? `; cards: ${carded.join("; ")}` : ""})`;
   } finally {
-    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (moved) await restoreAlphaModel(c, before, kept);
     if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: p.plugin, index: signedIn }).catch(() => undefined);
   }
 }
@@ -4132,6 +4137,8 @@ async function thirdPartyModelTurn(c: MossClient, session: string): Promise<{ st
   let moved = false;
   let signedIn: number | undefined;
   let before: string | null = null;
+  /** The model her record names (picked by `bot.edit`), which the user layer's clearing does not bring back. */
+  let kept: string | undefined;
   try {
     const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", THIRD_PARTY_PLUGIN);
     placeModelsFixture(join(import.meta.dir, "fixtures", THIRD_PARTY_PLUGIN), folder, models.port);
@@ -4152,6 +4159,7 @@ async function thirdPartyModelTurn(c: MossClient, session: string): Promise<{ st
     signedIn = entry!.index;
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    kept = alpha.model;
     // Its model is in the catalog once the model plugins have rebuilt on its OK.
     // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
     await modelPluginsUp();
@@ -4178,7 +4186,7 @@ async function thirdPartyModelTurn(c: MossClient, session: string): Promise<{ st
   } catch (err) {
     return { status: statusOf(err), detail: why(err) };
   } finally {
-    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (moved) await restoreAlphaModel(c, before, kept);
     if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: THIRD_PARTY_PLUGIN, index: signedIn }).catch(() => undefined);
   }
 }
@@ -4196,6 +4204,8 @@ async function oauthSignInTurn(c: MossClient, session: string): Promise<{ status
   let moved = false;
   let signedIn: number | undefined;
   let before: string | null = null;
+  /** The model her record names (picked by `bot.edit`), which the user layer's clearing does not bring back. */
+  let kept: string | undefined;
   try {
     const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", OAUTH_PLUGIN);
     placeOAuthFixture(join(import.meta.dir, "fixtures", OAUTH_PLUGIN), folder, o.port);
@@ -4229,6 +4239,7 @@ async function oauthSignInTurn(c: MossClient, session: string): Promise<{ status
     if (o.seen.refusedExchanges > 0) fail(`the OAuth server refused ${o.seen.refusedExchanges} exchange(s)`);
     const alpha = (await c.request<{ bot: { model: string; userLayer?: string[] } }>("bot.get", { id: "alpha" })).bot;
     before = alpha.userLayer?.includes("model") === true ? alpha.model : null;
+    kept = alpha.model;
     // As the user's picker: the model is offered once the model plugins are up and have rebuilt on the plugin's OK.
     await modelPluginsUp();
     await until(`${OAUTH_MODEL} listed by models.list`, 60_000, async () => ((await c.request<{ models: { id: string }[] }>("models.list", {}).catch(() => undefined))?.models.some((m) => m.id === OAUTH_MODEL) ? true : undefined), 500);
@@ -4261,7 +4272,7 @@ async function oauthSignInTurn(c: MossClient, session: string): Promise<{ status
   } catch (err) {
     return { status: statusOf(err), detail: why(err) };
   } finally {
-    if (moved) await c.request("bot.setUserLayer", { id: "alpha", patch: { model: before } }).catch(() => undefined);
+    if (moved) await restoreAlphaModel(c, before, kept);
     if (signedIn !== undefined) await c.request("plugin.auth.signOut", { id: OAUTH_PLUGIN, index: signedIn }).catch(() => undefined);
   }
 }
@@ -4603,10 +4614,13 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
     if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
     const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
     if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
-    const session = await until("the bot on the keyed model", 60_000, async () => {
-      const b = (await c!.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {}).catch(() => undefined))?.bots.find((x) => x.id === "alpha");
-      return b !== undefined && b.model?.startsWith("anthropic/") === true ? b.mainSession : undefined;
-    }, 500);
+    // The Browser calls come from a code session on the keyed model (its tab is the one MOSS Code's panel may show; a bot's
+    // tab is never drawn there), started the app's way. With bots as records a fresh home's Alpha has no model until
+    // `bot.edit` gives her one, so waiting for "the bot on the keyed model" here could never end.
+    const session = await keyedCodeSession(c);
+    // The pill sends to Alpha (a bot's conversation, the pill's own default target), so the copy row reads her conversation, not
+    // the code session's: the words the pill sends are in hers.
+    const alphaConversation = o.row === "surface-copy" ? (await until("Alpha's conversation", 60_000, async () => (await c!.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.mainSession, 500)) : undefined;
     c.close();
     c = undefined;
     // Her tab, not the welcome guide (stageLevelsStep's reason): the guide is marked done, as the app marks it once it is.
@@ -4628,6 +4642,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
     c = rpc;
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
+    if (alphaConversation !== undefined) await rpc.request("session.attach", { id: alphaConversation });
     const log = proc.log;
     // Where the router put a card (the window's log): the host's island takes its press there, the window elsewhere.
     let hostPresses = 0;
@@ -4658,7 +4673,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
       history: (s2) => history(rpc, s2),
       setMainFront: (front: boolean) => writeFileSync(frontFile, front ? "front" : "back"),
     };
-    record(n, "PASS", `${o.row === "surface-copy" ? await surfaceCopyStep(ctx, session) : await browserStep(ctx, session, browserFixture, panelOpener(rpc))}${o.withHost === true ? `; with the host running: ${hostPresses} card(s) pressed on the host's island, ${windowPresses} in the window, the pages in the host` : ""}`);
+    record(n, "PASS", `${o.row === "surface-copy" ? await surfaceCopyStep(ctx, alphaConversation ?? session) : await browserStep(ctx, session, browserFixture, panelOpener(rpc))}${o.withHost === true ? `; with the host running: ${hostPresses} card(s) pressed on the host's island, ${windowPresses} in the window, the pages in the host` : ""}`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {

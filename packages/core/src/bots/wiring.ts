@@ -243,7 +243,9 @@ export function createBotSide(o: BotSideOptions): BotSide {
     const rec = records!.record(bot);
     if (rec === undefined) return { known: false };
     if (rec.madeBy.kind === "move") return { known: true, plugin: rec.madeBy.plugin };
-    if (rec.madeBy.kind === "default" && rec.id === DEFAULT_BOT_ID) return { known: true, plugin: DEFAULT_BOT_ID };
+    // Hers while the plugin serving her room tools is MOSS's own bundled `alpha`: another plugin that takes the id after
+    // hers is gone is not her plugin and gets nothing of her.
+    if (rec.madeBy.kind === "default" && rec.id === DEFAULT_BOT_ID) return o.registry.get(DEFAULT_BOT_ID)?.source === "bundled" ? { known: true, plugin: DEFAULT_BOT_ID } : { known: true };
     return { known: true };
   });
   const bots = new BotService({

@@ -82,6 +82,17 @@ export async function codeToolsStep(ctx: ExampleCtx): Promise<string> {
     if (!mine2.some((r) => /ACCEPTANCE-CHILD-NO-ECHO/.test(JSON.stringify(r.body ?? "")) || r.toolResult === undefined)) fail("the turn with the tool off was not a model finding no echo tool");
     done.push("set off, the next turn was offered none and nothing ran");
 
+    // On demand: the tool setting the user can pick instead of always. A coding session's agent has no deferral of its own
+    // (the runtime's Tool Search is not on for it), so the tool is offered up front, whatever its availability.
+    await ctx.rpc.request("tool.setAvailability", { server, tool: "Echo", availability: "on-demand" });
+    const fromD = seen();
+    await ctx.turn(session, ASK, 150_000);
+    const mineD = ctx.requests().slice(fromD);
+    const calledD = mineD.find((r) => r.toolUse !== undefined && BRIDGE_ECHO.test(r.toolUse));
+    const answerD = mineD.map((r) => r.toolResult).filter((x): x is { text: string; isError: boolean } => x !== undefined).at(-1);
+    if (calledD === undefined || answerD === undefined || answerD.isError || !answerD.text.includes(PONG)) fail(`set on demand, the echo tool was not offered up front and run in the coding session (${calledD?.toolUse ?? "no call"}: ${(answerD?.text ?? "no result").slice(0, 200)})`);
+    done.push("set on demand, a coding session is still offered it up front and it runs (no deferral there)");
+
     // Back on: offered again, and it runs.
     await ctx.rpc.request("tool.setAvailability", { server, tool: "Echo", availability: "always" });
     const from3 = seen();
