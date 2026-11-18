@@ -11,7 +11,7 @@ export const STATUS_WORDS = {
   working: "Working",
   search: "Searching the web",
   fetch: "Reading {}",
-  fetchBare: "Reading a web page",
+  fetchBare: "Reading a page",
   shell: "Running commands",
   read: "Reading {}",
   readBare: "Reading a file",

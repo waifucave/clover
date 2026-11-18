@@ -5,6 +5,7 @@
 import { useEffect, useRef } from "react";
 import { mount, type Handle, type Mood } from "./living-bots";
 import { MOOD_WORDS } from "../../shared/view";
+import { statusPhrase } from "../../shared/status-line";
 import type { BotFace } from "../../shared/view";
 
 /** Whether faces hold still (the renders; the system's reduced-motion setting is the kit's own default otherwise). */
@@ -61,14 +62,9 @@ export function Face(props: { name: string; face?: BotFace; mood: Mood; size: nu
   return <canvas ref={canvas} data-face={props.name} aria-hidden="true" className={`face face--${props.surface ?? "list"}`} style={{ width: props.size, height: props.size }} />;
 }
 
-/** The mood in words, beside every face (`working` names its tool's short name when the feed gives one). */
+/** The mood in words, beside every face: one short phrase. While a turn runs it is what the bot is doing, in the status
+ *  line's plain words without the detail ("Reading a file"); a tool's wire name is never shown. */
 export function MoodWords(props: { mood: Mood; tool?: string }) {
-  const tool = props.mood === "working" && props.tool !== undefined ? toolName(props.tool) : undefined;
-  return <span className={`mood mood--${props.mood}`} data-mood-words={props.mood}>{MOOD_WORDS[props.mood]}{tool !== undefined ? <span className="mood__tool">{` · ${tool}`}</span> : null}</span>;
-}
-
-/** A tool's wire name (`mcp__moss__Browser`) as a person reads it (`Browser`). */
-export function toolName(wire: string): string {
-  const parts = wire.split("__");
-  return (parts[parts.length - 1] ?? wire).slice(0, 40);
+  const words = statusPhrase({ state: props.mood, ...(props.tool !== undefined ? { tool: props.tool } : {}) }) ?? MOOD_WORDS[props.mood];
+  return <span className={`mood mood--${props.mood}`} data-mood-words={props.mood}>{words}</span>;
 }

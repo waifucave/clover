@@ -76,7 +76,7 @@ describe("MOSS's window", () => {
       expect(row.querySelector("[data-mood-words]")?.textContent?.length).toBeGreaterThan(0);
     }
     expect(r.container.querySelector("[data-bot-row=kite] [data-mood-words]")?.textContent).toBe("Needs you");
-    expect(r.container.querySelector("[data-bot-row=juniper] [data-mood-words]")?.textContent).toBe("Working · Browser");
+    expect(r.container.querySelector("[data-bot-row=juniper] [data-mood-words]")?.textContent).toBe("Using the browser");
     r.unmount();
   });
 

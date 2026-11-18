@@ -111,9 +111,12 @@ export function Conversation(props: { bot: BotRow; cards: CardRow[]; strip?: Rea
   const runKeyRef = useRef(runKey);
   runKeyRef.current = runKey;
   const [replied, setReplied] = useState<string | undefined>(undefined);
+  const known = useRef(new Set<string>());
+  known.current = new Set(messages.map((m) => m.id));
   useEffect(() => {
     setReplied(undefined);
-    return bridge().onMessage((b, m) => { if (b === id && m.from === "bot") setReplied(runKeyRef.current); });
+    // Only a message the conversation did not hold yet is a reply (a replayed one is not).
+    return bridge().onMessage((b, m) => { if (b === id && m.from === "bot" && !known.current.has(m.id)) setReplied(runKeyRef.current); });
   }, [id]);
   const phrase = replied === runKey ? undefined : statusPhrase({ state: bot.mood, ...(bot.tool !== undefined ? { tool: bot.tool } : {}), ...(bot.detail !== undefined ? { detail: bot.detail } : {}), ...(bot.title !== undefined ? { title: bot.title } : {}) });
   const showing = phrase !== undefined;
@@ -282,9 +285,11 @@ function Composer(props: { bot: BotRow; talk?: MossView["talk"] }) {
       ) : null}
       <div className="composer__box">
         <button type="button" className="icon-button" aria-label="Attach pictures" title="Attach pictures" onClick={() => void attach()}>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 7.5 8 13a3.5 3.5 0 0 1-5-5l5.6-5.6a2.3 2.3 0 0 1 3.3 3.3L6.3 11.3a1.2 1.2 0 0 1-1.7-1.7L9.5 4.7" /></svg>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
         </button>
         <textarea rows={1} placeholder={`Message ${props.bot.name}`} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} aria-label={`Message ${props.bot.name}`} />
+        {/* One round black button at the right: the mic while there is nothing to send, Send once there is (a held mic stays). */}
+        {text.trim() === "" && images.length === 0 || holding ? (
         <button
           type="button" className={`icon-button mic${holding ? " is-on" : ""}`} aria-label="Hold to talk" aria-pressed={holding}
           // Without a voice plugin's talk command the button stays, dimmed, and says why (voice.ts talkCommandOf).
@@ -293,9 +298,11 @@ function Composer(props: { bot: BotRow; talk?: MossView["talk"] }) {
         >
           <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="1.8" width="5" height="8" rx="2.5" /><path d="M3.2 7.5a4.8 4.8 0 0 0 9.6 0M8 12.3v2" /></svg>
         </button>
-        <button type="button" className="send" aria-label="Send" disabled={text.trim() === "" && images.length === 0} onClick={() => void send()}>
+        ) : (
+        <button type="button" className="send" aria-label="Send" onClick={() => void send()}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" /></svg>
         </button>
+        )}
       </div>
     </div>
   );

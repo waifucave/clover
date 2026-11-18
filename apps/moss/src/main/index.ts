@@ -256,7 +256,7 @@ async function openWindow(): Promise<BrowserWindow> {
   const offscreen = args.render !== undefined || args.smoke !== undefined || (testBuild && headless);
   const win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 640, minHeight: 480, show: false, title: identity.productName,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#161A33" : "#F6F4EE",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#121212" : "#FFFFFF",
     ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const } : {}),
     ...(headless ? { skipTaskbar: true, focusable: false } : {}),
     webPreferences: {

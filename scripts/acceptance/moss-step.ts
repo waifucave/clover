@@ -41,10 +41,11 @@ export const MOSS_ROUTINE_EDIT_STEP = "MOSS's side panel: Edit on Alpha's routin
 export const MOSS_MEMORY_STEP = "MOSS's Settings, a bot's own page: its memory folder's files listed as the engine serves them (memory.list), and a file opened shows its text as text (memory.read), read only";
 export const MOSS_ROUTINE_FAIL_STEP = "MOSS's side panel: a routine whose run fails (Run now on Alpha's routine, its model's call refused) shows in her conversation that it failed and why, marked as a failure";
 export const MOSS_DROP_STEP = "MOSS's composer: a file dropped on it is said plainly (MOSS sends pictures only, with the paperclip) and nothing is sent";
+export const MOSS_STATUS_STEP = "MOSS: while Alpha's turn runs her conversation shows ONE plain status line (no tool name, no argument, not a control) and her list row says the same short phrase; when the turn ends the line is gone, and no tool row or \"Used …\" line was ever drawn";
 export const MOSS_BOTH_KEYS_STEP = "MOSS beside MOSS Code on one computer: with MOSS Code's own answer key registered too, MOSS still answers its card with its own key (program moss), and MOSS Code's connection can't answer a card MOSS draws, even signed with MOSS Code's own key";
 
 /** The unit's rows, in the order it runs them. */
-export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_EDITOR_STEP, MOSS_TRY_AGAIN_STEP, MOSS_ARCHIVE_STEP, MOSS_LONG_STEP, MOSS_ROUTINE_RUN_STEP, MOSS_ROUTINE_PAUSE_STEP, MOSS_ROUTINE_EDIT_STEP, MOSS_MEMORY_STEP, MOSS_ROUTINE_FAIL_STEP, MOSS_DROP_STEP, MOSS_BOTH_KEYS_STEP];
+export const MOSS_STEPS: readonly string[] = [MOSS_LIST_STEP, MOSS_MESSAGE_STEP, MOSS_STATUS_STEP, MOSS_CARD_STEP, MOSS_AWAY_STEP, MOSS_PANEL_STEP, MOSS_TOOLS_STEP, MOSS_INSTRUCTIONS_STEP, MOSS_MAKE_STEP, MOSS_EDITOR_STEP, MOSS_TRY_AGAIN_STEP, MOSS_ARCHIVE_STEP, MOSS_LONG_STEP, MOSS_ROUTINE_RUN_STEP, MOSS_ROUTINE_PAUSE_STEP, MOSS_ROUTINE_EDIT_STEP, MOSS_MEMORY_STEP, MOSS_ROUTINE_FAIL_STEP, MOSS_DROP_STEP, MOSS_BOTH_KEYS_STEP];
 
 /** The unit's daemon: the bots as engine data (lane MC1 makes it the default; until then the unit sets it). */
 export const MOSS_ENV: Readonly<Record<string, string>> = { MOSS_BOT_SOURCE: "records" };
@@ -134,6 +135,8 @@ export async function mossUnit(x: MossUnitCtx): Promise<void> {
     const s: UnitState = { x, c, w, device, front, keyFile, appLog: app.log };
     await row(MOSS_LIST_STEP, () => listRow(s));
     await row(MOSS_MESSAGE_STEP, () => messageRow(s));
+    // Before any row that fails a session: the engine's feed keeps a bot "stuck" while any of its sessions has failed.
+    await row(MOSS_STATUS_STEP, () => statusRow(s));
     await row(MOSS_CARD_STEP, () => cardRow(s));
     await row(MOSS_AWAY_STEP, () => awayRow(s));
     await row(MOSS_PANEL_STEP, () => panelRow(s));
@@ -970,6 +973,47 @@ async function dropRow(s: UnitState): Promise<string> {
   const after = (await s.c.request<{ events: { type: string }[] }>("bot.conversation", { id: "alpha", limit: 200 })).events.filter((e) => e.type === "user_message").length;
   if (after !== before) s.x.fail("something was sent after the drop");
   return `a PDF dropped on the composer: "${said}"; nothing sent`;
+}
+
+/** A turn that keeps running (the fake model's ACCEPTANCE-SLOW): the conversation's one status line, then its end. */
+async function statusRow(s: UnitState): Promise<string> {
+  const a = await alpha(s.c);
+  await openBot(s, "alpha", "Alpha");
+  const id = randomBytes(3).toString("hex").toUpperCase();
+  const toolWords = /mcp__|__|Used |tool_|\bBash\b|\bWebFetch\b|\.json|\//;
+  const rowsBefore = await s.w.eval<number>("document.querySelectorAll('.messages [data-bubble]').length");
+  // The fake model holds this turn open for about ten seconds (its server's idle limit), so the line is watched for from
+  // the page itself: every phrase it takes, and every mood word in the list, is recorded as it changes.
+  await s.w.eval(`(() => { window.__seenStatus = []; window.__seenMood = []; window.__seenBot = []; const note = () => {
+    const b = [...document.querySelectorAll('.messages .bubble--bot')].map((x) => x.textContent.slice(0, 40)).join('|'); if (window.__seenBot.at(-1) !== b) window.__seenBot.push(b);
+    const t = document.querySelector('.messages [data-status-line] [data-status-text]')?.textContent; if (t && window.__seenStatus.at(-1) !== t) window.__seenStatus.push(t);
+    const m = document.querySelector('[data-bot-row=alpha] [data-mood-words]')?.textContent; if (m && window.__seenMood.at(-1) !== m) window.__seenMood.push(m);
+  }; note(); new MutationObserver(note).observe(document.body, { subtree: true, childList: true, characterData: true }); })()`);
+  await sendInMoss(s, "Alpha", `ACCEPTANCE-SLOW-${id} keep going`);
+  const phrase = await s.w.waitFor<string>("the status line while her turn runs", "document.querySelector('.messages [data-status-line] [data-status-text]')?.textContent ?? null", 20_000)
+    .catch(async (err: unknown) => {
+      const feed = await s.c.request<{ activity: { subject: { id: string }; state: string; tool?: string }[] }>("activity.list", { kind: "bots" }).then((r) => JSON.stringify(r.activity.find((x) => x.subject.id === "alpha"))).catch(() => "unreadable");
+      const seen = await s.w.eval<string>("JSON.stringify({ status: window.__seenStatus, mood: window.__seenMood, bot: window.__seenBot.slice(-3) })").catch(() => "unreadable");
+      return s.x.fail(`${String((err as Error)?.message ?? err)}; seen in the page ${seen}; the engine's feed for Alpha: ${feed}`);
+    });
+  if (toolWords.test(phrase) || phrase.length > 60) s.x.fail(`the status line says "${phrase}": a tool name or an argument is on the screen`);
+  const shape = await s.w.eval<{ lines: number; controls: number; cursor: string; told: string }>(`(() => {
+    const l = document.querySelectorAll('.messages [data-status-line]');
+    const e = l[0];
+    return { lines: l.length, controls: e ? e.querySelectorAll('button, a, input, [tabindex], [role=button]').length : -1, cursor: e ? getComputedStyle(e).cursor : '', told: e?.querySelector('[role=status]')?.getAttribute('aria-live') ?? '' };
+  })()`);
+  if (shape.lines !== 1) s.x.fail(`${shape.lines} status lines are drawn, want exactly one`);
+  if (shape.controls !== 0 || shape.told !== "polite") s.x.fail(`the line is not a plain polite status (controls ${shape.controls}, aria-live "${shape.told}")`);
+  const moodWords = await s.w.eval<string>("document.querySelector('[data-bot-row=alpha] [data-mood-words]')?.textContent ?? ''");
+  if (toolWords.test(moodWords) || moodWords.includes("·")) s.x.fail(`her list row says "${moodWords}": more than one short plain phrase`);
+  const during = await s.w.eval<{ rows: number; text: string }>("({ rows: document.querySelectorAll('.messages [data-bubble]').length, text: document.querySelector('.messages')?.innerText ?? '' })");
+  if (during.rows !== rowsBefore + 1) s.x.fail(`the conversation drew ${during.rows - rowsBefore} new rows for the turn, want 1 (the person's message)`);
+  if (/Used |mcp__/.test(during.text)) s.x.fail("a tool row or a \"Used\" line is in her conversation");
+  await s.c.request("session.interrupt", { sessionId: a.mainSession });
+  await s.w.waitFor("the line gone once the turn ended", "!document.querySelector('.messages [data-status-line]') ? 'gone' : null", 60_000);
+  const after = await s.w.eval<{ text: string; tools: number }>("({ text: document.querySelector('.messages')?.innerText ?? '', tools: document.querySelectorAll('.messages [data-tool], .messages [data-tool-row]').length })");
+  if (/Used |mcp__/.test(after.text) || after.tools !== 0) s.x.fail("a tool row is in her conversation after the turn");
+  return `her running turn showed one plain line "${phrase}" (not a control, polite status) and her list row said "${moodWords}"; after the turn the line was gone and no tool row was drawn`;
 }
 
 /** The last row: MOSS Code's own answer key registered on the same computer (as MOSS Code's window registers it,
