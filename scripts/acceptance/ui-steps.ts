@@ -87,6 +87,8 @@ export async function ensureCodingSession(ctx: Pick<Ctx, "rpc" | "home">, o: { w
 /** The window's own sidebar to a coding session: the session's row under its project (its id, the title a session with none
  *  of its own shows) listed and pressed, and the session's id then in the sidebar's current row. */
 export async function toCodingSession(cdp: Cdp, codeId: string, press: (what: string, selector: string, text?: string, ms?: number) => Promise<unknown>): Promise<string> {
+  // Its project group may be folded and its row below the list's fold: one helper opens and scrolls (cdp.sessionRowCenter), then the press.
+  for (const d of await treeDocs(cdp)) await cdp.sessionRowCenter(d.session, codeId).catch(() => undefined);
   await press(`the coding session ${codeId}'s row`, ".cl-sidebar__projects .cl-sidebar__row", codeId, 30_000);
   await until("the coding session shown (its id in the sidebar's current row)", 30_000, async () => ((await inTree<boolean>(cdp, `[...document.querySelectorAll('.cl-sidebar [aria-current]')].some((e) => (e.textContent || '').includes(${JSON.stringify(codeId)}))`)) !== undefined ? true : undefined), async () => (await treeText(cdp)).replace(/\s+/g, " ").slice(0, 400));
   return `the sidebar listed the coding session ${codeId} started just before from outside the window, and its row went to it (the current row in the sidebar)`;

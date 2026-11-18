@@ -663,15 +663,8 @@ export async function toSessionTab(ctx: ExampleCtx): Promise<void> {
     for (const d of await treeDocs(cdp)) for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, d.session).catch(() => undefined);
     await sleep(300);
     for (const d of await treeDocs(cdp)) {
-      const c = await cdp.evaluate(d.session, `(() => {
-        const el = document.querySelector(".cl-sidebar .cl-sidebar__agent .cl-sidebar__row");
-        if (!el) return null;
-        // The sidebar's list scrolls (an earlier row's press on an entry below the fold scrolled it): the row is brought into view first.
-        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
-        const r = el.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-      })()`).catch(() => null) as { x: number; y: number } | null;
-      if (c !== null && c !== undefined) { await cdp.click(d.session, c.x, c.y); break; }
+      const c = await cdp.sessionRowCenter(d.session).catch(() => undefined);
+      if (c !== undefined) { await cdp.click(d.session, c.x, c.y); break; }
     }
     await until("a code session's tab", 15_000, async () => ((await drawn()) ? true : undefined)).catch(() => undefined);
   }

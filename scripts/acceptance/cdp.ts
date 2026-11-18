@@ -127,6 +127,9 @@ export class Cdp {
 
   /** A trusted click at a point of a session's viewport (CSS pixels). */
   async click(session: string, x: number, y: number): Promise<void> {
+    // A press outside the window lands on nothing: it is refused here, loudly, so a target that was not on screen is caught at once.
+    const size = (await this.evaluate(session, "[window.innerWidth, window.innerHeight]").catch(() => undefined)) as [number, number] | undefined;
+    if (size !== undefined && (x < 0 || y < 0 || x > size[0] || y > size[1])) throw new Error(`the target is not on screen (a press at ${Math.round(x)},${Math.round(y)} in a ${size[0]}x${size[1]} window)`);
     // A window under load (a shard at a high load average) can leave one of the three events unanswered for 20 s: the press is
     // made again, twice at most, only for that answer's absence.
     for (let attempt = 0; ; attempt++) {
@@ -173,7 +176,30 @@ export class Cdp {
       }
       return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height };
     })()`);
-    return v === null || v === undefined ? undefined : (v as { x: number; y: number });
+    // Still outside the window after the scroll (its pane doesn't scroll to it): not a place a press can land, so not an answer.
+    const at = v as { x: number; y: number } | null | undefined;
+    if (at === null || at === undefined) return undefined;
+    const size = (await this.evaluate(session, "[window.innerWidth, window.innerHeight]").catch(() => undefined)) as [number, number] | undefined;
+    if (size !== undefined && (at.x < 0 || at.y < 0 || at.x > size[0] || at.y > size[1])) return undefined;
+    return at;
+  }
+
+  /** The centre of a code session's row in the window's sidebar, ready to press: the row's project group unfolded when it is folded,
+   *  and the row scrolled into the list's view (one helper for every row that presses a session row; `id` undefined: the first one).
+   *  Undefined when this document has no such row. */
+  async sessionRowCenter(session: string, id?: string): Promise<{ x: number; y: number } | undefined> {
+    const v = await this.evaluate(session, `(() => {
+      const id = ${JSON.stringify(id ?? null)};
+      const rows = () => [...document.querySelectorAll(".cl-sidebar .cl-sidebar__agent .cl-sidebar__row")].filter((e) => id === null || (e.textContent || "").includes(id));
+      if (rows().length === 0 && document.querySelector(".cl-sidebar")) {
+        // A folded project group hides its rows: a person opens it (the toggle), and the row is there.
+        for (const t of document.querySelectorAll(".cl-sidebar__project-toggle[aria-expanded=false]")) t.click();
+      }
+      return null;
+    })()`).catch(() => undefined);
+    void v;
+    await new Promise((r) => setTimeout(r, 150));
+    return this.centerOf(session, ".cl-sidebar .cl-sidebar__agent .cl-sidebar__row", id);
   }
 
   /** The main window's pixels (a top-level target only: a frame's session can't capture). */
