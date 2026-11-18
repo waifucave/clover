@@ -3417,16 +3417,39 @@ async function smoke(): Promise<void> {
              *  sometimes delivers one under load: the card must say "press again", and the next press lands. */
             missFirst?: boolean;
           };
-          const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
+          // The sealed frame of this card as it is now: a redraw can hide and show its iframe, replace or reload it, so the
+          // steps that depend on it look again instead of holding the one found first.
+          const findSealedFrame = (): Electron.WebFrameMain | undefined => win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("moss-sealed://") &&
             (cardId === undefined || f.url.includes(cardId)) &&
             (element === undefined || f.url.includes(element) || (element !== undefined && f.url.includes(encodeURIComponent(element)))));
-          if (frame !== undefined) {
+          const firstFrame = findSealedFrame();
+          if (firstFrame !== undefined) {
+            let frame: Electron.WebFrameMain = firstFrame;
             // URLs carry single-use tokens (?token=, ?mount=): the logs keep origin and path only, never the token.
             log(`sealed-click: frame found ${frame.url.split("?")[0]!.slice(0, 80)}`);
+            // Classic bars: a style in the sealed document (idempotent), read back; `inject: false` only reads. A rejection says why.
+            const barsIn = async (f: Electron.WebFrameMain, inject: boolean): Promise<{ held: boolean; client: string; why: string }> => {
+              try {
+                const r = await f.executeJavaScript(`(() => { let s = document.getElementById("__classicBars"); if (!s && ${inject ? "true" : "false"}) { s = document.createElement("style"); s.id = "__classicBars"; s.textContent = "::-webkit-scrollbar { width: 15px; height: 15px; background: #888 } ::-webkit-scrollbar-thumb { background: #444 }"; document.head.append(s); } const d = document.documentElement; return { held: !!s && s.isConnected, client: d.clientWidth + "x" + d.clientHeight + " of " + innerWidth + "x" + innerHeight }; })()`, true) as { held?: unknown; client?: unknown } | null;
+                const held = r !== null && typeof r === "object" && r.held === true;
+                return { held, client: String(r?.client ?? ""), why: held ? "" : "the style is not in the document" };
+              } catch (e) {
+                return { held: false, client: "", why: String((e as { message?: unknown } | null)?.message ?? e).split("\n")[0]!.slice(0, 160) };
+              }
+            };
             if (classicBars === true) {
-              await frame.executeJavaScript(`(() => { const s = document.createElement("style"); s.textContent = "::-webkit-scrollbar { width: 15px; height: 15px; background: #888 } ::-webkit-scrollbar-thumb { background: #444 }"; document.head.append(s); const d = document.documentElement; return d.clientWidth + "x" + d.clientHeight + " of " + innerWidth + "x" + innerHeight; })()`, true)
-                .then((r) => log(`sealed-click: classic scroll bars on the sealed page (client ${String(r)})`)).catch(() => log("sealed-click: classic scroll bars couldn't be set"));
+              // Set on the frame that is there and read back; a frame replaced or reloaded meanwhile is looked for again.
+              const barsEnd = Date.now() + 15_000;
+              for (let tries = 1; ; tries++) {
+                const r = await barsIn(frame, true);
+                if (r.held) { log(`sealed-click: classic scroll bars on the sealed page (client ${r.client})`); break; }
+                const now = findSealedFrame();
+                log(`sealed-click: classic scroll bars couldn't be set (try ${tries}: ${r.why}; ${now === undefined ? "no sealed frame now" : now === frame ? "the same frame" : "another frame than the one first found"})`);
+                if (Date.now() >= barsEnd) break;
+                await new Promise((res) => setTimeout(res, 100));
+                frame = findSealedFrame() ?? frame;
+              }
             }
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
             // The covered run's own fact: whether the button had been reported visible BEFORE the cover went on (the page's last
@@ -3618,6 +3641,17 @@ async function smoke(): Promise<void> {
                 await new Promise((r) => setTimeout(r, Math.max(0, Math.min(2000, coverLead))));
                 log(`sealed-click: press ${Math.round(coverLead)} ms after the cover`);
               }
+              if (classicBars === true) {
+                // The press goes only to the frame that is there with the style in it, read back now; otherwise no press this
+                // time and the loop looks again (the test's claim, a real press under classic bars, is unchanged).
+                const here = findSealedFrame();
+                const r = here === frame ? await barsIn(frame, false) : { held: false, client: "", why: "the sealed frame was replaced" };
+                if (!r.held) {
+                  if (cdp) { try { win.webContents.debugger.detach(); } catch { /* quitting soon anyway */ } }
+                  log(`sealed-click: classic scroll bars not on the frame that would take the press (${r.why}); no press this time, looking again`);
+                  throw new Error("sealed frame moved");
+                }
+              }
               await dispatch("mousePressed");
               await dispatch("mouseReleased");
               if (doubleClick === true) {
@@ -3651,7 +3685,7 @@ async function smoke(): Promise<void> {
           } else {
             log(`sealed-click: no sealed frame`);
           }
-        } catch { /* bad spec: no click */ }
+        } catch { /* bad spec, or a sealed frame that moved before the press (logged): no click this time */ }
       }
     }
     // The fallback card: if no sealed frame was clicked and the fallback run is enabled, click the fallback window's
