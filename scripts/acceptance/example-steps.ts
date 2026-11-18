@@ -136,6 +136,9 @@ export async function clickExact(cdp: Cdp, what: string, selector: string, text:
       const c = await cdp.evaluate(d.session, `(() => {
         const el = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => (e.innerText || '').split('\\n').some((l) => l.trim() === ${JSON.stringify(text)}) || e.getAttribute('aria-label') === ${JSON.stringify(text)});
         if (!el) return null;
+        // A long list (the sidebar on a home with many sessions) scrolls: the entry is brought into view first, as a person does,
+        // or its centre lies outside the pane and the press lands on nothing.
+        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
         const r = el.getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       })()`).catch(() => null) as { x: number; y: number } | null;
@@ -663,6 +666,8 @@ export async function toSessionTab(ctx: ExampleCtx): Promise<void> {
       const c = await cdp.evaluate(d.session, `(() => {
         const el = document.querySelector(".cl-sidebar .cl-sidebar__agent .cl-sidebar__row");
         if (!el) return null;
+        // The sidebar's list scrolls (an earlier row's press on an entry below the fold scrolled it): the row is brought into view first.
+        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
         const r = el.getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       })()`).catch(() => null) as { x: number; y: number } | null;
@@ -691,6 +696,7 @@ export async function toAlphasTab(ctx: ExampleCtx): Promise<void> {
       const c = await cdp.evaluate(d.session, `(() => {
         const el = [...document.querySelectorAll(".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]")].find((e) => (e.innerText || "").split("\\n").some((l) => l.trim() === "Alpha") || e.getAttribute("aria-label") === "Alpha");
         if (!el) return null;
+        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
         const r = el.getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       })()`).catch(() => null) as { x: number; y: number } | null;

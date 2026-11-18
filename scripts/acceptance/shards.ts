@@ -183,6 +183,14 @@ export function homePlan(ids: readonly UnitId[], all: readonly Unit[] = units())
   return { shared: ids.filter((id) => !own.has(id)), ownRuns: ids.filter((id) => own.has(id)) };
 }
 
+/** The units a run that includes the main chain runs as runs of their own after it: with `--units`, every `ownHome` unit
+ *  asked for (moss first, then the host units, in the table's order); a full run (no `--units`) runs moss alone. */
+export function chainOwnRuns(asked: readonly UnitId[] | undefined, all: readonly Unit[] = units()): UnitId[] {
+  if (asked === undefined) return ["moss"];
+  const own = all.filter((u) => u.ownHome === true).map((u) => u.id);
+  return own.filter((id) => asked.includes(id));
+}
+
 export function serialUnits(all: readonly Unit[] = units()): UnitId[] {
   return all.filter((u) => u.phase === "serial").map((u) => u.id);
 }

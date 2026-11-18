@@ -966,6 +966,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   // heard the tag from the user, the box is empty, and neither the fake model nor the conversation got the tag.
   await step(10, async () => {
     const tag = `SLASH-${randomBytes(4).toString("hex").toUpperCase()}`;
+    // Settings (rows 12 and 13 left it open over the tab) is closed the way a person does before they type in the composer: a run that
+    // keeps the window from one row to the next (`--units main`, one process) has it up over the menu, whose clicks it takes.
+    const closer = await inTree<boolean>(cdp, "!!document.querySelector('button[aria-label=\"Close settings\"]')");
+    if (closer !== undefined) {
+      const c = await cdp.centerOf(closer.session, 'button[aria-label="Close settings"]');
+      if (c !== undefined) await cdp.click(closer.session, c.x, c.y);
+      await until("Settings closed", 10_000, async () => ((await inTree<boolean>(cdp, "!!document.querySelector('button[aria-label=\"Close settings\"]')")) === undefined ? true : undefined));
+    }
     const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
     const s = box.session;
     const asked = ctx.requests().length;
@@ -1651,7 +1659,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const card = (await rpc.request<{ cards: { id: string; kind: string; session?: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.find((c) => c.kind === "tool" && c.session === session && !cards.includes(c.id));
         if (card !== undefined && ctx.pressCard !== undefined) cards.push(await ctx.pressCard(`${tool}'s card`, (c) => c.id === card.id));
         return undefined;
-      }, async () => `cards pressed ${cards.length}; requests since: ${ctx.requests().slice(seen).map((r) => r.lastUserText.slice(0, 40)).join(" | ")}`);
+      }, async () => `cards pressed ${cards.length}; open cards of the session: ${(await rpc.request<{ cards: { kind: string; session?: string }[] }>("card.list", {}).catch(() => ({ cards: [] }))).cards.filter((c) => c.session === session).map((c) => c.kind).join(",") || "none"}; requests since (what the model was told, then what it did): ${ctx.requests().slice(seen).map((r) => `${r.lastUserText.slice(0, 40)} [${(r as { tools?: string[] }).tools?.length ?? "?"} tools, ${((r as { tools?: string[] }).tools ?? []).filter((t) => t.endsWith(tool)).join("+") || `none ending ${tool}`}]${(r as { toolUse?: string }).toolUse !== undefined ? ` => call ${(r as { toolUse?: string }).toolUse}` : " => text"}${(r as { toolResult?: { text: string } }).toolResult !== undefined ? ` (carried a result: ${(r as { toolResult?: { text: string } }).toolResult!.text.slice(0, 60)})` : ""}`).join(" | ")}`);
       return { called: tool, result, cards };
     },
     pressCard: ctx.pressCard ?? (() => fail("this run can't press a card")),

@@ -11,7 +11,7 @@ import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { MOSS_STEPS } from "./moss-step";
-import { MAIN_PARTS, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units, windowIndexes, type TimedRow } from "./shards";
+import { MAIN_PARTS, chainOwnRuns, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units, windowIndexes, type TimedRow } from "./shards";
 
 const row = (name: string, status: TimedRow["status"] = "PASS", seconds = 1): TimedRow => ({ n: stepNumber(FULL_STEPS, name), name, status, detail: status === "PASS" ? "ok" : "red", seconds });
 
@@ -81,7 +81,7 @@ describe("the split", () => {
     // Alone it is its home's first daemon; beside other units it runs after them (run.ts unitsRun).
     const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
     expect(run).toContain('if (allIds.length === 1 && allIds[0] === "moss") return mossRun(true);');
-    expect(run).toContain('if (runs("moss"))');
+    expect(run).toContain("for (const id of chainOwnRuns(shardUnits)) {");
   });
 
   test("the host units start their own daemon: beside any other unit each is a run of its own, so a mixed set runs every unit", () => {
@@ -90,6 +90,21 @@ describe("the split", () => {
     expect(homePlan(["cold", "idle", ...hosts, "arrivals", "models"])).toEqual({ shared: ["cold", "idle", "arrivals", "models"], ownRuns: [...hosts] });
     expect(homePlan(["browser-host"])).toEqual({ shared: ["browser-host"], ownRuns: [] });
     expect(homePlan([...hosts])).toEqual({ shared: [], ownRuns: [...hosts] });
+  });
+
+  test("a run that includes the main chain runs EVERY own-home unit it was asked for after it (the controller's call: main,...,moss,host,browser-host,surface-copy-host)", () => {
+    const asked = expandUnitIds(["main", "workshop", "plugin-app", "browser", "cards", "bundled-tools", "examples", "moss", "host", "browser-host", "surface-copy-host"]);
+    expect(asked).toContain("chain");
+    // Before: only moss ran, the host units' rows read BLOCKED "not reached" with no run at all.
+    expect(chainOwnRuns(asked)).toEqual(["moss", "host", "browser-host", "surface-copy-host"]);
+    expect(chainOwnRuns(["chain", "host"])).toEqual(["host"]);
+    expect(chainOwnRuns(["chain", "window-1"])).toEqual([]);
+    // A full run (no --units) runs moss alone, as it did.
+    expect(chainOwnRuns(undefined)).toEqual(["moss"]);
+    // Every ownHome unit is reachable through the list, so a new one cannot be skipped.
+    for (const u of units().filter((x) => x.ownHome === true)) expect(chainOwnRuns([u.id, "chain"])).toEqual([u.id]);
+    // run.ts has no other `ownHomeRun("moss")` shortcut that the chain path could stop at.
+    expect(readFileSync(join(import.meta.dir, "run.ts"), "utf8")).not.toContain('else await ownHomeRun("moss");');
   });
 
   test("the moss unit's rows are never scheduled into a home another unit uses", () => {
@@ -111,7 +126,7 @@ describe("the split", () => {
     expect(run).toContain("const plan = homePlan(allIds);");
     expect(run).toContain("await otherUnitsRun(app, plan.shared);");
     expect(run).toContain("for (const id of plan.ownRuns) await ownHomeRun(id);");
-    expect(run).toContain('else await ownHomeRun("moss");');
+    expect(run).toContain("try { await ownHomeRun(id); } catch (err) {");
     expect(run).toContain('"--units", id, "--rows-out", out');
     const calls = [...run.matchAll(/mossRun\((true|false)\)/g)].map((m) => m[0]);
     expect(calls).toEqual(["mossRun(true)", "mossRun(false)"]);

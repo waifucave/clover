@@ -135,7 +135,7 @@ import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
 import { APP_NEWER, APP_OLDER, ENGINE_NEWER, ENGINE_OLDER, RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, WORDS as RELEASE_WORDS } from "./release-step";
-import { expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
+import { chainOwnRuns, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
@@ -3440,10 +3440,14 @@ async function main(): Promise<void> {
     if (keepState !== undefined) record(stepNumber(FULL_STEPS, BOT_RECORDS_STEP), "PASS", "not run: a --keep-state run keeps the home as today's bots left it (run it with --only-bot-records)");
     else await botRecordsStep(false);
   }
-  // MOSS, the bots app, after that: its own daemon on the home, the records as the bots' source (moss-step.ts).
-  if (runs("moss")) {
-    if (keepState !== undefined) for (const name of MOSS_STEPS) record(stepNumber(FULL_STEPS, name), "PASS", "not run: a --keep-state run keeps the home as today's bots left it (run it with --units moss)");
-    else await ownHomeRun("moss");
+  // The units that need a home of their own (moss, the host units), after that: each a run of its own (its own daemon and
+  // temp home), EVERY one the run asked for, whatever the chain's rows came to. A full run (no --units) runs moss alone, as before.
+  for (const id of chainOwnRuns(shardUnits)) {
+    if (id === "moss" && keepState !== undefined) { for (const name of MOSS_STEPS) record(stepNumber(FULL_STEPS, name), "PASS", "not run: a --keep-state run keeps the home as today's bots left it (run it with --units moss)"); continue; }
+    try { await ownHomeRun(id); } catch (err) {
+      // A unit asked for that could not run is BLOCKED "not reached", never left out (the table's finishTable says the same of a row nobody recorded).
+      for (const name of allUnits().find((u) => u.id === id)!.rows) if (!rows.some((r) => r.name === name)) record(stepNumber(FULL_STEPS, name), "BLOCKED", `not reached: the ${id} unit's own run: ${why(err)}`);
+    }
   }
 }
 
