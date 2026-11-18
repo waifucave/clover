@@ -1719,7 +1719,13 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     if (!seenAt.hit) fail(`the click would land on something else (${JSON.stringify(seenAt)})`);
     await cdp.click(button.session, there!.x, there!.y);
     await until("the turn's own reply on screen", 150_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), async () => `log: ${(await log()).slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}${typeof e.text === "string" ? `(${e.text.slice(0, 40)})` : ""}`).join(" ")}; the fake answered ${ctx.requests().filter((r) => r.lastUserText.includes(tag)).map((r) => r.answered).join(",") || "nothing"} || ${await dumpFrames(cdp)}`);
-    const after = await log();
+    // The reply is on screen while the turn is still ending: its `turn_completed` follows the text into the log, so the log is read
+    // until the turn that came after the error has ended (bounded; a turn that really failed shows no reply, and ends here as it did).
+    const after = await until("the retried turn's end in the log", 30_000, async () => {
+      const l = await log();
+      const ended = l.filter((e) => e.type === "turn_completed");
+      return ended.length >= 2 && ended.at(-1)?.stopReason === "end_turn" ? l : undefined;
+    }, async () => `log: ${(await log()).slice(-8).map((e) => `${String(e.type)}${e.stopReason ? `:${String(e.stopReason)}` : ""}`).join(" ")}`);
     const sent = mine(after);
     if (sent.length !== 2) fail(`the log holds ${sent.length} of the user's message after Try again, not 2`);
     if (sent[1]!.text !== sent[0]!.text || !String(sent[0]!.text).includes("again,  with my  spacing")) fail(`the message sent again is not the first, byte for byte (${JSON.stringify(sent[0]!.text)} then ${JSON.stringify(sent[1]!.text)})`);

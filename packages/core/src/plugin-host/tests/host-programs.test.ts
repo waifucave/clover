@@ -13,6 +13,7 @@ import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { PluginGrants } from "../../fence/plugin-grants";
+import { CATCH_UP_MS } from "../../registry/folders";
 import { openPluginRegistry } from "../../registry/open";
 import { startPluginHost } from "../daemon-host";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
@@ -43,10 +44,18 @@ function approved(registry: { get(id: string): { state: string } | undefined; wa
   });
 }
 
-/** Until `cond` holds, or fails after a few seconds. */
+/** Until `cond` holds, or fails after `UNTIL_MS` of wall-clock time. What these waits are for is the registry seeing an
+ *  edit of a plugin's tree: normally a file watch event and the settle (tens of ms), but Bun's `fs.watch` on macOS drops
+ *  events under load (a whole-core-suite run in parallel processes), and then only the registry's catch-up look
+ *  (`CATCH_UP_MS`, every 5 s) reads the change. The bound is three catch-up looks plus the settle and a margin, counted in
+ *  real time (a loop of fixed sleeps stretches under load, but its count says nothing about the clock). Raised on an
+ *  inference from that mechanism, not on a reproduced failure. */
+const UNTIL_MS = 3 * CATCH_UP_MS + 2_000;
 async function until(cond: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 400; i++) { if (cond()) return; await Bun.sleep(20); }
-  throw new Error(`never: ${what}`);
+  const end = Date.now() + UNTIL_MS;
+  while (Date.now() < end) { if (cond()) return; await Bun.sleep(20); }
+  if (cond()) return;
+  throw new Error(`never: ${what} (within ${UNTIL_MS} ms)`);
 }
 
 /** A plugin whose host code runs `/bin/cat` on a path and reports what came back (or why it failed), and what its own

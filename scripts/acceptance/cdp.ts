@@ -152,7 +152,22 @@ export class Cdp {
       // Below the fold (a long list: the Installed tab on a home with many plugins), a press at its place would land
       // outside the view and do nothing: it is scrolled into view first, as a person does.
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight) {
+      // The same when something else is at the point: a button just inside the bottom edge has a classic scroll bar (a runner has no pointing
+      // device, so its bars are always drawn) over its centre, and a press there lands on the bar and does nothing.
+      const there = document.elementFromPoint(Math.min(Math.max(cx, 0), window.innerWidth - 1), Math.min(Math.max(cy, 0), window.innerHeight - 1));
+      const covered = there === null || !(there === el || el.contains(there) || there.contains(el));
+      // elementFromPoint looks through a scroll bar (it names the button under it), so the bars are read directly: the point must lie in
+      // the area without bars (the client box) of the page and of every scrolling ancestor; a button at the end of a long pane sits there
+      // until it is scrolled to the middle (or as far as the pane goes, which clears the bar).
+      const de = document.documentElement;
+      let underBar = cx > de.clientWidth || cy > de.clientHeight;
+      for (let a = el.parentElement; a && a !== document.body && a !== de && !underBar; a = a.parentElement) {
+        const cs = getComputedStyle(a);
+        if (!/(auto|scroll)/.test(cs.overflowX + cs.overflowY)) continue;
+        const ar = a.getBoundingClientRect();
+        if (cx > ar.left + a.clientLeft + a.clientWidth || cy > ar.top + a.clientTop + a.clientHeight) underBar = true;
+      }
+      if (cx < 0 || cy < 0 || cx > window.innerWidth || cy > window.innerHeight || covered || underBar) {
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
         r = el.getBoundingClientRect();
       }

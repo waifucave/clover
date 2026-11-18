@@ -280,7 +280,12 @@ async function figureMigratedStep(f: FigureCtx): Promise<string> {
       if (r?.state === "ready" && r.format === format) return r;
     }
     return undefined;
-  }, async () => JSON.stringify(await Promise.all((await treeDocs(f.cdp)).map((d) => f.cdp.evaluate(d.session, "(() => { const fig = document.querySelector('.cl-figure'); return fig ? fig.outerHTML.slice(0, 300) : null; })()").catch(() => null)))));
+  }, async () => {
+    // What decides the format shown (the figure's pick and the formats the plugins declare), so a figure that never switched is told from a renderer that was slow.
+    const state = await f.rpc.request("plugin.settings.get", { id: AVATAR }).then((r) => JSON.stringify((r as { settings: { key: string; value?: unknown }[] }).settings.filter((x) => x.key === "figure").map((x) => x.value)), (e) => String(e));
+    const renderer = await f.rpc.request("plugin.get", { id: `moss/${format}` }).then((r) => JSON.stringify((r as { plugin?: { state?: string } }).plugin?.state ?? null), (e) => String(e));
+    return `pick ${state}, renderer plugin moss/${format} state ${renderer}; ${JSON.stringify(await Promise.all((await treeDocs(f.cdp)).map((d) => f.cdp.evaluate(d.session, "(() => { const fig = document.querySelector('.cl-figure'); return fig ? fig.outerHTML.slice(0, 300) : null; })()").catch(() => null))))}`;
+  });
   try {
     const place = await figureBesideCode(f);
     await drawn("the bundled 2D renderer drawing the moved Live2D model", "live2d", ".clvl-avatar", live2dFile);
