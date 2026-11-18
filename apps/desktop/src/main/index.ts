@@ -58,7 +58,7 @@ import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
 // lane HS: start
 import { desktopProgram, headlessUserData, hostHello, hostIdentity, hostProfileAndHome, hostStartInfo, hostTrayMenu, midWorkWarning, takeHostLock, type HostLock, type HostTrayActions } from "./host-program";
-import { hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
+import { EngineWatch, HOST_ENGINE_GONE_MS, hostBundlePath, installHostHandlers, leaveFor, sayHostReady, stopEverything, type HostRuntimeDeps } from "./host-runtime";
 import { fallbackHere as fallbackHereOf, fallbackMayDraw, mountPlan, type MountPlan } from "./mount-plan";
 import { drawerExempt, overlayStandsDown, surfacesReport } from "./host-stacking";
 import { FocusHandBack } from "./focus-handback";
@@ -85,7 +85,7 @@ import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { APP_EVENT_AREAS, mossFront, FrontWatcher, islandMayDraw, placeFromEngine, PlacementBook, PresenceReporter, pressMayBeTaken, placeLine, showingOf, subscribeThenListCards, type CardPlace, type PressSource } from "./card-place";
 import { afterTap, afterTray, appIsRegular, mainWindowFront, surfaceShown, type MainWindowState, type PutAway } from "./front-rules";
-import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
+import { linuxSession, mainWindowPlan, surfaceDrawsOffscreen, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
 // around the daemon's check of who connects (debug-guard.ts).
@@ -1565,6 +1565,14 @@ function fallbackHere(cardId: string): boolean {
   return fallbackMayDraw(enginePlaces.get(cardId), fallbackHereOf(mountNow, hostGaveUp));
 }
 
+/** lane HV: the host leaves by itself once its engine is gone for good (host-runtime.ts `EngineWatch`): armed from the host's
+ *  first dial and at every loss of its connection, disarmed on a connection. A test-marked or acceptance build may shorten the
+ *  wait (`MOSS_TEST_HOST_ENGINE_GONE_MS`, the host row's own check); a real build always waits HOST_ENGINE_GONE_MS. */
+const hostEngineGoneMs: number = (typeof __MOSS_TEST_BUILD__ === "string" || typeof __MOSS_ACCEPTANCE_BUILD__ === "string") && Number(process.env.MOSS_TEST_HOST_ENGINE_GONE_MS) > 0 ? Number(process.env.MOSS_TEST_HOST_ENGINE_GONE_MS) : HOST_ENGINE_GONE_MS;
+const engineWatch: EngineWatch | undefined = program === "host"
+  ? new EngineWatch({ boundMs: hostEngineGoneMs, after: (ms, fn) => { const t = setTimeout(fn, ms); return { cancel: () => clearTimeout(t) }; }, leave: () => hostDeps().leave(), log })
+  : undefined;
+
 function hostDeps(): HostRuntimeDeps {
   return {
     release: app.getVersion(), bundlePath: hostBundlePath(process.execPath, process.platform), safeMode,
@@ -1880,6 +1888,8 @@ function stateChanged(s: PairState): void {
     openingRetryMs = 250;
   }
   log(`pair: ${s.kind}${s.kind === "unavailable" ? ` (${s.reason})` : ""}`);
+  // lane HV: an engine on the other end (on its release, or older and serving the release door only) is the host's engine.
+  engineWatch?.connected(s.kind === "connected" || s.kind === "ahead");
   // The root draws "Starting MOSS…" until the shell comes; once the pair has gone a long time with no daemon (and
   // again when one comes), it is asked to draw again, so it says so instead.
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
@@ -2520,9 +2530,10 @@ function syncSurfaces(): void {
     const win = new BrowserWindow(surfaceWindowPlan({
       surface: { ...w.window, alwaysOnTop: floats && w.window.alwaysOnTop === true },
       title: `${identity.productName} ${w.id}`,
-      // A capture run (`--moss-capture`, headless) draws every window offscreen, the surfaces too: a hidden window gets no
-      // animation frames, so nothing that moves on frames (the island's morph, the pill's spring) would run under test.
-      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: headless && args.capture !== undefined }),
+      // A capture run's surfaces and the background host's headless ones draw offscreen (window.ts `surfaceDrawsOffscreen`: the
+      // host's never-shown island stopped drawing after a resize and read nothing for a press); a measuring run's are shown
+      // invisible instead, and a real build's are shown.
+      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless: headless && invisible === undefined, offscreen: surfaceDrawsOffscreen({ headless, measuring: invisible !== undefined, capture: args.capture !== undefined, host: program === "host" }) }),
       wayland,
     }));
     watchWindow(win);

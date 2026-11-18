@@ -133,6 +133,7 @@ import { placeOAuthFixture, startFakeOAuth, type FakeOAuth } from "./fake-oauth"
 import { startFakeGemini, type FakeGemini } from "./fake-gemini";
 import { startFakeOpenAi, type FakeOpenAi } from "./fake-openai";
 import { holdMachine } from "./exclusive";
+import { listProcesses, nameLeftovers, reap, runProcesses, type ReapResult } from "./reaper";
 import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
@@ -489,6 +490,9 @@ async function endChild(proc: ChildProcess, graceMs = 10_000): Promise<boolean> 
 // lane HS: the hosts this run's engines started through Launch Services (in none of the run's process groups): each is
 // ended by its own pid, the one its engine's lock names, at the host unit's end and at cleanup.
 const startedHosts = new Set<number>();
+/** lane HV: the host row's wait for a gone engine (`MOSS_TEST_HOST_ENGINE_GONE_MS`, a test or acceptance build's only): step 8
+ *  kills the engine and the host must leave by itself after it; above step 5's restart, which the host sits through. */
+const HOST_GONE_TEST_MS = 30_000;
 /** The run's own copy of the source Electron.app for the host it starts through Launch Services: marked `LSUIElement` (no
  *  Dock icon, ever), ad hoc signed again, under the run's temp folder; unregistered from Launch Services at the end. */
 const LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
@@ -647,7 +651,17 @@ function unregisterRunApps(): number {
   return paths.length;
 }
 function realpathOr(p: string): string { try { return realpathSync(p); } catch { return p; } }
-function endStartedHosts(): void {
+/** Ends the hosts this run's engines started: the engine first, then each host by its pid (lane HV). An engine that sees its
+ *  host end without a word counts a crash and starts another 0.5 s later through Launch Services, in none of the run's groups
+ *  and by a pid the run never saw: ended in the other order, that one outlived the run (left at parent 1, redialling a home
+ *  that was gone, its island and pages with it). The lock is read once the engine is gone, so it names the last one. */
+async function endStartedHosts(): Promise<void> {
+  if (lastDaemon !== undefined && alive(lastDaemon.proc)) {
+    const was = stoppingDaemon;
+    stoppingDaemon = true;
+    await endChild(lastDaemon.proc, 20_000);
+    stoppingDaemon = was;
+  }
   const now = hostLockPid(home);
   if (now !== undefined) startedHosts.add(now);
   for (const pid of startedHosts) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
@@ -656,16 +670,22 @@ function endStartedHosts(): void {
 let cleaned = false;
 /** The run itself is stopping the daemon (step 8, cleanup), so its exit isn't a crash. */
 let stoppingDaemon = false;
-async function cleanup(): Promise<void> {
-  if (cleaned) return;
+/** What the run's reaper found once the run had ended everything it knows of (reaper.ts): undefined until cleanup ran. */
+let reaped: ReapResult | undefined;
+async function cleanup(): Promise<ReapResult | undefined> {
+  if (cleaned) return reaped;
   cleaned = true;
   stoppingDaemon = true;
   for (const c of clients) c.close();
   pressCdp?.close();
-  endStartedHosts();
-  unregisterRunApps();
-  // The app first (so the daemon never sees it go and starts another), then the daemon.
+  // The app first (so the daemon never sees it go and starts another), then the daemon; the hosts after their engines (a host
+  // ended under a live engine is started again by it).
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
+  await endStartedHosts();
+  // Whatever of the run's is still there: by the run's own folder (the hosts' app copy and its helpers run from it) and its
+  // children's groups. Each is ended; the run fails naming them (below, and at a signal).
+  try { reaped = await reap({ roots: [root], groups: children.map((c) => c.proc.pid ?? 0) }); } catch (err) { console.error(`acceptance: the reaper failed: ${why(err)}`); }
+  unregisterRunApps();
   fake?.close();
   gemini?.stop();
   for (const w of openAiWires.values()) w.fake.stop();
@@ -692,8 +712,14 @@ async function cleanup(): Promise<void> {
     } catch (err) { console.error(`acceptance: the state file couldn't be written: ${err instanceof Error ? err.message : String(err)}`); }
   }
   rmSync(root, { recursive: true, force: true });
+  return reaped;
 }
-const onSignal = (sig: string) => { console.error(`acceptance: ${sig}: cleaning up`); void cleanup().then(() => process.exit(130)); };
+/** The reaper's verdict: a process the run started outlived what the run ended (named), or survived even SIGKILL. */
+function leftoverProblem(r: ReapResult | undefined): string | undefined {
+  if (r === undefined || r.leftovers.length === 0) return undefined;
+  return `${r.leftovers.length} process(es) the run started outlived it (ended now): ${nameLeftovers(r.leftovers)}${r.survivors.length > 0 ? `; still alive after SIGKILL: ${nameLeftovers(r.survivors)}` : ""}`;
+}
+const onSignal = (sig: string) => { console.error(`acceptance: ${sig}: cleaning up`); void cleanup().then((r) => { const p = leftoverProblem(r); if (p !== undefined) console.error(`acceptance: FAIL: ${p}`); process.exit(130); }); };
 process.on("SIGINT", () => onSignal("SIGINT"));
 process.on("SIGTERM", () => onSignal("SIGTERM"));
 process.on("SIGHUP", () => onSignal("SIGHUP"));
@@ -4700,7 +4726,7 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
     cdp?.close();
     hostCdp?.close();
     if (proc !== undefined) await endChild(proc.proc);
-    if (o.withHost === true) { endStartedHosts(); unregisterRunApps(); }
+    if (o.withHost === true) { await endStartedHosts(); unregisterRunApps(); }
   }
 }
 
@@ -4724,7 +4750,7 @@ async function hostGaveUpRun(app: { exe: string; args: string[] }): Promise<void
       await Promise.race([gone, sleep(30_000)]);
       stoppingDaemon = false;
     }
-    endStartedHosts();
+    await endStartedHosts();
     const d = await startDaemonProc({ MOSS_HOST_COMMAND: JSON.stringify(["/usr/bin/false"]), MOSS_TEST_SEALED_PRESS: "1", MOSS_DEV_DEBUG: "1" });
     await until("the engine giving up on the host", 120_000, () => (/\[host\] the host did not start \d+ times in a row/.test(readLog(d.log)) ? true : undefined), 500);
     const appPort = freePort();
@@ -4771,7 +4797,9 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     // Through the run's own LSUIElement copy (no Dock icon at any moment), unregistered at the end.
     const hostApp = hostAppCopy(app);
     const hostCommand = JSON.stringify([hostApp.exe, ...hostApp.args, "--moss-program=host", "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${hostPort}`]);
-    const daemonEnv = { MOSS_HOST_COMMAND: hostCommand, ...shared };
+    // lane HV: the host's wait for a gone engine, shortened for step 8 (the engine passes MOSS_* on to the host it starts); still
+    // far above step 5's restart, which the host must sit through.
+    const daemonEnv = { MOSS_HOST_COMMAND: hostCommand, ...shared, MOSS_TEST_HOST_ENGINE_GONE_MS: String(HOST_GONE_TEST_MS) };
     const first = await startDaemonProc(daemonEnv);
     c = (await appDriver()).client;
     await signInKey(c);
@@ -4888,13 +4916,36 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     const starts = (out.match(/audio: muted/g) ?? []).length;
     if (starts === 0 || /audio: (NOT muted|played unmuted)/.test(out)) fail(`the host's starts were not all muted (${starts} muted; ${out.split("\n").find((l) => /audio: (NOT|played)/.test(l))?.slice(0, 160) ?? ""})`);
     lines.push(`nothing seen or heard: the window server listed no host window on the screen at ${screenChecks} checks, the host's log naming no window put on the screen, ${starts} host start(s) muted, no Dock icon (its app copy is LSUIElement), no menu-bar icon (never made headless)`);
+    // 8. lane HV: the engine killed (SIGKILL: no host.stop, no word) and nothing to start it again: the host leaves by itself
+    //    once its engine has been gone its bound (here HOST_GONE_TEST_MS; a real build's is HOST_ENGINE_GONE_MS, 2 minutes), its
+    //    pages and parts ending with it, and says why in one line. Before, it redialled a gone engine forever.
+    {
+      const lastHost = hostLockPid(home) ?? pid;
+      stoppingDaemon = true;
+      const killedAt = Date.now();
+      try { process.kill(second.proc.pid!, "SIGKILL"); } catch { /* gone */ }
+      await until("the killed engine gone", 10_000, () => (alive(second.proc) ? undefined : true), 100);
+      stoppingDaemon = false;
+      if (!processAlive(lastHost)) fail("the host went at once with its killed engine (it should wait its bound for an engine to come back)");
+      await until("the host leaving by itself, its engine gone", HOST_GONE_TEST_MS + 30_000, () => (processAlive(lastHost) ? undefined : true), 250);
+      const tookMs = Date.now() - killedAt;
+      if (tookMs < HOST_GONE_TEST_MS - 2_000) fail(`the host left ${tookMs} ms after its engine was killed, before its ${HOST_GONE_TEST_MS} ms bound`);
+      const said = readLog(appLogFile).split("\n").find((l) => /host: no engine for \d+ s/.test(l));
+      if (said === undefined) fail("the host left with no line saying why");
+      // Its helpers (the pages' and parts' processes) go with it: nothing runs from the run's host app copy.
+      const hostCopy = join(root, "host-app");
+      const own = await until("the host's own processes gone with it", 15_000, () => (runProcesses(listProcesses(), { roots: [hostCopy], groups: [] }).length === 0 ? true : undefined), 250).catch(() => undefined);
+      if (own === undefined) fail(`the host's own processes outlived it: ${nameLeftovers(runProcesses(listProcesses(), { roots: [hostCopy], groups: [] }))}`);
+      startedHosts.delete(lastHost);
+      lines.push(`engine gone: the engine killed (SIGKILL) with nothing to start it again, the host left by itself ${(tookMs / 1000).toFixed(1)} s later (its bound here ${HOST_GONE_TEST_MS / 1000} s), saying "${said!.replace(/^.*?host: /, "").slice(0, 60)}…", and none of its processes stayed`);
+    }
     record(n, "PASS", lines.join("; "));
   } catch (err) {
     record(n, statusOf(err), `${why(err)}${lines.length > 0 ? ` (after: ${lines.join("; ").slice(0, 600)})` : ""}`);
   } finally {
     c?.close();
     hostCdp?.close();
-    endStartedHosts();
+    await endStartedHosts();
     say(`the host's Launch Services entries unregistered: ${unregisterRunApps()}`);
   }
 }
@@ -6406,7 +6457,11 @@ try {
     else if (started && !lines.some((l) => /audio: muted/.test(l))) { console.error("acceptance: FAIL: the app didn't say it started muted (no \"audio: muted\" line in app.log)"); code = code === 0 ? 1 : code; }
     else console.error(`acceptance: audio: ${lines.filter((l) => /audio: muted/.test(l)).length} app start(s) muted, none played unmuted`);
   }
-  await cleanup();
+  {
+    const problem = leftoverProblem(await cleanup());
+    if (problem !== undefined) { console.error(`acceptance: FAIL: ${problem}`); code = code === 0 ? 1 : code; }
+    else console.error("acceptance: processes the run started left running after it: 0");
+  }
   const after = listKeychains();
   if (keychainsBefore !== "" && after !== keychainsBefore) {
     console.error("acceptance: WARNING: the keychain search list differs from before the run");

@@ -10,7 +10,7 @@ import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, lay
 import { appShortcut, fallbackMayShow, fallbackOnVisibility, sealedInputAllowed } from "../src/main/shortcuts";
 import { builtClientFile, builtClientUrl, mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
-import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
+import { linuxSession, mainWindowPlan, surfaceDrawsOffscreen, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
 
 describe("documents and headers (S9, decision 94)", () => {
   test("a layer document: its import map is the one script CSP allows inline, by hash", () => {
@@ -248,6 +248,19 @@ describe("the app's shortcuts", () => {
 });
 
 describe("surface windows", () => {
+  test("the background host's headless surfaces draw offscreen (a never-shown island stopped drawing), as a capture run's do; MOSS Code's other headless runs, a measuring run and a real build keep real windows", () => {
+    const o = (x: Partial<{ headless: boolean; measuring: boolean; capture: boolean; host: boolean }>) => surfaceDrawsOffscreen({ headless: true, measuring: false, capture: false, host: false, ...x });
+    expect(o({ host: true })).toBe(true);
+    expect(o({ capture: true })).toBe(true);
+    expect(webPreferences({ preload: "p", partition: "q", headless: true, offscreen: o({ host: true }) }).offscreen).toBe(true);
+    // The UI tests' headless MOSS Code: its surfaces take a dropped file and play media in real windows.
+    expect(o({})).toBe(false);
+    // MOSS_TEST_INVISIBLE: shown at opacity 0 and composited as a person's are.
+    expect(o({ host: true, measuring: true })).toBe(false);
+    // A real build is never headless: its surfaces are real windows, shown when they hold a card.
+    expect(o({ headless: false, host: true })).toBe(false);
+    expect("offscreen" in webPreferences({ preload: "p", partition: "q", headless: false, offscreen: o({ headless: false, host: true }) })).toBe(false);
+  });
   const prefs = webPreferences({ preload: "/p.cjs", partition: "persist:ui", headless: true, offscreen: false });
   test("an overlay is frameless, unfocused and out of the task switcher; on Wayland every surface is a normal window", () => {
     const overlay = surfaceWindowPlan({ surface: { type: "overlay", alwaysOnTop: true, transparent: true }, title: "MOSS island", webPreferences: prefs, platform: "win32" });
