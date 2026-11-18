@@ -583,6 +583,14 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     expect([text.includes("has not been loaded"), text.includes(`${tool} ran with`)]).toEqual([false, true]);
   });
 
+  test("a model loads a tool by the name its own list shows (mcp__<server>__<name>) as by the bridge's name, in one turn", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "automatic", availability: () => "on-demand" });
+    const r = await code(w, `mcp__${CODE_BRIDGE}__Glossary {"load":${JSON.stringify(`mcp__${CODE_BRIDGE}__${short}`)}}\nCALL mcp__${CODE_BRIDGE}__${short} {"n":2}`);
+    await waitFor(() => w.host.history(r.sessionId).some((x) => x.type === "turn_ended"), "the turn's end", 60_000);
+    const text = wire(w, r.transcript);
+    expect([text.includes("has not been loaded"), text.includes(`${tool} ran with`)]).toEqual([false, true]);
+  });
+
   test("a plugin enabled while the session runs: its tool is called in the next turn of the same session, and set off, the call after is not run", async () => {
     const off = new Set<string>();
     const { w, p, changed } = await setup({ ...codeBackend(spawn), level: "automatic", availability: (_s, t) => (off.has(t) ? "off" : "always") });

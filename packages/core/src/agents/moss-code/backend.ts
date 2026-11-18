@@ -421,7 +421,7 @@ export class MossCodeBackend implements AgentBackend {
       ...base,
       tools: [...MOSS_CODE_TOOLS],
       // Every MCP tool the bridge doesn't flag starts deferred (a plugin tool set "on demand"), and the bridge's `Glossary` loads
-      // it in the turn (`_meta["clover/load"]`), as a bot's does; the flagged ones (always on, `anthropic/alwaysLoad`) are up front.
+      // it in the turn (the runtime's load key in its result), as a bot's does; the flagged ones (always on, `anthropic/alwaysLoad`) are up front.
       toolSearchEnabled: true,
       hostToolSearch: GLOSSARY.name,
       abortController: abort,

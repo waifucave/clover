@@ -5,7 +5,7 @@
 //   tool as it lists any other and flags only what is always on (`anthropic/alwaysLoad`); the agent's own search finds
 //   and loads the rest. MOSS holds nothing back for it.
 // * `host-search`: MOSS's own agent (`mcp.toolSearch: "host"`). Its runtime defers every tool the bridge does not flag, so an
-//   on-demand tool is not in the model's tools until the bridge's `Glossary` loads it (`_meta["clover/load"]`), in that turn.
+//   on-demand tool is not in the model's tools until the bridge's `Glossary` loads it (the runtime's load key in its result), in that turn.
 // * `list`: an agent with no search of its own that takes a changed list in a running session (`live`, or `next-turn` where
 //   it can be opened again). The bridge's list leaves the tool out until the session loads it through `Glossary`; a load
 //   changes the list, which the agent takes live or at its next turn.

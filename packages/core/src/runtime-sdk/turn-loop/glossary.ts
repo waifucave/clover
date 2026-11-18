@@ -380,6 +380,9 @@ export function resolveGlossary(items: readonly GlossaryItem[], input: { query?:
   return { empty: queries.length === 0 && loadNames.length === 0, searches, loads, toolNames: [...new Set(toolNames)] };
 }
 
+/** The result key the agent runtime reads as "load these tools in this turn" (its `hostToolSearch` door); the bridge's Glossary sends the same. */
+export const RUNTIME_LOAD_KEY = "clover/load";
+
 /** The `Glossary` core tool. Its result asks the runtime to load the tools it names (`_meta["clover/load"]`). */
 export function glossaryTool(deps: GlossaryDeps): CoreToolDef {
   return {
@@ -410,7 +413,7 @@ export function glossaryTool(deps: GlossaryDeps): CoreToolDef {
         const capped = body.length > SKILL_BODY_MAX_CHARS ? `${body.slice(0, SKILL_BODY_MAX_CHARS)}\n[cut at ${SKILL_BODY_MAX_CHARS} characters]` : body;
         out.push(l.item.kind === "skill" ? `<skill name="${l.item.name}">\n${capped.trim()}\n</skill>` : `${l.item.name} (${l.item.kind}):\n${capped.trim()}`);
       }
-      return { text: out.join("\n\n"), isError: false, ...(asked.toolNames.length > 0 ? { meta: { "clover/load": asked.toolNames } } : {}) };
+      return { text: out.join("\n\n"), isError: false, ...(asked.toolNames.length > 0 ? { meta: { [RUNTIME_LOAD_KEY]: asked.toolNames } } : {}) };
     },
   };
 }
