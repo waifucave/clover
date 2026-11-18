@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { units } from "../acceptance/shards";
 import { MEASURED_ON_MAC_ONLY } from "../acceptance/measured";
-import { judge, parseRows, retryNote, retryRecord, scaleFor } from "./acceptance-unit";
+import { judge, parseRows, pressTimings, retryNote, retryRecord, scaleFor } from "./acceptance-unit";
 
 const TABLE = `
 MOSS acceptance (source)
@@ -104,5 +104,20 @@ describe("the acceptance unit's verdict", () => {
     const moss = units().find((u) => u.id === "moss")!;
     expect(moss.rows.length).toBe(19);
     expect(new Set(moss.rows).size).toBe(19);
+  });
+
+  test("the sealed presses' timings: the distribution of the fresh reports that came, the late and covered ones, the presses made again", () => {
+    const line = (kind: string, ms: number) => `[moss-app] sealed: press on card_x allow_once in island: fresh report ${kind} after ${ms} ms`;
+    const logs = [
+      { file: "app.log", text: [line("uncovered", 120), line("uncovered", 130), line("uncovered", 150), line("uncovered", 300), line("none in time", 402), "sealed: press on card_x allow_once in island: late"].join("\n") },
+      { file: "moss-app.log", text: [line("covered", 90), "moss: sealed: a press over card_y button:allow_once reached no sealed page; it says press again"].join("\n") },
+    ];
+    const progress = ["acceptance: sealed press (MOSS): landed first try", "acceptance: sealed press (MOSS): landed first try", "acceptance: sealed press (MOSS): landed on retry (the first press said late)", "acceptance: sealed presses with no fresh report in time, landed on the next press: 2"].join("\n");
+    const said = pressTimings(logs, progress);
+    expect(said).toContain("n=4 min=120 median=150 p95=300 max=300");
+    expect(said).toContain("none in time 1; covered 1;");
+    expect(said).toContain('"press again" words 2;');
+    expect(said).toContain("landed first try 2; presses landed on a retry 3");
+    expect(pressTimings([], "")).toContain("no fresh report logged");
   });
 });

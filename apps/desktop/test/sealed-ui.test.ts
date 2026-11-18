@@ -194,8 +194,15 @@ type Run = Awaited<ReturnType<typeof runApp>>;
  *  (`sealed-press[label]: landed first try | landed on retry | missed twice | not landed, no retry`), so the rate is visible.
  *  `deliberate` is how many notices the test's own set-up makes (the missed-press test makes one on purpose). Only the tests
  *  whose claim is that a press lands use it: a "does not land" test never retries (a retry must never make a covered press land). */
+/** How long the page took for the reading each press asked for (the app logs it: "fresh report uncovered after 140 ms"), printed for every
+ *  call so the distribution against `FRESH_LIMIT_MS` can be read from a run's log, not only from a failing test's output. */
+function logFreshMs(label: string, run: Run): void {
+  for (const m of run.output.matchAll(/fresh report (uncovered|covered|none in time) after (\d+) ms/g)) console.log(`sealed-press[${label}]: fresh report ${m[1]} after ${m[2]} ms`);
+}
+
 async function pressLands(label: string, opts: Parameters<typeof runApp>[0], deliberate = 0): Promise<Run> {
   const first = await runApp(opts);
+  logFreshMs(label, first);
   if (answerCallsOf(first.home).length > 0) {
     console.log(`sealed-press[${label}]: landed first try`);
     return first;
@@ -208,6 +215,7 @@ async function pressLands(label: string, opts: Parameters<typeof runApp>[0], del
   }
   console.log(`sealed-press[${label}]: the first press missed and the notice was logged; one retry press`);
   const second = await runApp(opts);
+  logFreshMs(`${label} (retry)`, second);
   console.log(`sealed-press[${label}]: ${answerCallsOf(second.home).length > 0 ? "landed on retry" : "missed twice"}`);
   return second;
 }

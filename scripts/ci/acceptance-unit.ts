@@ -105,11 +105,38 @@ function report(unit: string, v: Verdict, table: string, label = ""): string {
   ].join("\n");
 }
 
+/** The sealed presses of an attempt, from the apps' kept logs and the run's progress: how long the page took for the reading each
+ *  press asked for ("fresh report uncovered after 140 ms", min / median / p95 / max), how many had none in time or read as covered, how many
+ *  times a card said "press again", and how many presses the run made again (what the harness printed). One line, so a limit that is too short
+ *  or a press that needed a second go shows up in every run's log, not only in a failing one. */
+export function pressTimings(logs: readonly { file: string; text: string }[], progress: string): string {
+  const ms: number[] = [];
+  let none = 0;
+  let covered = 0;
+  let again = 0;
+  for (const l of logs) {
+    for (const m of l.text.matchAll(/fresh report (uncovered|covered|none in time) after (\d+) ms/g)) {
+      if (m[1] === "uncovered") ms.push(Number(m[2]));
+      else if (m[1] === "none in time") none++;
+      else covered++;
+    }
+    again += (l.text.match(/sealed: press on [^\n]*: late\b/g) ?? []).length + (l.text.match(/reached no sealed page/g) ?? []).length;
+  }
+  const retries = (progress.match(/sealed press \(MOSS\): landed on retry/g) ?? []).length + (progress.match(/sealed presses with no fresh report in time, landed on the next press: (\d+)/g) ?? []).reduce((n, x) => n + Number(/: (\d+)$/.exec(x)![1]), 0);
+  const first = (progress.match(/sealed press \(MOSS\): landed first try/g) ?? []).length;
+  ms.sort((a, b) => a - b);
+  const at = (q: number): number => ms[Math.min(ms.length - 1, Math.floor(q * ms.length))]!;
+  const dist = ms.length === 0 ? "no fresh report logged" : `fresh report ms: n=${ms.length} min=${ms[0]} median=${at(0.5)} p95=${at(0.95)} max=${ms[ms.length - 1]}`;
+  return `sealed presses: ${dist}; none in time ${none}; covered ${covered}; "press again" words ${again}; MOSS presses landed first try ${first}; presses landed on a retry ${retries}`;
+}
+
 /** One attempt's files judged: its verdict and its report. */
 function judgeAttempt(unit: string, out: string, exit: number, expected: readonly string[] | undefined, label: string): { v: Verdict; text: string } {
   const table = existsSync(join(out, "table.txt")) ? readFileSync(join(out, "table.txt"), "utf8") : "";
   const progress = existsSync(join(out, "progress.txt")) ? readFileSync(join(out, "progress.txt"), "utf8") : "";
-  const v = judge({ exit, table, progress, logs: keptLogs(join(out, "logs")), ...(expected !== undefined ? { expected } : {}) });
+  const logs = keptLogs(join(out, "logs"));
+  const v = judge({ exit, table, progress, logs, ...(expected !== undefined ? { expected } : {}) });
+  if (unit !== "(judged)") console.log(`acceptance-unit: ${unit}${label}: ${pressTimings(logs, progress)}`);
   const text = report(unit, v, table, label);
   writeFileSync(join(out, "verdict.md"), text);
   return { v, text };
