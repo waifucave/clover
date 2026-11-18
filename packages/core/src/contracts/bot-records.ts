@@ -21,10 +21,13 @@
 //   settings); nothing is deleted.
 // * A plugin's bot-scoped settings are read and set per bot; a setting of another scope, or one the plugin doesn't
 //   declare, is refused.
-// * The move: each plugin bot becomes a record with the same id (the user's layer over the plugin's values,
+// * The move: each plugin bot it is given becomes a record with the same id (the user's layer over the plugin's values,
 //   `madeBy: move`); an id that already has a record is kept as it is. It runs at each start for what the journal
-//   doesn't settle yet (a plugin bot it doesn't name, a `failed` entry): a `moved` or `kept` entry is final, and a run
-//   that settles nothing new changes nothing and answers the journal as it was (read 65's S4).
+//   doesn't settle yet (a bot it is given that the journal doesn't name, a `failed` entry): a `moved` or `kept` entry is
+//   final, and a run that settles nothing new changes nothing and answers the journal as it was (read 65's S4). The
+//   journal's `at` is its first completion and never moves forward. Which bots it is given is the caller's: the bots
+//   that existed before the split, decided from what the home holds (`bots/move.ts`), so a bot plugin installed after
+//   the first completion is never given and makes no bot (decision 101).
 import type { ArchivedBot, BotFace, BotMaker, BotMoveJournal, BotPatch, BotRecordView, MakeBotInput, MakeBotResult, Text } from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "./common";
 

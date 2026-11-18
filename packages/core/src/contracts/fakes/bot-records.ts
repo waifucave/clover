@@ -190,7 +190,7 @@ export class FakeBotRecords implements BotRecords {
       this.#emit(b.id);
       outcomes.push({ outcome: "moved", id: b.id, plugin: b.plugin });
     }
-    this.#journal = { move: 1, at: this.#clock.now(), bots: outcomes };
+    this.#journal = { move: 1, at: before?.at ?? this.#clock.now(), bots: outcomes };
     return this.#journal;
   }
 
