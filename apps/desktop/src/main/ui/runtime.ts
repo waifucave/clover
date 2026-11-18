@@ -10,10 +10,11 @@
 // Electron-free: the Electron glue (ipc.ts) hands frames in as `FrameRef`s and delivers what `send` produces, so the
 // tests drive the whole runtime under Bun.
 import { randomBytes } from "node:crypto";
+import { dataKindOfSession, kindCapability, type SessionKind } from "@waifucave/moss-protocol";
 import type { LayerMessage, LocaleValue, MountContext, MountInfo, PendingQuestion, SpotEntryView, SpotItem, SpotView, StringTable, ThemeSheet } from "@waifucave/moss-plugin-sdk/ui/bridge";
 import type { Appearance, TokenValue } from "@waifucave/moss-plugin-sdk";
 import { STOCK_KEYS, spotInfo } from "@waifucave/moss-plugin-sdk";
-import { SAFE_MODE_PLUGINS, patchScope, withTabPatches, type UiEntry, type UiPlugin } from "./model";
+import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
 import { displayText } from "@waifucave/moss-plugin-sdk/plain";
 import { NO_CHOICES, OWN_PANELS_KEY, SpotTree, addedCandidates, botScope, entryRef, refNames, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
@@ -21,7 +22,6 @@ import { botTheme, defaultFrameMetrics, partSelector, partTokens, shellTokens, s
 import { cleanCss } from "./css";
 import { builtClientUrl } from "./files";
 import { StringStore, stringTable } from "./strings";
-import { LayoutStore, type TabSpec } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
 import { isSealedLookAllowed } from "@waifucave/moss-plugin-sdk";
 import { fieldPage, buttonPage, ownCardPage, placeholderPage, summaryFieldPage, labelOf } from "../sealed-pages";
@@ -180,7 +180,6 @@ export class UiRuntime {
   private readonly grants = new Map<string, { offer: DragOffer; windowId: number; at: number }>();
   private readonly themes: ThemeStore;
   private readonly strings: StringStore;
-  private readonly layouts: LayoutStore;
   private readonly tables = new Map<string, StringTable>();
   private questions: readonly PendingQuestion[] = [];
   private readonly now: () => number;
@@ -196,7 +195,6 @@ export class UiRuntime {
     this.send = opts.send ?? (() => {});
     this.themes = opts.themes ?? new ThemeStore(this.log);
     this.strings = new StringStore(this.log);
-    this.layouts = new LayoutStore(this.log);
     this.sealed = opts.sealed;
   }
 
@@ -213,11 +211,10 @@ export class UiRuntime {
   // ----------------------------------------------------------------------------------------------
 
   setRegistry(plugins: readonly UiPlugin[]): void {
-    this.plugins = withTabPatches(plugins, this.log);
+    this.plugins = [...plugins];
     this.tree = new SpotTree(this.plugins);
     this.themes.clear();
     this.strings.clear();
-    this.layouts.clear();
     this.changed(true);
     // A frame's document served to load another module than its plugin has now (a client the core built at load that
     // landed after the frame was served, or built again): it loads again, so its boot loads the module there is now.
@@ -329,50 +326,12 @@ export class UiRuntime {
     return m.plugin?.entries.find((e) => e.id === m.entryId);
   }
 
-  /** A bot's tab as the layout store makes it: the file its layout entry names, every running plugin's patch for that
-   *  bot that applies here and that the user hasn't switched off (`lists` on `bot.tab`, for that bot or every bot), in
-   *  turn order (`order`, default 500, then plugin id, then entry id), and the user's own layout. */
-  tabSpec(mounted: UiPlugin, file: string): TabSpec {
-    // The bot as the registry has it now: a mount keeps the plugin it was placed with, and a new view (the user's own
-    // layout changed) is a new plugin object.
-    const bot = this.plugins.find((p) => p.id === mounted.id) ?? mounted;
-    const off = (this.choices.lists ?? []).filter((l) => l.spot === "bot.tab" && (l.bot === undefined || l.bot === bot.id)).flatMap((l) => l.hidden);
-    const patches: { plugin: UiPlugin; id: string; file: string; order: number }[] = [];
-    for (const p of this.plugins) {
-      if (this.safeModeValue && !SAFE_MODE_PLUGINS.includes(p.topId)) continue;
-      for (const t of p.tabPatches ?? []) {
-        const scope = patchScope(p, t);
-        if (scope !== "all" && !scope.includes(bot.id)) continue;
-        if (t.when?.os !== undefined && !t.when.os.includes(this.opts.os)) continue;
-        if (off.some((r) => refNames(r, { pluginId: p.id, id: t.id }))) continue;
-        patches.push({ plugin: p, id: t.id, file: t.file, order: t.order ?? 500 });
-      }
-    }
-    patches.sort((a, b) => a.order - b.order || (a.plugin.id < b.plugin.id ? -1 : a.plugin.id > b.plugin.id ? 1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    return { bot, file, patches: patches.map(({ plugin, id, file: f }) => ({ plugin, id, file: f })), ...(bot.userLayout !== undefined ? { userLayout: bot.userLayout } : {}) };
-  }
-
-  /** A bot's tab spec, when a layout entry of its own draws the tab. */
-  private tabSpecOf(bot: string): TabSpec | undefined {
-    const plugin = this.plugins.find((p) => p.isBot && p.id === bot);
-    const file = plugin?.entries.find((e) => e.spot === "bot.tab" && e.layout !== undefined)?.layout;
-    return plugin === undefined || file === undefined ? undefined : this.tabSpec(plugin, file);
-  }
-
-  /** A bot's layout's `prefer` lists, for the cells in its tab (rule 4). */
-  private preferFor(bot: string): Readonly<Record<string, readonly string[]>> | undefined {
-    const tab = this.tabSpecOf(bot);
-    if (tab === undefined) return undefined;
-    const prefer = this.layouts.prefer(tab);
-    return Object.keys(prefer).length > 0 ? prefer : undefined;
-  }
-
   private styledOf(m: Mount): boolean {
     return m.styles.some((c) => c.entry.style !== undefined);
   }
 
   /** A document's sheets (§5.5's stack): the base and global themes over the whole document, the style entries for all
-   *  bots, each bot's theme in its tab (stopping at another tab) and its layout's own CSS, the style entries limited to the
+   *  bots, each bot's theme in its tab (stopping at another tab), the style entries limited to the
    *  tab's bot (each in its part, stopping at a smaller part another dresses, the would-be winner last), then the user's own
    *  CSS. More scoped wins: a bot's own look comes after a plugin that styles all bots' tabs. The core root takes none (its
    *  CSP allows no inline style). */
@@ -405,13 +364,6 @@ export class UiRuntime {
       if (b === undefined) continue;
       const css = this.themes.themeSheet(b.plugin, b.theme, { root: partSelector(m.id), limit: "[data-moss-tab]:not(:scope)" });
       if (css !== "") out.push({ id: `bot:${bot}:${m.id}`, css });
-    }
-    for (const m of inDoc) {
-      const file = this.entryOf(m)?.layout;
-      if (file === undefined || m.plugin === undefined) continue;
-      // The layout's own CSS dresses its own nodes: it stops at every part inside it.
-      const css = this.layouts.sheet(this.tabSpec(m.plugin, file), { root: partSelector(m.id), limit: "[data-moss-part]:not(:scope)" });
-      if (css !== "") out.push({ id: `layout:${m.plugin.id}:${m.id}`, css });
     }
     styleSheets(true);
     // The part a style entry dresses is contained, as a tab's root is (a frame's root; an inline part has no box).
@@ -715,7 +667,8 @@ export class UiRuntime {
     const strings = this.stringsFor(m);
     m.stringsKey = JSON.stringify(strings);
     // The questions waiting, for a plugin that may read them.
-    if (this.questions.length > 0 && this.readsQuestions(m)) queueMicrotask(() => this.post(m.id, { type: "questions", questions: this.questions }));
+    const heard = this.questionsFor(m);
+    if (heard.length > 0) queueMicrotask(() => this.post(m.id, { type: "questions", questions: heard }));
     return { ...this.info(m), sheets, strings };
   }
 
@@ -795,9 +748,7 @@ export class UiRuntime {
     const ctx: CellContext = { ...part.ctx, safeMode: this.safeModeValue, ...(session !== undefined ? { session } : {}) };
     if (cellKey !== undefined && KEYED_BY_BOT.has(spot)) ctx.bot = cellKey;
     else if (BOT_FROM_SHELL.has(spot) && doc.layer === "moss" && hints.bot !== undefined) ctx.bot = hints.bot;
-    const prefer = ctx.bot === undefined ? undefined : this.preferFor(ctx.bot);
-    if (prefer !== undefined) ctx.prefer = prefer;
-    else delete ctx.prefer;
+    delete ctx.prefer;
     return { shape, cellKey, session, ctx };
   }
 
@@ -915,8 +866,7 @@ export class UiRuntime {
   }
 
   private place(parent: Mount, doc: Mount, c: Candidate, spot: string, key: string | undefined, ctx: CellContext, styles: Candidate[], session: string | undefined): Mount {
-    // A layout is data: it draws inline in whatever document shows the tab.
-    const inline = (c.plugin.layer === doc.layer && c.entry.kind === "component") || c.entry.layout !== undefined;
+    const inline = c.plugin.layer === doc.layer && c.entry.kind === "component";
     const kind: Mount["kind"] = c.entry.kind === "web" ? "web" : inline ? "inline" : "frame";
     const m: Mount = {
       id: this.mountId(),
@@ -962,7 +912,6 @@ export class UiRuntime {
 
   private item(m: Mount, parent: Mount): SpotItem {
     const ref = `${m.plugin!.id}#${m.entryId}`;
-    const layout = this.entryOf(m)?.layout;
     if (m.kind === "web") return { kind: "web", mount: m.id, ref, pluginId: m.plugin!.id, entryId: m.entryId };
     if (m.kind === "frame") {
       const isolated = this.frameFlags(m);
@@ -980,7 +929,6 @@ export class UiRuntime {
       context: this.context(m),
       ...(this.tabOf(m) !== undefined ? { tab: this.tabOf(m)! } : {}),
       ...(this.styledOf(m) ? { styled: true } : {}),
-      ...(layout !== undefined ? { layout: (m.plugin && this.layouts.view(this.tabSpec(m.plugin, layout), this.language)) || { kind: "text", text: "" } } : {}),
     };
   }
 
@@ -1344,7 +1292,7 @@ export class UiRuntime {
     if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("opening a card's page takes the approvals capability");
     const card = this.sealed?.get(cardId);
     if (card === undefined) return false;
-    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("opening a card's page takes a card of this plugin's own bot, or the approvals.all capability");
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("opening a card's page takes a card of this plugin's own tools, or the approvals.all capability");
     if (card.kind !== "plugin-ok" && !(card.kind === "change" && card.change === "plugin-update")) return false;
     return (await this.onCardPage?.(cardId)) ?? false;
   }
@@ -1353,11 +1301,12 @@ export class UiRuntime {
    *  router placed on the island (lane RT, §3.5). */
   cardSurfaceMayDraw?: (cardId: string) => boolean;
 
-  /** Whether a plugin may place a card's sealed frames: any card with `approvals.all`, else a card of its own bot's. */
-  #mayPlace(plugin: UiPlugin, card: { bot?: string }): boolean {
+  /** Whether a plugin may place a card's sealed frames: any card with `approvals.all`, else a card the core says is its own
+   *  (`ownedBy`, by top-level id: the card a call to its own tool raised, or its moved bot's), as the core tells it of them. */
+  #mayPlace(plugin: UiPlugin, card: { ownedBy?: readonly string[] }): boolean {
     if (plugin.capabilities.has("approvals") && plugin.capabilities.has("approvals.all")) return true;
-    const owner = plugin.id.split("/")[0];
-    return card.bot !== undefined && card.bot.split("/")[0] === owner;
+    const owner = plugin.id.split("/")[0]!;
+    return (card.ownedBy ?? []).includes(owner);
   }
 
   /** The `app.surface` entry a part is in or under (a surface's document draws its one entry), or undefined. */
@@ -1386,7 +1335,7 @@ export class UiRuntime {
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
     const card = this.sealed.get(cardId);
     if (card === undefined) return undefined;
-    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot, or the approvals.all capability");
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own tools, or the approvals.all capability");
     if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
     const tokens: Record<string, TokenValue> = {};
     for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
@@ -1416,10 +1365,11 @@ export class UiRuntime {
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
     const card = this.sealed.get(cardId);
     if (card === undefined) return undefined;
-    // A card is its own bot's plugin's to place (the core sends a plugin only those, and this holds the rule where the frame is
-    // made): a plugin with `approvals.all` places any card, every other plugin the cards of its own bots, by top-level id on both
-    // sides. A card with no bot (the user's own session, a plugin's OK, a change from Settings) is `approvals.all`'s alone.
-    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own bot, or the approvals.all capability");
+    // A card is its own plugin's to place (the core sends a plugin only those, and this holds the rule where the frame is made): a
+    // plugin with `approvals.all` places any card, every other plugin the cards its `ownedBy` names (a call to its own tool, in any
+    // session or bot's turn; its moved bot's). Any other card (a core tool's, a plugin's OK, a change from Settings) is
+    // `approvals.all`'s alone.
+    if (!this.#mayPlace(part.plugin, card)) throw new LayerError("placing a sealed frame takes a card of this plugin's own tools, or the approvals.all capability");
     // One place at a time: a surface that declares `window.cards` is given no frame of a card the router placed elsewhere ("not
     // yet": it asks again when it shows the card).
     if (part.plugin.capabilities.has("approvals.all") && this.#surfaceEntryOf(part)?.window?.cards === true && this.cardSurfaceMayDraw?.(cardId) === false) return undefined;
@@ -1567,20 +1517,45 @@ export class UiRuntime {
     }
   }
 
-  /** The questions waiting in every session (lane D's): each document whose plugin has `conversation.read` hears them,
-   *  with their text; no other does. */
-  setQuestions(questions: readonly PendingQuestion[]): void {
+  /** The questions waiting in every session (lane D's), by kind of data (spec revision 19, §3.6): a document hears a
+   *  session's questions, with their text, when its plugin holds the read of that session's kind
+   *  (`kindCapability("conversation.*", kind)`: `sessions.read` for a code session, `conversation.read` for a bot's
+   *  conversation); a session whose kind main doesn't know (`kindOf` gives none) needs both. No other document hears
+   *  them. */
+  setQuestions(questions: readonly PendingQuestion[], kindOf: (session: string) => SessionKind | undefined = () => undefined): void {
     this.questions = questions;
+    this.questionKind = kindOf;
     for (const m of this.mounts.values()) {
-      if (m.kind === "frame" && m.frame !== undefined && this.readsQuestions(m)) this.post(m.id, { type: "questions", questions });
+      if (m.kind !== "frame" || m.frame === undefined) continue;
+      const heard = this.questionsFor(m);
+      if (heard.length > 0 || this.readsAnyQuestion(m)) this.post(m.id, { type: "questions", questions: heard });
     }
   }
 
-  private readsQuestions(doc: Mount): boolean {
-    // The `moss` layer's document is shared by the bundled parts drawn in it: it hears them when any plugin drawn in
-    // that layer may read conversations. Any other document by its own plugin's capability.
-    if (doc.layer === "moss") return this.plugins.some((p) => p.layer === "moss" && p.capabilities.has("conversation.read"));
-    return doc.plugin?.capabilities.has("conversation.read") === true;
+  private questionKind: (session: string) => SessionKind | undefined = () => undefined;
+
+  /** The capabilities a document reads with: the `moss` layer's document is shared by the bundled parts drawn in it, so
+   *  any plugin drawn in that layer counts; any other document by its own plugin's. */
+  private readsWith(doc: Mount): (cap: string) => boolean {
+    if (doc.layer === "moss") return (cap) => this.plugins.some((p) => p.layer === "moss" && p.capabilities.has(cap));
+    return (cap) => doc.plugin?.capabilities.has(cap) === true;
+  }
+
+  /** Whether a document reads questions of either kind (so it hears that the list emptied). */
+  private readsAnyQuestion(doc: Mount): boolean {
+    const has = this.readsWith(doc);
+    return has(kindCapability("conversation.*", "sessions")) || has(kindCapability("conversation.*", "bots"));
+  }
+
+  /** The waiting questions a document may read, by each one's session's kind. */
+  private questionsFor(doc: Mount): readonly PendingQuestion[] {
+    if (this.questions.length === 0) return [];
+    const has = this.readsWith(doc);
+    return this.questions.filter((q) => {
+      const kind = this.questionKind(q.session);
+      if (kind === undefined) return has(kindCapability("conversation.*", "sessions")) && has(kindCapability("conversation.*", "bots"));
+      return has(kindCapability("conversation.*", dataKindOfSession({ kind })));
+    });
   }
 
   /** The part calling the app's door for parts (tree-calls.ts) in the document `frame` (throws if it isn't in the
@@ -1609,10 +1584,7 @@ export class UiRuntime {
     if (part.spot !== "composer" || part.plugin === undefined) return undefined;
     // The session and bot are the declaring document's say (props), so they count only when that document is the bundled
     // moss tree's: a third-party bot tab that fills the spot (with the default composer, or any) could name any session.
-    // A bot's layout is data, drawn inline in the document that shows the tab: its spots' props are that document's say, so
-    // a layout part is looked through to the document drawing it.
-    let parent = part.parent === undefined ? undefined : this.mounts.get(part.parent);
-    if (parent !== undefined && parent.kind === "inline" && this.entryOf(parent)?.layout !== undefined) parent = this.docOf(parent);
+    const parent = part.parent === undefined ? undefined : this.mounts.get(part.parent);
     const pp = parent?.plugin;
     if (pp === undefined || pp.topId !== "moss" || pp.layer !== "moss" || pp.source !== "bundled") return undefined;
     const props = (part.props ?? {}) as { session?: unknown; bot?: unknown };

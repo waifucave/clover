@@ -457,7 +457,9 @@ describe("what holds the child to its bot", () => {
     (w.approvals as { request: typeof real }).request = (r, o) => (seen.push(r), real(r, o));
     await w.delegate();
     const req = await waitFor(() => seen.find((r) => r.kind === "agent-permission"), "the agent's request");
-    expect((req.fields as Record<string, { text?: string }>).what!.text).toBe('alpha\'s agent "Fix the tests" (fake) is asking, not alpha itself. Allow it this once?');
+    // The card's tool in MOSS's names (a tool card's shape, lane MC), and who asks in its own field.
+    expect((req.fields as Record<string, { text?: string }>).what!.text).toBe("Edit");
+    expect((req.fields as Record<string, { text?: string }>).reason!.text).toBe('alpha\'s agent "Fix the tests" (fake) is asking, not alpha itself.');
     expect(req.ruleKey).toBeUndefined();
   });
 

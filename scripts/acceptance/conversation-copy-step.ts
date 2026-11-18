@@ -11,11 +11,12 @@
 //   * the app logged no refusal of the copy's calls at the door, and the bundled conversation comes back when switched on.
 // Nothing here names the bundled plugin's id but to switch it off and on: the copy is the conversation's own source, built
 // into a client module and given another id and name.
+import { partElsewhere } from "./elsewhere-parts";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { CLIENT_BARE_IMPORTS, capabilityOkText } from "../../packages/plugin-sdk/src/index";
-import { fail, layerDocs, sleep, toAlphasTab, until, type ExampleCtx } from "./example-steps";
+import { fail, layerDocs, sleep, toSessionTab, until, type ExampleCtx } from "./example-steps";
 
 export const CONVERSATION_COPY_STEP = "a folder-installed copy of the conversation, under another id and behind its OK card (reads your conversations, sends as you), takes the bundled one's place in Alpha's tab: it draws her turn, shows Try again on a failed turn, a click the page makes itself sends nothing, and one real click sends the user's message again through the app's door by its user.send, never its id";
 
@@ -74,10 +75,11 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
   let switchedOff = false;
   const refusals = () => ctx.appLog().split("\n").filter((l) => l.includes(`tree: ${COPY_ID}:`) && l.includes("refused"));
   try {
-    await toAlphasTab(ctx);
-    const bot = (await rpc.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha");
-    if (bot === undefined) return fail("no bot alpha");
-    const session = bot.mainSession;
+    await toSessionTab(ctx);
+    // The code session the window shows (the newest: MOSS Code's window has no bots, lane MC), where its turns run.
+    const coding = (await rpc.request<{ sessions: { id: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["coding"] })).sessions
+      .filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0));
+    const session = coding[0]?.id ?? _session;
     const log = async () => (await rpc.request<{ events: Record<string, unknown>[] }>("session.history", { id: session, limit: 500 })).events;
 
     // 1. The copy installs behind its OK card, which says what it holds, and runs once pressed.
@@ -93,11 +95,11 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
       async () => JSON.stringify(await rpc.request("plugin.get", { id: COPY_ID }).catch(() => null)).slice(0, 300));
     said.push("the copy installed behind an OK card that says it reads your conversations and sends as you, and runs after the press");
 
-    // 2. It takes the bundled one's place in Alpha's tab (the bundled one switched off, as a user would in the Plugins page).
+    // 2. It takes the bundled one's place in the code session's tab (the bundled one switched off, as a user would in the Plugins page).
     await rpc.request("plugin.setEnabled", { id: BUNDLED, enabled: false }, 30_000);
     switchedOff = true;
-    await toAlphasTab(ctx);
-    const doc = await until("the conversation copy's document in Alpha's tab", 60_000, async () => (await layerDocs(cdp, COPY_ID))[0],
+    await toSessionTab(ctx);
+    const doc = await until("the conversation copy's document in the code session's tab", 60_000, async () => (await layerDocs(cdp, COPY_ID))[0],
       async () => (await cdp.documents()).map((d) => d.url.slice(0, 70)).join(" || "));
 
     // 3. Its rows: a turn's words and reply show in the copy.
@@ -108,8 +110,17 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
       const t = await copyText(ctx);
       return t.includes(hello) && t.includes("ACCEPTANCE-REPLY-OK") ? true : undefined;
     }, async () => (await copyText(ctx)).replace(/\s+/g, " ").slice(-300));
-    said.push(`the copy drew Alpha's turn (${hello} and her reply) in its own document (${doc.url.slice(0, 40)}…)`);
+    said.push(`the copy drew the code session's turn (${hello} and its reply) in its own document (${doc.url.slice(0, 40)}…)`);
 
+    // 4. Try again, and the door's press rule on it: a bots' feature this round (a failed turn in a code session shows its error
+    //    row with no Try again), so the MOSS unit's; what still holds here is that the door refused the copy nothing it holds.
+    const away = partElsewhere("plugin-app", "4");
+    if (away !== undefined) {
+      const refused = refusals();
+      if (refused.length > 0) fail(`the door refused the copy's calls: ${refused.slice(-3).join(" | ")}`);
+      said.push(`the door refused the copy nothing; 4 and the press rule on its Try again run elsewhere (${away.owner === "MOSS" ? "lane MA's moss unit" : away.owner}): ${away.why}`);
+      return said.join("; ");
+    }
     // 4. Try again: a failed turn's error row in the copy; a page-made click sends nothing; one real click sends it again.
     const tag = `ACCEPTANCE-FAIL-${randomBytes(4).toString("hex").toUpperCase()}`;
     const words = `${tag} say hello again from the copy`;

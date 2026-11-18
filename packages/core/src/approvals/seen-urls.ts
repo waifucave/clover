@@ -176,6 +176,15 @@ export class SeenUrls {
     for (const u of urlsIn(input.text)) this.#of(sessionId).add(u);
   }
 
+  /** An agent or coding session's turn (agents/manager.ts `turnStarted`): only the user's own message there (never a bot's
+   *  brief, which a bot can send whenever it likes) counts its addresses and starts its root's budget again. A bot's agent
+   *  is charged to the bot's conversation (`rootOf`), so a turn the bot brought about never resets that budget. */
+  agentTurn(sessionId: string, input: TurnInput, origin: TurnOrigin | undefined): void {
+    if (input.from !== "user" || originOf(input) !== "user") return;
+    this.turnStarted(sessionId, origin);
+    this.input(sessionId, input);
+  }
+
   /** A web search's result (the bundled plugin's, as the tool returned it, before any hook): its hits' addresses. */
   searchResult(sessionId: string, response: unknown): void {
     const s = this.#of(sessionId);

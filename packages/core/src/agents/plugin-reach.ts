@@ -29,6 +29,7 @@ import type { PluginRegistry } from "../contracts/plugin-registry";
 import { glossaryIndex, parseFrontmatter, searchGlossary, SKILL_BODY_MAX_CHARS, type GlossaryItem } from "../runtime-sdk/turn-loop/glossary";
 import type { HookSession, HookSource } from "../runtime-sdk/turn-loop/hooks";
 import { partsServe } from "../runtime-sdk/turn-loop/only-backends";
+import { toolDisplay } from "../runtime-sdk/tool-display";
 import type { BotMcpServer, McpRunner } from "../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeCallContext, BridgeToolDef, BridgeToolSource } from "./bridge/tools";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
@@ -55,6 +56,9 @@ export interface AgentPluginReachDeps {
   /** J's router: runs a call where its server is. */
   runner: McpRunner;
   judge: AgentToolJudge;
+  /** A call's result as its tool returned it, before any hook, in the session `agentCheckContext` makes: what the
+   *  conversation saw, as a bot's turn reports it (a web search's hits, for the seen addresses). */
+  observeResult?: (ctx: BotSessionContext, served: string, result: unknown, input: Record<string, unknown>) => void;
   /** The plugins' hooks, read at each call (the bots' `agentHookSource`). Absent: none. */
   hooks?: HookSource;
   registry: Pick<PluginRegistry, "entries" | "get" | "list" | "points">;
@@ -176,6 +180,7 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
         description: bridgeToolDescription(t),
         inputSchema: t.tool.inputSchema as Record<string, unknown>,
         ...(t.tool.load === "preload" ? { preload: true } : {}),
+        ...(t.tool.title === undefined ? {} : { displayTitle: t.tool.title }),
       }));
     },
     ...(d.settled === undefined ? {} : { settled: (ms: number) => d.settled!(ms) }),
@@ -225,10 +230,14 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
           session: s.id, as: agentCallerOf(s), callId: c.callId, ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
         });
         const out = { content: Array.isArray(result.content) && result.content.length > 0 ? result.content : [{ type: "text", text: "" }], isError: result.isError === true };
-        if (hooks === "none") return out;
+        try { d.observeResult?.(agentCheckContext(s, ctx.level), served, out, verdict.input); } catch { /* an observer never fails a call */ }
+        // What its successful result shows in the conversation, as a bot's (`ToolDisplays.put`: a success's valid one only).
+        const display = out.isError ? undefined : toolDisplay(result.structuredContent);
+        const shown = <T extends { content: unknown[]; isError: boolean }>(r: T) => (display === undefined || r.isError ? r : { ...r, display });
+        if (hooks === "none") return shown(out);
         const after = await hooks.toolAfter(hookSession, { name: served, callId: c.callId }, verdict.input, out, ctx.signal);
         const a = after as { content?: unknown; isError?: unknown } | undefined;
-        return a !== undefined && Array.isArray(a.content) ? { content: a.content, isError: a.isError === true } : out;
+        return shown(a !== undefined && Array.isArray(a.content) ? { content: a.content, isError: a.isError === true } : out);
       } catch (err) {
         return text(err instanceof Error ? err.message : String(err));
       }
@@ -348,7 +357,9 @@ export function agentGlossary(d: Pick<AgentPluginReachDeps, "registry" | "server
       const item = items.find((i) => i.name === name) ?? items.find((i) => i.name.toLowerCase() === name.toLowerCase());
       if (item === undefined) return { name, found: false };
       const body = item.body ?? item.description;
-      return { name: item.name, kind: item.kind, text: body.length > SKILL_BODY_MAX_CHARS ? `${body.slice(0, SKILL_BODY_MAX_CHARS)}\n[cut at ${SKILL_BODY_MAX_CHARS} characters]` : body };
+      const capped = body.length > SKILL_BODY_MAX_CHARS ? `${body.slice(0, SKILL_BODY_MAX_CHARS)}\n[cut at ${SKILL_BODY_MAX_CHARS} characters]` : body;
+      // A skill's words as a bot's Glossary gives them (glossary.ts): inside its `<skill name="…">` tag.
+      return { name: item.name, kind: item.kind, text: item.kind === "skill" ? `<skill name="${item.name}">\n${capped.trim()}\n</skill>` : capped };
     });
     return { results, loaded };
   };

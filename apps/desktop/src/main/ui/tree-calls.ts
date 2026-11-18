@@ -20,11 +20,13 @@
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path. A part's OWN plugin's
 // settings are not here: every part reads and writes them through the plugin API (`settings.get`/`set`, the core's
 // `plugin.layer.call`), at every scope, as its host half does.
-import { TopPluginId, allowedMethods } from "@waifucave/moss-protocol";
+import { TopPluginId, allowedMethods, dataKindOfSession, kindCapability, type SessionKind } from "@waifucave/moss-protocol";
 import { withImplied } from "@waifucave/moss-plugin-sdk";
 import { displayText } from "@waifucave/moss-plugin-sdk/plain";
 import { resend } from "./resend";
 import { messageAction } from "./message-action";
+import { homedir } from "node:os";
+import { isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 /** The bundled tree whose notices are the app's own: never muted. */
 const MOSS_TREE = "moss";
 
@@ -38,6 +40,9 @@ export const PLUGINS_MANAGE = "plugins.manage";
 export const TOOLS_PERMISSIONS = "tools.permissions";
 export const ACCOUNT_READ = "account.read";
 export const COMMANDS_RUN = "commands.run";
+export const USER_SEND = "user.send";
+export const SESSIONS_START = "sessions.start";
+export const SESSIONS_READ = "sessions.read";
 
 export interface TreeCall {
   disposition: Disposition;
@@ -45,12 +50,25 @@ export interface TreeCall {
    *  shape needs, or a list of which any one will do (the call itself then holds each to its own reach). Absent on a
    *  `read`/`gesture` call: no capability (each such call says why). */
   needs?: string | readonly string[] | ((params: unknown) => string | readonly string[]);
+  /** Every one of these, as well as `needs` (an archived session, whose kind the previous app didn't keep, is read
+   *  with both kinds' capabilities). */
+  needsAll?: readonly string[];
+  /** Reads by kind (spec revision 19, §3.6): the session the params name (`id` or `session`) decides the capability,
+   *  `kindCapability("conversation.*", <its kind>)`: `sessions.read` for a code session, `conversation.read` for a bot's
+   *  conversation. Main asks the core for the session on its own connection; `needs` lists both, so only a holder of
+   *  one of them gets that far. */
+  byKind?: true;
 }
 
 const READ: Disposition = "read";
 const GESTURE: Disposition = "gesture";
 const read = (needs: TreeCall["needs"]): TreeCall => ({ disposition: READ, needs });
 const press = (needs: TreeCall["needs"]): TreeCall => ({ disposition: GESTURE, needs });
+
+/** The two capabilities a session's reads are by kind (`kindCapability`'s for `conversation.*`). */
+const KIND_READS = [kindCapability("conversation.*", "sessions"), kindCapability("conversation.*", "bots")] as const;
+const SESSION_READ: TreeCall = { disposition: READ, needs: KIND_READS, byKind: true };
+const ARCHIVE_READ: TreeCall = { disposition: READ, needsAll: KIND_READS };
 
 const obj = (v: unknown): Record<string, unknown> => (v !== null && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
@@ -62,9 +80,11 @@ export function uiSetShape(params: unknown): "lists" | "look" {
 }
 
 /** The pick uses each capability gives. */
-export type PickUse = "plugin.install" | "plugin.dev.add";
+export type PickUse = "plugin.install" | "plugin.dev.add" | "agent.start";
 const PICK_USES: Readonly<Record<string, readonly PickUse[]>> = {
   [PLUGINS_MANAGE]: ["plugin.install", "plugin.dev.add"],
+  // A new session's folder (spec §9.4): the person picks it in main's own dialog; the page holds only the token.
+  [SESSIONS_START]: ["agent.start"],
 };
 
 /** A `plugin.settings.*` call that names a bot, from a holder of `bots.edit`, is a bot's Edit page's (its own bot's
@@ -104,18 +124,23 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   // `conversation.message.action` spot THE CALLING PART DECLARES (none: refused) and runs that plugin's own handler, which
   // chose to contribute it, with `{ session, seq }` only (`message-action.ts`).
   "conversation.messageAction": { disposition: GESTURE },
-  // A session's reads: its changes, outputs, context use and connectors; the archive.
-  "session.diff": read("conversation.read"),
-  "session.outputs": read("conversation.read"),
-  "session.context": read("conversation.read"),
-  "session.connectors": read("conversation.read"),
-  "archive.history": read("conversation.read"),
-  "archive.list": read("conversation.read"),
+  // A session's reads, by the kind of the session named (`byKind`): its changes, outputs, context use and connectors.
+  // The archive (the previous app's sessions, whose kind isn't kept): both kinds' capabilities.
+  "session.diff": SESSION_READ,
+  "session.outputs": SESSION_READ,
+  "session.context": SESSION_READ,
+  "session.connectors": SESSION_READ,
+  "archive.history": ARCHIVE_READ,
+  "archive.list": ARCHIVE_READ,
   // The account MOSS is signed in with: its name and email.
   "account.status": read(ACCOUNT_READ),
-  // The models a bot can be set to, with whether each provider is signed in.
-  "models.list": read("bots.read"),
+  // The models a session or a bot can be set to, with whether each provider is signed in (the catalog, no session's data).
+  "models.list": read(["sessions.read", "bots.read"]),
   "computer.list": read("computers.read"),
+  // A new session (spec §9.4): the coding agents plugins bring, with what this computer has; and starting one, the
+  // person's own press, in a folder they picked in main's dialog (a pick token, `agentStart`), with no prompt.
+  "agent.backends": read(SESSIONS_READ),
+  "agent.start": press(SESSIONS_START),
   "plugin.logs": read("logs.read"),
   // Settings' Tools tab: what each plugin tool may do and the card rules saved for one bot. A value decides whether a
   // card is raised at all, so setting one or taking one back is the user's own press.
@@ -188,8 +213,11 @@ export function treeVerdict(capabilities: ReadonlySet<string> | readonly string[
     case "card": return { ok: false, owned: true, why: `${method} changes what the app may do: it needs a card` };
     case "unserved": return { ok: false, owned: true, why: `${method} isn't served by the core` };
     default: {
+      const all = call.needsAll ?? [];
+      const lacking = all.filter((c) => !holds(capabilities, c));
+      if (lacking.length > 0) return { ok: false, owned: !LAYER_METHODS.has(method), why: `${method} needs the ${all.map((c) => `${c} capability`).join(" and the ")}` };
       const needs = needsOf(call, params);
-      if (needs.length === 0) return { ok: true, call };
+      if (needs.length === 0) return { ok: true, call, ...(all.length > 0 ? { by: all.join("+") } : {}) };
       const by = needs.find((c) => holds(capabilities, c));
       if (by !== undefined) return { ok: true, call, by };
       // Without it, as any plugin's part: the layer door for a method it has (the core's own rules), refused otherwise.
@@ -253,22 +281,18 @@ const ENTRY_REF = /^[a-z][a-z0-9/-]*(#[A-Za-z0-9._-]+)?$/;
 
 const SPOT_NAME = /^[a-z][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*$/;
 
-/** The bot editor's `ui.set`, one of two shapes and nothing else, for one bot:
- *  * its switched-off layout patches, `{ patch: { lists: [{ spot: "bot.tab", bot, order: [], hidden }] } }`;
- *  * the plugins' hides it switched off in one spot (its "Hidden by plugins"), `{ patch: { lists: [{ spot, bot,
- *    order: [], hidden: [], shown }] } }`: main sets only that list's `shown`, keeping the user's order and hidden.
- *  Main merges either into the stored lists (`mergeTabPatchList`, `mergeShownList`). */
-export function editorListParams(params: unknown): { bot: string; spot: string; hidden?: string[]; shown?: string[] } | { why: string } {
-  const no = { why: "the bot editor sets only which layout patches and which plugins' hides are off in one bot's tab" };
+/** The bot editor's `ui.set`, one shape and nothing else, for one bot: the plugins' hides it switched off in one spot (its
+ *  "Hidden by plugins"), `{ patch: { lists: [{ spot, bot, order: [], hidden: [], shown }] } }`: main sets only that list's
+ *  `shown`, keeping the user's order and hidden, merged into the stored lists (`mergeShownList`). A tab's layout patches
+ *  are retired with the bot tab (G8): a list that switches them off is refused, and one stored before is kept as it is. */
+export function editorListParams(params: unknown): { bot: string; spot: string; shown: string[] } | { why: string } {
+  const no = { why: "the bot editor sets only which plugins' hides are off in one bot's spot" };
   const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
   if (patch === null || typeof patch !== "object" || Object.keys(patch).length !== 1) return no;
   const lists = (patch as { lists?: unknown }).lists;
   if (!Array.isArray(lists) || lists.length !== 1 || lists[0] === null || typeof lists[0] !== "object") return no;
   const l = lists[0] as Record<string, unknown>;
-  if (l.spot === "bot.tab") {
-    const t = tabPatchParams(params);
-    return "why" in t ? t : { bot: t.bot, spot: "bot.tab", hidden: t.hidden };
-  }
+  if (l.spot === "bot.tab") return { why: "a bot tab's layout patches are retired with the bot tab" };
   if (Object.keys(l).some((k) => !["spot", "bot", "order", "hidden", "shown"].includes(k))) return no;
   if (typeof l.spot !== "string" || l.spot.length > 128 || !SPOT_NAME.test(l.spot)) return no;
   if (typeof l.bot !== "string" || !BOT_ID.test(l.bot)) return { why: "which bot?" };
@@ -288,27 +312,6 @@ export function mergeShownList(lists: unknown, spot: string, bot: string, shown:
   const order = was?.order ?? [];
   const hidden = was?.hidden ?? [];
   return order.length === 0 && hidden.length === 0 && shown.length === 0 ? kept : [...kept, { spot, bot, order, hidden, ...(shown.length > 0 ? { shown: [...shown] } : {}) }];
-}
-
-/** The `bot.tab` shape of the bot editor's `ui.set` (see `editorListParams`). */
-export function tabPatchParams(params: unknown): { bot: string; hidden: string[] } | { why: string } {
-  const no = { why: "the bot editor sets only which layout patches and which plugins' hides are off in one bot's tab" };
-  const patch = params !== null && typeof params === "object" ? (params as { patch?: unknown }).patch : undefined;
-  if (patch === null || typeof patch !== "object" || Object.keys(patch).length !== 1) return no;
-  const lists = (patch as { lists?: unknown }).lists;
-  if (!Array.isArray(lists) || lists.length !== 1 || lists[0] === null || typeof lists[0] !== "object") return no;
-  const l = lists[0] as Record<string, unknown>;
-  if (Object.keys(l).some((k) => !["spot", "bot", "order", "hidden"].includes(k)) || l.spot !== "bot.tab") return no;
-  if (typeof l.bot !== "string" || !BOT_ID.test(l.bot)) return { why: "which bot?" };
-  if (l.order !== undefined && !(Array.isArray(l.order) && l.order.length === 0)) return no;
-  if (!Array.isArray(l.hidden) || l.hidden.length > 256 || !l.hidden.every((h) => typeof h === "string" && h.length <= 300 && ENTRY_REF.test(h))) return no;
-  return { bot: l.bot, hidden: [...new Set(l.hidden as string[])] };
-}
-
-/** The stored lists with one bot's `bot.tab` entry replaced (removed when nothing is off); every other list kept. */
-export function mergeTabPatchList(lists: unknown, bot: string, hidden: readonly string[]): unknown[] {
-  const kept = (Array.isArray(lists) ? lists : []).filter((l) => !(l !== null && typeof l === "object" && (l as { spot?: unknown }).spot === "bot.tab" && (l as { bot?: unknown }).bot === bot));
-  return hidden.length === 0 ? kept : [...kept, { spot: "bot.tab", bot, order: [], hidden: [...hidden] }];
 }
 
 /** The wrap kinds whose value is a folder or file (a token from `ui.pick`); the others' value is the pasted text. */
@@ -485,6 +488,26 @@ function userLayerWhy(params: unknown): string | undefined {
   return keys.some((k) => k === "avatar" || k === "avatarCredit") ? "a bot's figure is the avatar plugin's own setting now, not its layer" : undefined;
 }
 
+/** Why a read by kind (`byKind`) isn't the calling part's, or undefined: the session the params name, as the core holds
+ *  it (asked on the app's own connection, never the page's word for its kind), must be of a kind whose capability the
+ *  part's plugin holds. A session the core doesn't know is refused. */
+async function byKindWhy(r: TreeRoute, has: (cap: string) => boolean): Promise<string | undefined> {
+  const p = obj(r.params);
+  const id = typeof p.id === "string" ? p.id : typeof p.session === "string" ? p.session : undefined;
+  if (id === undefined) return `${r.method} names a session`;
+  let kind: SessionKind | undefined;
+  try {
+    const got = obj(await r.request("session.get", { id }));
+    const k = obj(got.session).kind;
+    kind = k === "bot" || k === "side-thread" || k === "agent" || k === "coding" ? k : undefined;
+  } catch {
+    kind = undefined;
+  }
+  if (kind === undefined) return `no session ${id.slice(0, 80)}`;
+  const cap = kindCapability("conversation.*", dataKindOfSession({ kind }));
+  return has(cap) ? undefined : `${r.method} on this session needs the ${cap} capability`;
+}
+
 /** One call from a part, routed: a call this table names by the capability the part's plugin holds (on the app's own
  *  connection), anything else through the layer door. */
 export async function routeCall(r: TreeRoute): Promise<unknown> {
@@ -498,6 +521,13 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     throw r.refuse(verdict.why);
   }
   const has = (cap: string) => holds(c.capabilities, cap);
+  if (verdict.call.byKind === true) {
+    const why = await byKindWhy(r, has);
+    if (why !== undefined) {
+      r.log(`tree: ${part}: ${r.method} refused (${why})`);
+      throw r.refuse(why);
+    }
+  }
   // Only listing what is newer is a read; applying one is the user's press.
   const listing = r.method === "plugin.update" && (r.params as { list?: unknown } | null | undefined)?.list === true;
   // A call refused for what it says spends nobody's press: the shapes that can be checked without the core first.
@@ -521,7 +551,7 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
         throw r.refuse(shaped.why);
       }
       const now = (await r.request("ui.settings", {})) as { lists?: unknown } | undefined;
-      const lists = shaped.spot === "bot.tab" ? mergeTabPatchList(now?.lists, shaped.bot, shaped.hidden ?? []) : mergeShownList(now?.lists, shaped.spot, shaped.bot, shaped.shown ?? []);
+      const lists = mergeShownList(now?.lists, shaped.spot, shaped.bot, shaped.shown);
       return r.request("ui.set", { patch: { lists } });
     }
     const shaped = settingsParams(r.params);
@@ -535,6 +565,7 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
   if ((r.method === "plugin.settings.get" || r.method === "plugin.settings.set") && namesBot(r.params) && verdict.by === BOTS_EDIT) return editorSetting(r, part);
   if (r.method === "ui.pick") return pick(r, part, c);
   if (r.method === "session.resend") return resend(r, part);
+  if (r.method === "agent.start") return agentStart(r, part);
   if (r.method === "conversation.messageAction") return messageAction(r, part);
   if (r.method === "ui.secret") return secret(r, part, has(PLUGINS_MANAGE));
   if (PAGE_METHODS.has(r.method)) {
@@ -662,7 +693,7 @@ async function pick(r: TreeRoute, part: string, c: TreeCaller): Promise<{ token:
   // The uses the part's plugin's capabilities give (`PICK_USES`), never its id.
   const allowed = Object.entries(PICK_USES).flatMap(([cap, uses]) => (holds(c.capabilities, cap) ? uses : []));
   const use = allowed.find((u) => u === p.use);
-  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
+  if (use === undefined) throw r.refuse(allowed.length === 0 ? "a pick takes the plugins.manage or sessions.start capability" : `a pick is for ${allowed.join(" or ")}, and says which`);
   const filters = Array.isArray(p.filters)
     ? p.filters.slice(0, 8).flatMap((f: unknown) => {
       const x = (f ?? {}) as { name?: unknown; extensions?: unknown };
@@ -684,4 +715,32 @@ function pickedName(path: string): string {
   return neutralised(path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "", 80);
 }
 
+/** A picked folder as a place in the folder tree: `home/<this computer>/<the folder inside the user's home>`, or
+ *  undefined for one outside the home (a session works in a folder of this computer's home, §9.3). */
+export function homeTreePathOf(path: string, computer: string, home: string = homedir()): string | undefined {
+  if (!isAbsolute(path)) return undefined;
+  const rel = relative(resolvePath(home), resolvePath(path));
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  return `home/${computer}/${rel.split(sep).join("/")}`;
+}
+
+/** `agent.start` from a part (the shell's page that starts a session): `{ backend, root: <pick token> }` and nothing
+ *  else. The token is the one `ui.pick` issued this part for this use, spent here; the folder is the person's pick in
+ *  main's dialog, inside their home, never a path from the page; the computer is this one (main's own listing). The
+ *  session starts with no prompt (the agent starts with the person's first message). The page gets back the session's
+ *  id only. */
+async function agentStart(r: TreeRoute, part: string): Promise<{ session: string }> {
+  const raw = obj(r.params);
+  if (typeof raw.backend !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(raw.backend)) throw r.refuse("which agent?");
+  const path = (r.tokens ?? new PickTokens()).redeem(raw.root, part, "agent.start");
+  if (path === undefined) throw r.refuse("pick the session's folder first");
+  const listed = obj(await r.request("computer.list", {}));
+  const self = (Array.isArray(listed.computers) ? listed.computers : []).map(obj).find((c) => c.link === "self");
+  if (typeof self?.name !== "string") throw r.refuse("this computer isn't known yet");
+  const root = homeTreePathOf(path, self.name);
+  if (root === undefined) throw r.refuse("a session works in a folder of this computer's home: pick one inside it");
+  const got = obj(await r.request("agent.start", { backend: raw.backend, computer: self.name, root }));
+  if (typeof got.session !== "string") throw r.refuse("the session didn't start");
+  return { session: got.session };
+}
 

@@ -31,6 +31,7 @@ import { agentToolDefs } from "../tools";
 import { readAgentRecord } from "../records";
 import { REDACTED_TOKEN } from "../transcript";
 import { StallWatchdog } from "../watchdog";
+import { SeenUrls } from "../../approvals/seen-urls";
 import { fakeAdmissions, waitFor, World, type WorldOptions } from "./world";
 
 // Real processes: generous on a loaded CI runner.
@@ -158,6 +159,34 @@ describe("Agent", () => {
     expect(await w.approvals.answer(card.id, { optionId: always.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
     await waitFor(() => w.report("answer").length > 0, "the answer");
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
+  });
+
+  test("a code session's agent's edit card reads like a bot's tool card: the tool in MOSS's names, its input as JSON text, its file; its Always saves an agent file rule that answers the same edit", async () => {
+    const edit = (n: number) => ({ tool: { kind: "edit", title: "Write notes.md", rawInput: { file_path: "notes.md", content: `line ${n}\nline two` }, paths: [] as string[] } });
+    const w = make({ quirks: S5_CURSOR_QUIRKS, level: "ask", script: [[edit(1), edit(2), { say: "Written." }]] });
+    const path = join(w.project, "notes.md");
+    const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool?: { paths: string[] } }[][] };
+    for (const step of script.script[0]!) if (step.tool !== undefined) step.tool.paths = [path];
+    await Bun.write(w.agent.config, JSON.stringify(script));
+    await w.manager.start({ caller: { kind: "user", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() }, backend: "fake", prompt: "Write it.", root: "home/Studio/project1" });
+    const card = await waitFor(() => w.approvals.cards()[0], "a card");
+    expect(card.kind).toBe("agent-permission");
+    expect(card.fields["what"]).toEqual({ type: "text", text: "Write" });
+    // The input as its JSON (the app draws it as text), without ACP's own kind; no command field for an edit.
+    expect(JSON.parse((card.fields["detail"] as { code: string }).code)).toEqual({ file_path: "notes.md", content: "line 1\nline two" });
+    expect(card.fields["command"]).toBeUndefined();
+    expect(card.fields["paths"]).toEqual({ type: "list", items: [path] });
+    // The same choices a bot's card has: an Always, whose reach the card states (the file, for no bot, on this computer).
+    const always = card.options.find((o) => o.remember === "always");
+    expect(always).toBeDefined();
+    // (Its `rule` rows are the broker's own: test/approvals/rule-field.test.ts.)
+    const frame = w.approvals.frameChannel(card.id)!;
+    expect(await w.approvals.answer(card.id, { optionId: always!.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
+    expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual([`Agent(fake):Write(${path})`]);
+    // The second edit of that file is answered by the rule: no second card.
+    await waitFor(() => (w.report("answer").length >= 2 ? true : undefined), "both answers");
+    expect(w.approvals.cards()).toEqual([]);
+    expect(w.approvals.rules()).toHaveLength(1);
   });
 
   test("a move whose input names a file the ACP listing doesn't read is unresolved (a card every time, saying why); one fully listed isn't", async () => {
@@ -585,6 +614,25 @@ describe("models and sessions", () => {
     expect(m2.reattach({ ...view, status: "stopped" })).toBe(false);
     rmSync(join(w.mossHome, "run", "agents", `${r.sessionId}.json`));
     expect(m2.reattach({ ...view, status: "idle" })).toBe(false);
+  });
+
+  test("a code session the user opened and never typed into answers after a restart: its agent starts new in that turn", async () => {
+    const w = make({ script: [[{ say: "Hello after the restart." }]] });
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32) });
+    const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, { caller: { kind: "user", client: "app" } })) as { session: string };
+    const view = w.host.get(session)!;
+    expect(view).toMatchObject({ kind: "coding", status: "ready" });
+    // The agent never launched, so its record has no agent session id to resume.
+    expect(readAgentRecord(w.mossHome, session)?.agentSessionId).toBeUndefined();
+    const { host2, m2 } = await restart(w, WELL_BEHAVED_QUIRKS);
+    m2.sessionHooks().reattach([view]);
+    expect(host2.get(session)).toMatchObject({ kind: "coding", backend: "fake" });
+    await host2.sendUser(session, { text: "Hi", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() });
+    await waitFor(() => host2.get(session)!.status === "idle" && w.report("prompt").length === 1, "the turn after the restart");
+    // Started new (no resume or load of an id it never had), and the record now holds the id for the next restart.
+    expect(w.report("session").map((x) => x["how"])).toEqual(["new"]);
+    expect(readAgentRecord(w.mossHome, session)?.agentSessionId).toBe("fake-session-1");
+    await host2.stop(session);
   });
 });
 
@@ -1031,6 +1079,48 @@ describe("the agent methods", () => {
     expect(backends).toMatchObject([{ id: "fake", protocol: "acp", placement: "local", computers: [{ computer: "Studio", installed: true, version: "1.0.0", sandboxed: true, marks: [] }] }]);
     expect(await methods["agent.definitions"]!({}, user)).toEqual({ definitions: [{ id: "reviewer", name: "Reviewer", pluginId: "acme", backend: "fake", model: "m1", root: "home/Studio/project1" }] });
     void WELL_BEHAVED_QUIRKS;
+  });
+
+  test("agent.start with a plugin's agent definition: its words go before the user's, the session names it; one that reaches no code session is refused", async () => {
+    const w = make({ script: [[{ say: "Tidied." }]] });
+    const asked: { name: string; backend: string }[] = [];
+    const definition = (name: string, backend: string) => {
+      asked.push({ name, backend });
+      return name === "notes:tidier" ? { pluginId: "notes", id: "tidier", name: "Tidier", prompt: "Tidy the notes file." } : undefined;
+    };
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32), definition });
+    const user = { caller: { kind: "user" as const, client: "app" as const } };
+    const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1", definition: "notes:tidier", prompt: "Say when you're done." }, user)) as { session: string };
+    expect(asked).toEqual([{ name: "notes:tidier", backend: "fake" }]);
+    expect(w.host.get(session)).toMatchObject({ kind: "coding", definition: "notes:tidier", title: "Tidier" });
+    expect(readAgentRecord(w.mossHome, session)).toMatchObject({ definition: "notes:tidier" });
+    await waitFor(() => w.report("prompt").length === 1, "the first turn");
+    expect(String(w.report("prompt")[0]!["text"])).toContain("Tidy the notes file.\n\n---\n\nSay when you're done.");
+    // A name no plugin gives a code session (another plugin's, or one scoped to bots) starts nothing.
+    const none = await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1", definition: "notes:other", prompt: "Hi" }, user).catch((e: unknown) => e);
+    expect(isContractError(none, "not_found")).toBe(true);
+    // With no lookup at all (a daemon with no plugins yet), a definition is refused too, never ignored.
+    const bare = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32) });
+    expect(isContractError(await bare["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1", definition: "notes:tidier" }, user).catch((e: unknown) => e), "not_found")).toBe(true);
+  });
+
+  test("a code session's turn reports what it saw as a bot's does: an address in the user's message counts as seen", async () => {
+    const seen = new SeenUrls();
+    const turns: { id: string; origin: string | undefined }[] = [];
+    const w = make({
+      script: [[{ say: "Reading it." }]],
+      turnStarted: (id, input, origin) => { turns.push({ id, origin }); seen.agentTurn(id, input, origin); },
+    });
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio", localDevice: () => "a".repeat(32) });
+    const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, { caller: { kind: "user", client: "app" } })) as { session: string };
+    expect(seen.seen(session, "https://docs.example.com/guide")).toBe(false);
+    await w.host.sendUser(session, { text: "Read https://docs.example.com/guide please.", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() });
+    await waitFor(() => w.host.get(session)!.status === "idle" && w.report("prompt").length === 1, "the turn");
+    expect(turns).toEqual([{ id: session, origin: "user" }]);
+    expect(seen.seen(session, "https://docs.example.com/guide")).toBe(true);
+    // Never an address it didn't give, and never in another session.
+    expect(seen.seen(session, "https://docs.example.com/other")).toBe(false);
+    expect(seen.seen("agent_other", "https://docs.example.com/guide")).toBe(false);
   });
 
   test("the terminal here starts a session as this computer's device, and on a read-only computer it is held to read-only", async () => {

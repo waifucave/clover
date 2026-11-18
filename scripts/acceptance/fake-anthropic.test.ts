@@ -106,12 +106,25 @@ describe("what the fake acts on: the newest directive in the user text", () => {
         ] }),
       });
       expect(JSON.stringify(await both.json())).toContain("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-11223344");
+      // The same with the runtime's tool changes after it (a `system` message last): still the message, never the call again.
+      const trailing = await fetch(`${fake.url}/v1/messages`, {
+        method: "POST", headers: { "x-api-key": "dummy-key", "content-type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-5-5", max_tokens: 10, messages: [
+          { role: "user", content: [{ type: "text", text: "ACCEPTANCE-HOLDTOOL-AB12CD keep going" }] },
+          { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "mcp__echo__Echo", input: { text: "acceptance-hold" } }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "[interrupted]", is_error: false }, { type: "text", text: "ACCEPTANCE-TAG-55667788 are you back?" }] },
+          { role: "system", content: [{ type: "tool_addition", tool: { definition: { name: "mcp__echo__Echo", input_schema: { type: "object" } } } }] },
+        ] }),
+      });
+      const trailingBody = JSON.stringify(await trailing.json());
+      expect(trailingBody).toContain("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-55667788");
+      expect(trailingBody).not.toContain("tool_use");
       const r = await send("ACCEPTANCE-SLOW-AB12CD keep going\n\nACCEPTANCE-TAG-0F1E2D3C say hello");
       expect(JSON.stringify(await r.json())).toContain("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-0F1E2D3C");
       expect(fake.requests.at(-1)!.answered).toBe("text");
       const abort = new AbortController();
       const held = send("ACCEPTANCE-SLOW-AB12CD keep going", abort.signal).catch(() => undefined);
-      for (let i = 0; i < 50 && fake.requests.length < 3; i++) await Bun.sleep(20);
+      for (let i = 0; i < 50 && fake.requests.length < 4; i++) await Bun.sleep(20);
       expect(fake.requests.at(-1)!.answered).toBe("slow");
       abort.abort();
       await held;
@@ -162,5 +175,17 @@ describe("the agent row's echo probe (row 1.93): an agent calls the echo plugin'
     } finally {
       fake.close();
     }
+  });
+});
+
+describe("toolNamed: the tool a call line names, among the offered names", () => {
+  test("by name, by the end of an MCP name, and a code session's bridge short form; never another tool", async () => {
+    const { toolNamed } = await import("./fake-anthropic");
+    expect(toolNamed("save_place", "save_place")).toBe(true);
+    expect(toolNamed("mcp__moss_0123456789abcdef__example-weather-forecast__forecast", "forecast")).toBe(true);
+    expect(toolNamed("mcp__moss_0123456789abcdef__example-weather__save_place_290261", "save_place")).toBe(true);
+    expect(toolNamed("mcp__x__save_place_extra", "save_place")).toBe(false);
+    expect(toolNamed("mcp__x__unsave_place", "save_place")).toBe(false);
+    expect(toolNamed("mcp__x__forecast2", "forecast")).toBe(false);
   });
 });

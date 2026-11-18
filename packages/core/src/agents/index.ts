@@ -133,6 +133,8 @@ export interface AgentsOptions {
   /** The user's home folder, which `home/<Computer>/` names (the OS's by default): where an outside ACP client's folder
    *  is placed in the tree (`moss-core code-agent`). */
   userHome?: string;
+  /** Each agent or coding session's turn as it starts (the manager's `turnStarted`). */
+  turnStarted?: AgentManagerOptions["turnStarted"];
   log?: (line: string) => void;
 }
 
@@ -201,6 +203,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; moss: B
     ...(o.pause ? { pause: o.pause } : {}),
     ...(o.botWriteRoots ? { childCommandsHeld: (c: { bot: string; parent?: string; rootPath: string; level: Level | undefined }) => grantsCover(o.botWriteRoots!(c.parent, c.bot, c.level), c.rootPath, botChildHomes.os) } : {}),
     childRunsLater: (c, path) => botChildRunsLater(c.fence, { ...botChildHomes, root: c.rootPath, level: c.level }, path),
+    ...(o.turnStarted ? { turnStarted: o.turnStarted } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
   const wire = (id: string) => manager.wire(id);

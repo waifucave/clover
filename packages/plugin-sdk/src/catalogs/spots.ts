@@ -20,7 +20,7 @@ export interface SpotInfo {
   readonly name: string;
   readonly shape: "single" | "list" | "keyed";
   /** Who declares it: the app's plugin runtime (a core point), or a bundled part of `moss`. */
-  readonly declaredBy: "app" | "shell" | "settings" | "bot-tab" | "bot-editor" | "composer" | "conversation" | "file-view" | "island" | "pill";
+  readonly declaredBy: "app" | "shell" | "settings" | "session-tab" | "composer" | "conversation" | "file-view" | "island" | "pill";
   /** What Bots offers a bot's own plugin here, on that bot's tab only (§5.5, the owner's rule of November 14): the whole
    *  spot (`true`), only these keys (a keyed spot: `panel`'s Browser and agent panels), or nothing (`false`: a part
    *  beside the bot fills it, `"app": true`). */
@@ -61,10 +61,7 @@ const inConversation = { bot: BotRef, session: z.string(), item, ctx };
 /** The message kinds `conversation.message` is keyed by (§5.5). */
 export const MESSAGE_KINDS = ["user", "bot", "tool", "approval", "question", "routine-result", "task-notification", "agent-report", "note"] as const;
 /** The routes `main` is keyed by (§5.5). */
-export const MAIN_ROUTES = ["bot", "agent", "settings", "plugins", "app"] as const;
-
-/** The keys of `chrome.action`. */
-export const CHROME_ACTIONS = ["edit", "session", "browser"] as const;
+export const MAIN_ROUTES = ["agent", "settings", "plugins", "app"] as const;
 
 export const SPOTS: readonly SpotInfo[] = [
   // The app's core points (§5.3).
@@ -79,26 +76,18 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "app.tray", shape: "list", declaredBy: "app", botsOffer: false, needs: ["tray"], fields: titled,
     props: none,
     doc: "A line in the menu-bar (tray) menu, with the `tray` capability: `toggles` names one of the plugin's own `app.surface` entries (the line hides and shows it, and the choice is kept), or `command` names a command of the plugin's own that the line runs." },
-  // Retired by spec revision 19 (§5.5, items 99 and 100, G8): `bot.tab`, `bot.header`, `bot.side`, and `BOTS_OFFER`
-  // below (the figure's spots left with the avatar, G7: `catalogs/retired.ts`). A bot has no tab in a plugin window; lane MC removes
-  // them with bots out of MOSS Code's window.
-  { name: "bot.tab", shape: "keyed", declaredBy: "app", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }),
-    doc: "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key." },
+  // A bot's tab and its points (`bot.tab`, `bot.header`, `bot.side`, `bot.controls`, the bar, the `chrome.*` parts, the
+  // sidebar's bot rows, the bot editor's sections) are retired by spec revision 19 (§5.5, items 99 and 100, G8): a bot has
+  // no tab in a plugin window (`catalogs/retired.ts` says where each went).
   // The shell's spots (`app.root`).
   { name: "sidebar", shape: "single", declaredBy: "shell", botsOffer: false, context: ["bot"], fields: none, props: none,
     doc: "The sidebar: the app's own, the same on every tab. A plugin may fill it for the whole app (its own component, in its own frame, reading and acting through `shell.*`); an entry tied to a bot's tab (`when.bot`, or inside a bot's plugin without `app: true`) is refused." },
-  { name: "bar", shape: "single", declaredBy: "shell", botsOffer: true, context: ["bot"], fields: none, props: none,
-    doc: "The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: \"none\"` there is no bar at all and the bot's own controls (`bot.controls`) sit in its page." },
-  { name: "sidebar.bot", shape: "keyed", declaredBy: "shell", botsOffer: false, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef, selected: z.boolean(), state: z.string(), needsYou: z.object({ cards: z.number().int(), questions: z.number().int() }) }),
-    doc: "A bot's row in the sidebar, keyed by bot: its state and what waits for the user." },
   { name: "sidebar.app", shape: "list", declaredBy: "shell", botsOffer: false,
     fields: z.object({ title: Text, icon: Path, opens: utf16(128, 1) }), props: none,
     doc: "App buttons in the sidebar; `opens` names the `main` and `panel` key it shows." },
   { name: "main", shape: "keyed", declaredBy: "shell", botsOffer: false, keys: MAIN_ROUTES, fields: none,
     props: z.object({ route: z.string(), params: z.record(z.string(), z.string()) }),
-    doc: "The main area, keyed by route: bot, agent, settings, plugins, app." },
+    doc: "The main area, keyed by route: agent, settings, plugins, app." },
   { name: "panel", shape: "keyed", declaredBy: "shell", botsOffer: ["browser", "agent"], context: ["session"], placeholder: true, fields: titledOpt,
     props: z.object({ app: z.string(), session: z.string().optional(), bot: z.string().optional() }),
     doc: "The panel host, keyed by panel: each stock panel (session, terminal, diff, files, browser, agent) is a plugin of its own, and replaceable. An entry whose key is not a stock one ADDS a panel of the plugin's own, with a button of its own beside the stock ones: it needs a `title`, `icon` is optional, and `when.session` (`bot`, `agent`, `coding`) says which tabs show it (all when absent). Inside a bot's plugin it shows on that bot's tab only; beside the bot (`\"app\": true`) or in a plugin with no bot, on every tab of the kinds it names. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a stock key no plugin fills shows the host's placeholder." },
@@ -107,53 +96,27 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "A spot inside each panel view, keyed by the view's id." },
   { name: "settings.section", shape: "list", declaredBy: "settings", botsOffer: false, fields: titled, props: none,
     doc: "A section of the settings screen, which the settings part (`main` key `settings`) declares." },
-  { name: "bot.editor.section", shape: "list", declaredBy: "bot-editor", botsOffer: false, context: ["bot"], fields: titledOpt,
-    props: z.object({ bot: BotRef }),
-    doc: "A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given." },
   { name: "status", shape: "list", declaredBy: "shell", botsOffer: false, fields: titledOpt, props: none,
     doc: "The shell's status bar; the inherited `tile` becomes an entry here (§12)." },
-  // A bot's tab (`bot.tab`).
-  { name: "bot.header", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "The tab's header." },
-  { name: "bot.header.action", shape: "list", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: titled,
-    props: z.object({ bot: BotRef }), doc: "Buttons in the tab's header." },
-  { name: "bot.side", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "The tab's side area." },
-  { name: "bot.controls", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "The bot's own drawn controls (its name, buttons, a handle to drag the window), placed by its layout and drawn by its plugin in its own frame; what they do is `shell.*`, the user's own press." },
-  // The window's own chrome, placed by the tab's layout (the shell draws each part, in the shape the bot's theme `shell` tokens
-  // say; a press on one is the app's own press). With `bar.mode: "none"` a part the layout does not place is not shown, except
-  // the sidebar toggle and a place to drag the window, which the shell then adds in a minimal fallback.
-  { name: "chrome.title", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "The tab's title (the bot's name), drawn by the shell; it opens the tab's menu where it has one." },
-  { name: "chrome.action", shape: "keyed", declaredBy: "bot-tab", botsOffer: true, keys: CHROME_ACTIONS, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "One of the shell's buttons, keyed: `edit` (the bot's editor), `session` (the column beside the conversation), `browser` (the browser panel). Drawn by the shell; a press is the app's own." },
-  { name: "chrome.actions", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "Every button the layout does not place one by one: the buttons plugins add to the bar (`bot.header.action`), the editor, the panel toggles." },
-  { name: "chrome.sidebar", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "The sidebar's show/hide button, drawn by the shell. A layout with no bar that does not place it gets a small one from the shell: the user never loses the sidebar." },
-  { name: "chrome.drag", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "A region that drags the window (empty, as wide and tall as the node the layout gives it). A layout with no bar that places none gets a thin one from the shell." },
-  { name: "chrome.panels", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], fields: none,
-    props: z.object({ bot: BotRef }), doc: "Where the panels the user opens show (the session column excepted), in the shape the layout's container gives them. Left out, they show where the bot's `panel.mode` says (the standard right column by default)." },
-  { name: "conversation", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], needs: ["conversation.read"], fields: none,
+  // A session's tab (the shell's `Tabs.tsx`): the conversation over the composer.
+  { name: "conversation", shape: "single", declaredBy: "session-tab", botsOffer: true, context: ["bot"], needs: ["sessions.read"], fields: none,
     props: z.object({ bot: BotRef, session: z.string() }), doc: "The conversation view." },
-  { name: "composer", shape: "single", declaredBy: "bot-tab", botsOffer: true, context: ["bot"], needs: ["conversation.post"], fields: none,
+  { name: "composer", shape: "single", declaredBy: "session-tab", botsOffer: true, context: ["bot"], needs: ["conversation.post"], fields: none,
     props: z.object({ bot: BotRef, session: z.string() }),
     doc: "The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; each acting one needs the user's own key press or click, and a model switch on a bot's main conversation is a sealed card unless it is the default composer's. The default composer also lists the running plugins' commands and runs one as the user (its slash menu); another plugin's entry doesn't get those." },
   { name: "composer.action", shape: "keyed", declaredBy: "composer", botsOffer: true, context: ["bot"], fields: titledOpt,
     props: z.object({ bot: BotRef, session: z.string() }),
     doc: "The composer's buttons, keyed by action id: an entry keyed `attach`, `model`, `level`, `send` or `stop` draws that button another way (or hides it); one with any other key adds a button of its own, drawn among the buttons plugins add, in the spot's order (`order`, then plugin and id)." },
   { name: "conversation.message", shape: "keyed", declaredBy: "conversation", botsOffer: true, keys: MESSAGE_KINDS, keep: ["approval"],
-    needs: ["conversation.read"], context: ["bot"], fields: none, props: z.object(inConversation),
+    needs: ["sessions.read"], context: ["bot"], fields: none, props: z.object(inConversation),
     doc: "One message, keyed by kind; the `approval` cell can't be hidden. The `tool` cell gets a run of calls." },
-  { name: "conversation.message.extra", shape: "list", declaredBy: "conversation", botsOffer: true, needs: ["conversation.read"], context: ["bot"],
+  { name: "conversation.message.extra", shape: "list", declaredBy: "conversation", botsOffer: true, needs: ["sessions.read"], context: ["bot"],
     fields: none, props: z.object(inConversation),
     doc: "Add-ons under each message, with a UI of their own. A plugin outside MOSS's own tree draws in its own layer, so each one is a frame under every message: for a button, use `conversation.message.action`." },
   { name: "conversation.message.action", shape: "list", declaredBy: "conversation", botsOffer: true, context: ["bot"],
     fields: z.object({ title: Text, icon: Path.optional(), call: HandlerName, on: z.enum(["assistant", "user", "both"]).optional() }), props: none,
     doc: "A small button the conversation draws itself in a message's row of actions (beside copy and speak), no frame and no component: `title` is its tooltip, `icon` a picture in the plugin's folder, `on` which messages carry it (a finished reply by default). A press runs `call`, a handler in the plugin's own `ui` table, with `{ session, seq }` (the message's place in the session's log) and nothing else; it answers `{ ok: true }`, or `{ note }`, one sentence the conversation shows under the message for a moment." },
-  { name: "tool.result", shape: "keyed", declaredBy: "conversation", botsOffer: true, needs: ["conversation.read"], context: ["bot"], fields: none,
+  { name: "tool.result", shape: "keyed", declaredBy: "conversation", botsOffer: true, needs: ["sessions.read"], context: ["bot"], fields: none,
     props: z.object({ ...inConversation, tool: z.string() }),
     doc: "A tool's result, keyed by tool name (`mcp__blender__*`); `item` is the one call." },
   { name: "file.preview", shape: "keyed", declaredBy: "file-view", botsOffer: true, fields: none,
@@ -224,12 +187,12 @@ export function botsOffer(spot: string, key?: string): boolean {
 /** The spots inside a bot's tab: what a bot's layout places (the top bar and the panels are the window's, placed by
  *  the `chrome.*` parts). */
 export const BOT_TAB_INSIDE: ReadonlySet<string> = new Set(
-  SPOTS.filter((s) => s.botsOffer === true && s.name !== "bar").map((s) => s.name),
+  SPOTS.filter((s) => s.botsOffer === true).map((s) => s.name),
 );
 
 /** The parts that look the same on every tab (§5.5): no entry tied to a bot's tab (`when.bot`) dresses them, whichever
  *  plugin's it is, and a bot's own plugin never does. */
-export const SAME_ON_EVERY_TAB: ReadonlySet<string> = new Set(["sidebar", "sidebar.bot", "sidebar.app", "settings.section", "bot.editor.section"]);
+export const SAME_ON_EVERY_TAB: ReadonlySet<string> = new Set(["sidebar", "sidebar.app", "settings.section"]);
 export function spotInfo(name: string): SpotInfo | undefined {
   return SPOTS.find((s) => s.name === name);
 }

@@ -1,7 +1,6 @@
 // The sidebar (the `sidebar` spot, spec §5.5), laid out the way a desktop agent app's is: room for the
-// window's controls at the top, a switch between the bots and the code, then New, Search, Outputs, Plugins
-// and More, then the bots (with their live agents and what needs the user) or the coding sessions grouped
-// by project folder, banners for safe mode, the pause switch and the link to the main computer, and the
+// window's controls at the top, then New, Search, Outputs, Plugins and More, then the code sessions grouped
+// by project folder (MOSS Code's window has no bots, spec §9.4), banners for safe mode, the pause switch and the link to the main computer, and the
 // account with the settings gear at the bottom. Collapsed, it is a rail of icons, each with its
 // accessible name. It paints no background of its own: the window frame puts the sidebar's material
 // (or its solid colour) behind it.
@@ -10,13 +9,11 @@ import {
   MossMark,
   IconArchive,
   IconArrow,
-  IconBots,
   IconBranch,
   IconChart,
   IconChevronDown,
   IconChevronRight,
   IconClose,
-  IconCode,
   IconFolder,
   IconGear,
   IconGlobe,
@@ -34,15 +31,13 @@ import {
 } from "./icons";
 import { S } from "./strings";
 import { needsYouCount } from "./types";
-import type { AgentStatus, SidebarAgent, SidebarApp, SidebarBot, SidebarProject, SidebarProps, SidebarRoute, SidebarSession } from "./types";
+import type { AgentStatus, SidebarApp, SidebarProject, SidebarProps, SidebarRoute, SidebarSession } from "./types";
 
 const FINISHED: ReadonlySet<AgentStatus | "idle"> = new Set(["completed", "failed", "stopped"]);
 
 export function sameRoute(a: SidebarRoute, b: SidebarRoute): boolean {
   if (a.kind !== b.kind) return false;
   switch (a.kind) {
-    case "bot":
-      return a.botId === (b as typeof a).botId;
     case "agent":
       return a.agentId === (b as typeof a).agentId;
     case "app":
@@ -52,22 +47,9 @@ export function sameRoute(a: SidebarRoute, b: SidebarRoute): boolean {
   }
 }
 
-/** The words after a bot's name: what it is doing, else nothing. */
-export function botStatusLine(bot: SidebarBot): string {
-  if (bot.state === "idle") return bot.activity ?? "";
-  return S.botStatus[bot.state];
-}
 
 const SAFE_ASSET = /^(blob:|data:image\/|moss-asset:)/i;
 
-function Portrait({ bot }: { bot: SidebarBot }) {
-  const url = bot.portraitUrl && SAFE_ASSET.test(bot.portraitUrl) ? bot.portraitUrl : undefined;
-  return (
-    <span className="cl-sidebar__portrait" data-status={bot.state} aria-hidden="true">
-      {url ? <img src={url} alt="" /> : <span className="cl-sidebar__initial">{bot.name.slice(0, 1).toUpperCase()}</span>}
-    </span>
-  );
-}
 
 function Count({ count, label }: { count: number | undefined; label: (n: number) => string }) {
   if (!count) return null;
@@ -78,80 +60,6 @@ function Count({ count, label }: { count: number | undefined; label: (n: number)
   );
 }
 
-/** What a live tab is doing, in words beside its dot; never cut. */
-function State({ status }: { status: AgentStatus | "idle" }) {
-  const text = S.agentStatus[status];
-  if (!text) return null;
-  return (
-    <span className="cl-sidebar__state" data-status={status}>
-      {text}
-    </span>
-  );
-}
-
-function AgentRow({ agent, route, onNavigate, onClose }: { agent: SidebarAgent; route: SidebarRoute; onNavigate: SidebarProps["onNavigate"]; onClose?: (id: string) => void }) {
-  const target: SidebarRoute = { kind: "agent", agentId: agent.id };
-  const selected = sameRoute(route, target);
-  const finished = FINISHED.has(agent.status);
-  return (
-    <li className="cl-sidebar__agent" data-status={agent.status}>
-      <button
-        type="button"
-        className="cl-sidebar__row cl-sidebar__row--nested"
-        aria-current={selected ? "page" : undefined}
-        title={`${agent.title} · ${agent.backend}${agent.computer ? ` · ${agent.computer}` : ""}`}
-        onClick={() => onNavigate(target)}
-      >
-        <span className="cl-sidebar__dot" data-status={agent.status} aria-hidden="true" />
-        <State status={agent.status} />
-        <span className="cl-sidebar__title">{agent.title}</span>
-      </button>
-      {finished && onClose && (
-        <button type="button" className="cl-sidebar__close" aria-label={S.close(agent.title)} title={S.close(agent.title)} onClick={() => onClose(agent.id)}>
-          <IconClose />
-        </button>
-      )}
-    </li>
-  );
-}
-
-function BotRow({ bot, props }: { bot: SidebarBot; props: SidebarProps }) {
-  const target: SidebarRoute = { kind: "bot", botId: bot.id };
-  const selected = sameRoute(props.route, target);
-  const line = botStatusLine(bot);
-  const standard = (
-    <button
-      type="button"
-      className="cl-sidebar__row cl-sidebar__bot"
-      aria-current={selected ? "page" : undefined}
-      onClick={() => props.onNavigate(target)}
-    >
-      <Portrait bot={bot} />
-      <span className="cl-sidebar__title cl-sidebar__name">{bot.name}</span>
-      {line ? (
-        <span className="cl-sidebar__line" data-status={bot.state}>
-          {line}
-        </span>
-      ) : (
-        <span className="cl-sidebar__fill" />
-      )}
-      {bot.unread && <span className="cl-sidebar__unread" role="img" aria-label={S.unread} title={S.unread} />}
-      <Count count={needsYouCount(bot.needsYou)} label={S.needsYou} />
-    </button>
-  );
-  return (
-    <li className="cl-sidebar__bot-item">
-      {props.renderBot ? props.renderBot(bot, standard) : standard}
-      {bot.agents && bot.agents.length > 0 && (
-        <ul className="cl-sidebar__agents" aria-label={S.agentsOf(bot.name)}>
-          {bot.agents.map((agent) => (
-            <AgentRow key={agent.id} agent={agent} route={props.route} onNavigate={props.onNavigate} onClose={props.onCloseAgent} />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
 
 function SessionRow({ session, props }: { session: SidebarSession; props: SidebarProps }) {
   const target: SidebarRoute = { kind: "agent", agentId: session.id };
@@ -273,7 +181,7 @@ function banners(props: SidebarProps): Banner[] {
 }
 
 export function Sidebar(props: SidebarProps) {
-  const { side, collapsed = false } = props;
+  const { collapsed = false } = props;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set(props.initialFoldedProjects ?? []));
   const fold = (id: string) =>
     setFolded((prev) => {
@@ -308,7 +216,7 @@ export function Sidebar(props: SidebarProps) {
   );
 
   return (
-    <nav className="cl-sidebar" aria-label={S.nav} data-collapsed={collapsed || undefined} data-side={side}>
+    <nav className="cl-sidebar" aria-label={S.nav} data-collapsed={collapsed || undefined} data-side="code">
       {/* The window's own controls (the traffic lights on macOS) draw over this row's start. */}
       <div className="cl-sidebar__top">
         <span className="cl-sidebar__controls" aria-hidden="true" />
@@ -321,25 +229,8 @@ export function Sidebar(props: SidebarProps) {
       </div>
       {collapsed && toggle && <div className="cl-sidebar__rail-toggle">{toggle}</div>}
 
-      <div className="cl-sidebar__switch" role="radiogroup" aria-label={S.sides}>
-        {(["bots", "code"] as const).map((key) => (
-          <button
-            key={key}
-            type="button"
-            role="radio"
-            aria-checked={side === key}
-            className="cl-sidebar__switch-option"
-            aria-label={collapsed ? (key === "bots" ? S.sideBots : S.sideCode) : undefined}
-            onClick={() => props.onSideChange(key)}
-          >
-            {key === "bots" ? <IconBots /> : <IconCode />}
-            {!collapsed && <span>{key === "bots" ? S.sideBots : S.sideCode}</span>}
-          </button>
-        ))}
-      </div>
-
       <ul className="cl-sidebar__actions">
-        {action("new", <IconPlus />, side === "bots" ? S.newChat : S.newSession, props.onNew)}
+        {action("new", <IconPlus />, S.newSession, props.onNew)}
         {action("search", <IconSearch />, S.search, props.onSearch)}
         {action("outputs", <IconOutputs />, S.outputs, props.onOutputs)}
         {action("plugins", <IconPlugins />, S.plugins, props.onPlugins)}
@@ -347,35 +238,10 @@ export function Sidebar(props: SidebarProps) {
       </ul>
 
       <div className="cl-sidebar__scroll">
-        {side === "bots" ? (
-          <section className="cl-sidebar__section" aria-label={S.bots}>
-            {!collapsed && <h2 className="cl-sidebar__heading">{S.bots}</h2>}
-            <ul className="cl-sidebar__list">
-              {props.bots.map((bot) =>
-                collapsed ? (
-                  <li key={bot.id}>
-                    <button
-                      type="button"
-                      className="cl-sidebar__row cl-sidebar__bot"
-                      aria-current={sameRoute(props.route, { kind: "bot", botId: bot.id }) ? "page" : undefined}
-                      aria-label={[bot.name, botStatusLine(bot), needsYouCount(bot.needsYou) ? S.needsYou(needsYouCount(bot.needsYou)) : ""].filter(Boolean).join(", ")}
-                      title={bot.name}
-                      onClick={() => props.onNavigate({ kind: "bot", botId: bot.id })}
-                    >
-                      <Portrait bot={bot} />
-                      {needsYouCount(bot.needsYou) ? <span className="cl-sidebar__count cl-sidebar__count--corner">{needsYouCount(bot.needsYou)}</span> : null}
-                    </button>
-                  </li>
-                ) : (
-                  <BotRow key={bot.id} bot={bot} props={props} />
-                ),
-              )}
-            </ul>
-          </section>
-        ) : (
+        {(
           <section className="cl-sidebar__section" aria-label={S.projects}>
             {collapsed ? (
-              <ul className="cl-sidebar__list">
+              <ul className="cl-sidebar__list cl-sidebar__projects">
                 {(props.projects ?? []).map((project) => (
                   <li key={project.id}>
                     <button

@@ -34,8 +34,8 @@ export function TerminalEntry({ props }: { props: TerminalEntryProps }) {
   const counter = useRef(0);
 
   const open = async () => {
-    if (!term || !props.session || !api.conversation?.get) return;
-    const session = await api.conversation.get(props.session);
+    if (!term || !props.session || !api.sessions?.get) return;
+    const session = await api.sessions.get(props.session);
     const { terminalId } = await term.open({ computer: session.computer, ...(session.root ? { cwd: session.root } : {}), session: props.session, cols: COLS, rows: ROWS });
     counter.current += 1;
     setTabs((t) => [...t, { id: terminalId, title: `${session.computer} ${counter.current}` }]);

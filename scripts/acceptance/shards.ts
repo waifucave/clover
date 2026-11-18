@@ -62,6 +62,7 @@ import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
 import { RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP } from "./release-step";
 import { MOSS_STEPS } from "./moss-step";
 import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP } from "./host-step";
+import { ROWS_ELSEWHERE } from "./elsewhere";
 
 export type UnitId = "main" | "chain" | "window-1" | "window-2" | "window-3" | "examples" | "bundled-tools" | "cards" | "workshop" | "reopen" | "arrivals" | "addons" | "archive" | "acp" | "builder-examples" | "workshop-points" | "release" | "browser" | "plugin-app" | "models" | "moss" | "stage" | "tab-flash" | "cold" | "idle" | "host" | "browser-host" | "surface-copy-host";
 
@@ -132,14 +133,18 @@ const OTHERS: readonly Unit[] = [
 
 /** Every unit, the `chain` first, its rows every row of `steps` the others don't name; then the window's three. */
 export function units(steps: readonly string[] = FULL_STEPS): Unit[] {
+  // A row another lane runs (elsewhere.ts) is in no unit: MOSS Code's run never reaches it, and a full table says who does.
+  const here = (r: string) => !ROWS_ELSEWHERE.has(r);
   const windows: Unit[] = WINDOW_STARTS.map(([id]) => ({
     id,
-    rows: windowIndexes(id)!.map((i) => `window: ${UI_STEPS[i]}`).filter((r) => steps.includes(r)),
+    rows: windowIndexes(id)!.map((i) => `window: ${UI_STEPS[i]}`).filter((r) => steps.includes(r) && here(r)),
     phase: "parallel" as const,
     estimate: WINDOW_ESTIMATES[id]!,
   }));
+  const others = OTHERS.map((u) => ({ ...u, rows: u.rows.filter(here) }));
   const taken = new Set([...OTHERS, ...windows].flatMap((u) => u.rows));
-  return [{ id: "chain", rows: steps.filter((s) => !taken.has(s)), phase: "parallel", estimate: 270 }, ...windows, ...OTHERS];
+  // A unit all of whose rows run elsewhere is left out (`stage`, `tab-flash`).
+  return [{ id: "chain", rows: steps.filter((s) => !taken.has(s) && here(s)), phase: "parallel", estimate: 270 }, ...windows, ...others.filter((u) => u.rows.length > 0)];
 }
 
 /** Which unit runs a row (by name). */

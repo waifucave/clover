@@ -43,9 +43,9 @@ export function FilesEntry({ props }: { props: FilesEntryProps }) {
   };
 
   useEffect(() => {
-    if (!props.session || !api.conversation?.get) return;
+    if (!props.session || !api.sessions?.get) return;
     let live = true;
-    api.conversation.get(props.session).then(
+    api.sessions.get(props.session).then(
       (s) => live && s.root && setWhere({ root: s.root, computer: s.computer }),
       () => undefined,
     );

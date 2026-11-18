@@ -113,6 +113,9 @@ describe("a plugin's http MCP server", () => {
       const listed = await until("its tool listed", 20_000, () => w.mcp.servers("bot").find((s) => s.server === "remote-tools-remote")?.tools.find((t) => t.name === "echo"))
         .catch((err) => { throw new Error(`${(err as Error).message}; log ${w.lines.join(" | ")}`); });
       expect(listed.description).toBe("Says it back.");
+      // And to a code session on MOSS's own agent (the bridge lists what `servers` gives a coding session).
+      const coding = w.mcp.servers("coding", "moss-code").find((s) => s.server === "remote-tools-remote");
+      expect(coding?.tools.map((t) => t.name)).toEqual(["echo"]);
       // A call answers, carrying the key.
       const out = await w.mcp.call({ server: "remote-tools-remote", tool: "echo", input: { text: "hello" }, as: BOT, session: "b_alpha" } as never);
       expect(out.isError ?? false).toBe(false);

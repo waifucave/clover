@@ -6,7 +6,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIENT_BARE_IMPORTS, resolveShell } from "@waifucave/moss-plugin-sdk";
+import { CLIENT_BARE_IMPORTS } from "@waifucave/moss-plugin-sdk";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
@@ -32,14 +32,15 @@ afterAll(() => {
 });
 const APP = { caller: { kind: "user", client: "app" } } as never;
 
-/** A second bot plugin, in a temp folder of its own: a bot and nothing else. */
-const botPlugin = (id: string): string => {
-  const dir = join(temp(`moss-d-bot-${id}-`), id);
-  mkdirSync(join(dir, "bot"), { recursive: true });
-  writeFileSync(join(dir, "bot", "instructions.md"), "Be kind.\n");
-  writeFileSync(join(dir, "moss.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { moss: "^1.0.0" }, contributes: { bot: { name: id, instructions: "bot/instructions.md" } } }));
-  return dir;
-};
+async function until<T>(what: string, ms: number, f: () => T | undefined): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = f();
+    if (v !== undefined) return v;
+    if (Date.now() > end) throw new Error(`${what}: not within ${ms} ms`);
+    await Bun.sleep(20);
+  }
+}
 
 /** The card's lines, as the broker holds them (a plugin-ok card's sealed list). */
 const cardText = (card: unknown): string => JSON.stringify(card);
@@ -55,16 +56,27 @@ describe("the SDK's examples install as they ship", () => {
   });
 
   test("the validate report names what each plugin brings, with the same labels the registry's records carry; a parent's include its child's", async () => {
+    // No example brings a bot (G8): Notes brings tools, a hook and its page; none of its labels is a bot's.
     const v = await validatePluginFolder(join(EXAMPLES, "example-notes"), { os: "macos" });
-    expect(v.plugin!.labels).toEqual(expect.arrayContaining(["Tools", "Bot"]));
-    const child = v.children.find((c) => c.labels.includes("Bot"))!;
-    expect(child.labels).toContain("Bot");
-    expect(v.plugin!.labels).toEqual(expect.arrayContaining(child.labels));
+    expect(v.plugin!.labels).toEqual(expect.arrayContaining(["Tools", "Hooks", "App page"]));
+    expect(v.plugin!.labels).not.toContain("Bot");
+    expect(v.children).toEqual([]);
     expect(renderValidation(v)).toContain("brings: ");
     expect(renderValidation(v)).not.toMatch(/brings:[^\n]*(plugin|type|kind)/i);
+    // A parent's labels include its child's: a folder of the run's own with a child that brings a theme.
+    const dir = join(temp("moss-d-parent-"), "acme-parent");
+    mkdirSync(join(dir, "plugins", "look", "theme"), { recursive: true });
+    writeFileSync(join(dir, "moss.json"), JSON.stringify({ manifest: 1, id: "acme-parent", name: "Parent", version: "1.0.0", engines: { moss: "^1.0.0" }, contributes: { commands: [{ name: "hi", description: "Says hi.", handler: "hi" }] }, host: { entry: "server.ts", runtime: "bun" } }));
+    writeFileSync(join(dir, "server.ts"), "export async function hi() { return { text: \"hi\" }; }\n");
+    writeFileSync(join(dir, "plugins", "look", "moss.json"), JSON.stringify({ manifest: 1, name: "Look", contributes: { themes: [{ id: "look", file: "theme/theme.json" }] } }));
+    writeFileSync(join(dir, "plugins", "look", "theme", "theme.json"), JSON.stringify({ tokens: { "color.canvas": "#FFFFFF" } }));
+    const pv = await validatePluginFolder(dir, { os: "macos" });
+    const child = pv.children[0]!;
+    expect(child.labels.length).toBeGreaterThan(0);
+    expect(pv.plugin!.labels).toEqual(expect.arrayContaining(child.labels));
   });
 
-  test("example-notes: installed, OK'd and running with its child bot; its card names its cardless tools and no network; its two lists hold", async () => {
+  test("example-notes: installed, OK'd and running, with no bot; its card names its cardless tools, its hook and no network; its two lists hold", async () => {
     const home = temp("moss-d-examples-");
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const opened = await openPluginRegistry({ mossHome: home, os: "macos", hostNetworkHeld: true, sandboxed: true, broker, secrets: new MemorySecretStore(), settleMs: 50 });
@@ -77,42 +89,42 @@ describe("the SDK's examples install as they ship", () => {
       const text = cardText(card);
       expect(text).toContain("this tool only reads, so at the default approval level it runs without asking: list_notes");
       expect(text).toContain("this tool only changes its own display, so at the default level it runs without asking: add_note");
-      expect(text).toContain("Its hooks run when its own bot's turns start, end or are compacted, and see no other bot");
+      expect(text).toContain("Its hooks see your conversations: what each tool returns.");
       expect(text).toContain("Notes tidier");
       expect(text).not.toMatch(/network|still asks|notifications/i);
       expect(await opened.registry.approve(r.id, r.treeHash)).toBe("approved");
       const rec = opened.registry.get("example-notes");
       expect(rec?.state).toBe("running");
-      expect(opened.registry.get("example-notes/bot")).toBeDefined();
+      expect(opened.registry.get("example-notes/bot")).toBeUndefined();
       // The rule the pair teaches, from the registry's own predicates: here the two lists hold, and delete_note is on
       // neither (it asks). (`fenced`: the rule as a computer whose plugin fence holds.)
       expect(pluginToolContained(opened.registry, "example-notes", "notes", "add_note", { fenced: true })).toBe(true);
       expect(pluginToolReadOnly(opened.registry, "example-notes", "notes", "list_notes", { fenced: true })).toBe(true);
       expect(pluginToolContained(opened.registry, "example-notes", "notes", "delete_note", { fenced: true })).toBe(false);
       expect(pluginToolReadOnly(opened.registry, "example-notes", "notes", "delete_note", { fenced: true })).toBe(false);
-      // Its hook's "sees no other bot" is the HOST's own-bot scope, not the example's code: with a second bot plugin in
-      // the home, the host invokes the hook for Notes keeper's sessions (its conversation and a delegation of it) and
-      // never for the other bot's, nor for a user's own coding session. The example's handler holds no check of its own.
-      const other = (await m["plugin.install"]!({ source: { from: "folder", path: botPlugin("luna") } }, APP)) as { id: string; treeHash: string };
-      expect(await opened.registry.approve(other.id, other.treeHash)).toBe("approved");
-      expect(opened.registry.get("luna")?.state).toBe("running");
-      const invoked: { pluginId: string; handler: string; bot?: string }[] = [];
+      // Its hook counts its OWN tools' calls by the HOST's tool filter, not the example's code: the host invokes it after a
+      // call of one of its tools in a bot's session and in a code session alike (a code session runs no turn hooks, only the
+      // bridge's tool hooks), and never after another plugin's tool. The example's handler holds no check of its own.
+      const invoked: { pluginId: string; handler: string; tool?: string }[] = [];
       const hooks = pluginHooks({
         registry: opened.registry,
-        host: { invoke: (async (req: InvokeRequest) => void invoked.push({ pluginId: req.pluginId, handler: req.handler, bot: (req.args as { bot?: string }).bot })) as never },
+        host: { invoke: (async (req: InvokeRequest) => void invoked.push({ pluginId: req.pluginId, handler: req.handler, tool: (req.args as { tool?: { name?: string } }).tool?.name })) as never },
       });
-      const as = (bot: string | undefined, kind: HookSession["kind"] = "bot"): HookSession => ({
+      const as = (kind: HookSession["kind"], bot?: string): HookSession => ({
         id: `s_${bot ?? "me"}_${kind}`, kind, computer: "Studio", ...(bot === undefined ? {} : { bot }),
         caller: { kind: "session", sessionId: `s_${bot ?? "me"}_${kind}`, sessionKind: kind, ...(bot === undefined ? {} : { bot }) } as Caller,
       });
-      await hooks.turnEnd(as("luna"), "done", "completed");
-      await hooks.turnEnd(as("luna", "agent"), "done", "completed");
-      await hooks.turnEnd(as(undefined, "coding"), "done", "completed");
+      const call = (name: string) => ({ name, callId: `call_${name}` });
+      await hooks.toolAfter(as("bot", "alpha"), call("mcp__acme-other__add_note"), {}, { content: [] });
+      await hooks.toolAfter(as("coding"), call("mcp__acme-other__add_note"), {}, { content: [] });
       expect(invoked).toEqual([]);
-      await hooks.turnEnd(as("example-notes/bot"), "done", "completed");
-      await hooks.turnEnd(as("example-notes/bot", "agent"), "done", "completed");
-      expect(invoked.map((i) => [i.pluginId, i.handler, i.bot])).toEqual([["example-notes", "onTurnEnd", "example-notes/bot"], ["example-notes", "onTurnEnd", "example-notes/bot"]]);
-      expect(readFileSync(join(EXAMPLES, "example-notes", "server", "index.ts"), "utf8")).not.toMatch(/args\??\.bot\s*!==/);
+      const result = { content: [{ type: "text", text: "Noted: milk" }] };
+      expect(await hooks.toolAfter(as("bot", "alpha"), call("mcp__example-notes-notes__add_note"), { text: "milk" }, result)).toEqual(result);
+      expect(await hooks.toolAfter(as("coding"), call("mcp__example-notes-notes__list_notes"), {}, result)).toEqual(result);
+      // An observer: it is told after the call, and the result goes on unchanged.
+      await until("its hook told of both calls", 5_000, () => (invoked.length === 2 ? true : undefined));
+      expect(invoked.map((i) => [i.pluginId, i.handler, i.tool])).toEqual([["example-notes", "onToolAfter", "mcp__example-notes-notes__add_note"], ["example-notes", "onToolAfter", "mcp__example-notes-notes__list_notes"]]);
+      expect(readFileSync(join(EXAMPLES, "example-notes", "server", "index.ts"), "utf8")).not.toMatch(/tool\??\.name\s*(!==|===)/);
       // Its client, TSX importing React and the UI SDK, builds to the layer's imports only.
       const built = await buildPluginModule({ entry: join(home, "plugins", "example-notes", "client", "index.tsx"), outFile: join(temp("moss-d-ex-out-"), "index.js"), side: "client" });
       for (const spec of built.imports) expect([spec, (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)]).toEqual([spec, true]);
@@ -181,26 +193,21 @@ describe("the Notes example's own logic", () => {
     // Two adds at once both land (one chain).
     await Promise.all([n.add("a"), n.add("b")]);
     expect((await n.list()).map((x) => x.text)).toEqual(["x".repeat(NOTE_TEXT_MAX), "Call back", "a", "b"]);
-    expect(await n.countTurn()).toBe(1);
-    expect(await n.countTurn()).toBe(2);
+    expect(await n.countUse()).toBe(1);
+    expect(await n.countUse()).toBe(2);
     expect(readNotes([{ id: "n1", text: "ok", at: 1 }, { id: 2 }, "junk", null])).toEqual([{ id: "n1", text: "ok", at: 1 }]);
   });
 
-  test("Notes keeper's window skin passes MOSS's own marks in both appearances (a group that fails is dropped, and the window isn't skinned)", () => {
-    const theme = JSON.parse(readFileSync(join(EXAMPLES, "example-notes", "plugins", "bot", "theme", "theme.json"), "utf8")) as { shell: never; tokens: Record<string, string>; dark: { tokens: Record<string, string> } };
-    for (const [mode, ground] of [["light", theme.tokens["color.canvas"]!], ["dark", theme.dark.tokens["color.canvas"]!], ["light", "#FFFFFF"], ["dark", "#191919"]] as const) {
-      expect([mode, ground, resolveShell(theme.shell, mode, ground).dropped]).toEqual([mode, ground, []]);
-    }
-  });
-
-  test("the host half: its tools, the hook (own bot only) and the command, over a fake store", async () => {
+  test("the host half: its tools, the hook (its own tools only) and the command, over a fake store", async () => {
     const s = store();
     const host = await import("../../../../plugin-sdk/examples/example-notes/server/index");
     host.start({ plugin: { id: "example-notes" }, storage: { synced: s } } as never);
     expect(await host.note({ text: "From the slash menu" })).toEqual({ text: "Noted: From the slash menu" });
-    await host.onTurnEnd({ bot: "example-notes/bot" });
-    expect(await host.ui!.list!(undefined, {} as never)).toMatchObject({ notes: [{ text: "From the slash menu" }], turns: 1 });
-    expect(JSON.parse(readFileSync(join(EXAMPLES, "example-notes", "moss.json"), "utf8")).contributes.hooks[0].scope).toBe("own-bot");
+    await host.onToolAfter({ tool: { name: "mcp__example-notes-notes__add_note" } });
+    expect(await host.ui!.list!(undefined, {} as never)).toMatchObject({ notes: [{ text: "From the slash menu" }], uses: 1 });
+    const hook = JSON.parse(readFileSync(join(EXAMPLES, "example-notes", "moss.json"), "utf8")).contributes.hooks[0];
+    expect(hook).toMatchObject({ on: ["tool.after"], tools: ["mcp__example-notes-notes__*"], observe: true });
+    expect(hook.scope).toBeUndefined();
     host.stop();
   });
 });

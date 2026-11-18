@@ -266,3 +266,29 @@ describe("the Browser acting card", () => {
     expect(summarize(browser(undefined), undefined, HOME)!.always).toBe("Always allow your coding sessions to click and type on browser-other.test, on this computer (Delta) only.");
   });
 });
+
+describe("a coding agent's card (agent-permission, lane MC): read like any tool card", () => {
+  const agentCard = (bot?: string) => ({
+    kind: "agent-permission", ...(bot === undefined ? {} : { bot }),
+    fields: {
+      title: { type: "text", text: "An agent wants to edit files" }, what: { type: "text", text: "Write" },
+      detail: detail({ file_path: "story.md", content: "The river rose.\nThe harvest came in autumn." }),
+      computer: { type: "text", text: "Delta" }, paths: { type: "list", items: ["/Users/me/project/story.md"] },
+      rule: { type: "rows", rows: [{ label: "kind", value: "file" }, { label: "target", value: "/Users/me/project/story.md" }, { label: "bot", value: "" }, { label: "computers", value: "Delta" }] },
+    },
+    options: [{ remember: undefined }, { remember: "always" }],
+  });
+  test("the session's own agent: a line in words, the file it resolved, the content as lines, and what Always would keep", () => {
+    const s = summarize(agentCard(), undefined, "/Users/me")!;
+    expect(s).toMatchObject({ who: "This coding session", verb: "write", target: "~/project/story.md" });
+    expect(s.preview).toMatchObject({ kind: "lines", lines: ["The river rose.", "The harvest came in autumn."] });
+    expect(s.always).toBe("Always allow: edits to ~/project/story.md, for requests that name no bot, on Delta only.");
+    // No escapes and no JSON anywhere it shows.
+    const page = previewHtml(s) + askHtml(s);
+    expect(page).not.toContain("\\n");
+    expect(page).not.toContain('"content"');
+  });
+  test("a bot's agent is named as the agent, never as its bot", () => {
+    expect(summarize(agentCard("alpha"), "Alpha", "/Users/me")!.who).toBe("Alpha's agent");
+  });
+});

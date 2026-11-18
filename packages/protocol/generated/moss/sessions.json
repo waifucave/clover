@@ -1235,7 +1235,7 @@
       }
     },
     "session.context": {
-      "doc": "How full a session's context is: its last turn's measured prompt (`turn_completed.contextTokens`) against its model's context window; null when either isn't known.",
+      "doc": "How full a session's context is: its last turn's measured prompt (`turn_completed.contextTokens`, for an agent the context it reported) against its model's context window; `{ reported: false }` for a coding session or an agent whose agent has reported none; null when neither is known.",
       "owner": "D",
       "direction": "to-daemon",
       "roles": [
@@ -1265,30 +1265,47 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "anyOf": [
           {
-            "type": "object",
-            "properties": {
-              "used": {
-                "type": "number",
-                "minimum": 0,
-                "maximum": 1
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "used": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "window": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "used",
+                  "tokens",
+                  "window"
+                ],
+                "additionalProperties": false
               },
-              "tokens": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "window": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991
+              {
+                "type": "object",
+                "properties": {
+                  "reported": {
+                    "type": "boolean",
+                    "const": false
+                  }
+                },
+                "required": [
+                  "reported"
+                ],
+                "additionalProperties": false
               }
-            },
-            "required": [
-              "used",
-              "tokens",
-              "window"
-            ],
-            "additionalProperties": false
+            ]
           },
           {
             "type": "null"

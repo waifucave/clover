@@ -145,6 +145,9 @@ export interface ApprovalRequest {
   change?: ChangeSubject;
   /** A plugin's `confirm` or OK: whose. */
   pluginId?: string;
+  /** A call to a plugin's tool: the plugin whose server the router binds it to (set by the core's approval check, never
+   *  from a call's words). The card's `ownedBy` names it, so that plugin's plain `approvals` hears and places the card. */
+  toolPlugin?: string;
   children?: Card["children"];
   /** Defaults to approve and deny, plus "always" when there is a `ruleKey` (never on a bound card, rule 9). */
   options?: CardOption[];
@@ -371,6 +374,7 @@ export function cardMetaOf(card: Card): CardMeta {
     ...(card.session === undefined ? {} : { session: card.session }),
     ...(card.bot === undefined ? {} : { bot: card.bot }),
     ...(card.pluginId === undefined ? {} : { pluginId: card.pluginId }),
+    ...(card.ownedBy === undefined ? {} : { ownedBy: [...card.ownedBy] }),
     origin: card.origin,
     issuedAt: card.issuedAt,
     expiresAt: card.expiresAt,

@@ -9,7 +9,6 @@
 // The parts reach the shell's state through one context, which only the shell's own `Window` and `Shell` provide; a tab drawn
 // outside the shell (a gallery) has none and these parts draw nothing.
 import type { BotRef } from "./local";
-import { Spot } from "@waifucave/moss-plugin-sdk/ui";
 import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
 import { IconChevronDown, IconEdit, IconSidebar } from "./icons";
 import { PanelToggleButton } from "./PanelToggles";
@@ -95,14 +94,13 @@ export function ChromeActions(): ReactNode {
   return <ChromeActionRow />;
 }
 
-/** Plugins' bar buttons, then the editor and the toggles that nothing placed (`Window` hands the same row to the standard bar). */
+/** The editor and the toggles that nothing placed (`Window` hands the same row to the standard bar). */
 export function ChromeActionRow({ skip = [] }: { skip?: readonly ChromePartId[] }): ReactNode {
   const c = useChrome();
   if (c === null || c.bot === undefined || c.kind === undefined) return null;
   const not = new Set<string>(skip);
   return (
     <div className="cl-window__toggles cl-chrome" role="toolbar" aria-label={S.panelToggles}>
-      <Spot name="bot.header.action" props={{ bot: c.bot }} />
       {!not.has("action:edit") && <ChromeEditButton />}
       <div className="cl-panel-toggles" data-kind={c.kind}>
         {(["session", "browser"] as const).filter((id) => !not.has(`action:${id}`) && c.available.includes(id)).map((id) => <PanelToggleButton key={id} id={id} kind={c.kind!} open={c.open} onToggle={c.toggleView} />)}

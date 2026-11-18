@@ -23,7 +23,7 @@ import type { MossClient } from "./client";
 import type { FakeProvider } from "./fake-anthropic";
 import type { Status } from "./steps";
 
-export const MOSS_LIST_STEP = "MOSS (the bots app) on a fresh home where only MOSS has run (no MOSS Code, no single answer key) and the bots are engine data: its list shows Alpha, offered by default (the move's record), with her face and her mood in words, and only the engine's bots";
+export const MOSS_LIST_STEP = "MOSS (the bots app) on a fresh home where only MOSS has run (no MOSS Code, no single answer key) and the bots are engine data: its list shows Alpha, the default bot (her record made by default), with her face and her mood in words, and only the engine's bots";
 export const MOSS_MESSAGE_STEP = "MOSS: a message typed and sent in Alpha's conversation reaches her one conversation (the record's main session), and her reply is drawn there as text; markup in a message stays text";
 export const MOSS_CARD_STEP = "MOSS: an approval card from Alpha's turn is drawn in her conversation in MOSS's window by the router; an answer with no press of the person's is refused by MOSS, one signed as MOSS Code with MOSS's key is refused by the engine, and a real press on its sealed Approve is taken, signed with MOSS's own registered key (program moss) on a computer with no other answer key";
 export const MOSS_AWAY_STEP = "MOSS not in front: the router places Alpha's next card off MOSS's window (the engine's card.placement) and MOSS draws none; in front again, the card comes back into her conversation and a press there answers it";
@@ -359,7 +359,9 @@ const tag = (what: string) => `ACCEPTANCE-TAG-MOSS${what.toUpperCase()}${randomB
 
 async function listRow(s: UnitState): Promise<string> {
   const a = await s.x.until("Alpha as a record (bot.records)", 60_000, async () => (await records(s.c).catch(() => [])).find((b) => b.id === "alpha"), 500);
-  if (a.madeBy.kind !== "move") s.x.fail(`Alpha's record says it was made by ${JSON.stringify(a.madeBy)}, not the move (offered by default)`);
+  // The unit's home is its own fresh one (`mossRun(true)`), made by this engine: no plugin bot was ever in it, so
+  // Alpha is the default bot (`default`); only a home that had the old plugin Alpha gets her by the move (`move`).
+  if (a.madeBy.kind !== "default") s.x.fail(`Alpha's record says it was made by ${JSON.stringify(a.madeBy)}, not by default (a home this engine made, with no plugin bot in it)`);
   const row = await s.w.waitFor<{ name: string; mood: string; face: boolean; n: number }>("Alpha's row in MOSS's list", `(() => {
     const r = document.querySelector('[data-bot-row="alpha"]');
     if (!r) return null;

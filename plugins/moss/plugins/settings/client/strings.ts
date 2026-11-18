@@ -14,7 +14,6 @@ export const S = {
     plugins: "Plugins",
     tools: "Tools",
     levels: "Levels",
-    bots: "Bots",
   } satisfies Record<SettingsSection, string>,
   later: "Nothing to set here yet.",
   laterDetail: "This page fills in with a later milestone.",

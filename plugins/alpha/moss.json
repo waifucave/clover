@@ -2,7 +2,7 @@
   "manifest": 1,
   "id": "alpha",
   "name": "Alpha",
-  "description": "MOSS's first bot: one continuous conversation, with a memory of her own, on every computer you connect.",
+  "description": "Alpha's stage, scenes and helpers. Alpha herself is the default bot MOSS offers (engine data, not a plugin); her figure and scenes become a pack for the bundled avatar plugin.",
   "icon": "assets/portrait.svg",
   "version": "1.0.0",
   "scope": "own-bot",
@@ -205,24 +205,6 @@
     }
   },
   "contributes": {
-    "bot": {
-      "name": "Alpha",
-      "instructions": "bot/instructions.md",
-      "greeting": "bot/greeting.md",
-      "memory": "bot/memory",
-      "model": {
-        "default": "anthropic/claude-sonnet-5-5",
-        "effort": "medium"
-      },
-      "theme": "alpha",
-      "layout": "tab/layout.json"
-    },
-    "themes": [
-      {
-        "id": "alpha",
-        "file": "tab/theme.json"
-      }
-    ],
     "mcpServers": {
       "stage": {
         "type": "host",
@@ -273,7 +255,10 @@
       }
     ],
     "island.line": [
-      { "id": "activity", "handler": "islandLine" }
+      {
+        "id": "activity",
+        "handler": "islandLine"
+      }
     ],
     "skills": [
       "skills/*/SKILL.md"
@@ -374,44 +359,6 @@
       {
         "lang": "ja",
         "file": "locales/ja.json"
-      }
-    ],
-    "ui": [
-      {
-        "spot": "conversation",
-        "id": "pane-conversation",
-        "style": "tab/pane.json"
-      },
-      {
-        "spot": "composer",
-        "id": "pane-composer",
-        "style": "tab/pane.json"
-      },
-      {
-        "spot": "bot.header",
-        "id": "header",
-        "component": "AlphaHeader"
-      },
-      {
-        "spot": "bot.controls",
-        "id": "controls",
-        "component": "AlphaControls"
-      },
-      {
-        "spot": "bot.side",
-        "id": "room",
-        "component": "AlphaRoom"
-      },
-      {
-        "spot": "conversation.message.action",
-        "id": "pin",
-        "title": "Pin to her stage",
-        "icon": "assets/pin.svg",
-        "call": "pinReply",
-        "on": "assistant",
-        "when": {
-          "bot": "alpha"
-        }
       }
     ]
   },

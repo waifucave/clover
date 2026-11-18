@@ -21,7 +21,7 @@
 import { randomUUID } from "node:crypto";
 import { BRIDGE_TOOLS_CHANGED_NOTIFICATION, MOSS_PROTOCOL_VERSION } from "@waifucave/moss-protocol";
 import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer } from "@waifucave/clover-agent-sdk/acp";
-import { listedBridgeTool, type BridgeToolDef } from "./tools";
+import { glossaryResultText, listedBridgeTool, type BridgeToolDef } from "./tools";
 
 export const BRIDGE_ENV = { token: "MOSS_BRIDGE_TOKEN", session: "MOSS_BRIDGE_SESSION", socket: "MOSS_BRIDGE_SOCKET" } as const;
 
@@ -139,7 +139,7 @@ export function runBridge(env: Record<string, string | undefined>, io: BridgeIo)
             }
             if (name === "Glossary") {
               const r = await fromDaemon("glossary.query", { ...(args["query"] === undefined ? {} : { query: args["query"] }), ...(args["load"] === undefined ? {} : { load: args["load"] }) });
-              return textResult(JSON.stringify(r, null, 2), false);
+              return textResult(glossaryResultText(r as { results: unknown[]; loaded: unknown[] }), false);
             }
             const r = (await fromDaemon("bridge.call", { callId: randomUUID(), tool: name, input: args })) as { content: unknown[]; isError: boolean };
             return { content: r.content, isError: r.isError };

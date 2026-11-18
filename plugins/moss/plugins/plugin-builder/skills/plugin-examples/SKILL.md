@@ -698,11 +698,10 @@ export function Hello({ props }: { props: { size?: string } }) {
 }
 ```
 
-### Example: A bot with its own tab, and parts beside it (`ex-buddy`)
+### Example: A bot, and parts beside it (`ex-buddy`)
 
-A plugin with a bot draws in what Bots offers on the bot's tab (`bot.header`, `bot.side`,
-`bot.controls`, …): each entry gets `props.bot`, the bot it is drawn for, and shows only on that bot's tab. A part for
-anywhere else (a Settings section, the status bar, an island tab) is beside the bot: here the Settings section is the
+A plugin with a bot gives MOSS a bot (its `bot` entry); a bot has no tab in MOSS Code's window, so what the plugin draws
+is beside the bot. A part for anywhere (a Settings section, the status bar, an island tab) is beside the bot: here the Settings section is the
 same plugin's entry marked `"app": true`, which follows the app's rules, gets a line of its own on the OK card and comes
 under one switch with every other part beside the bot. A child plugin in `plugins/<folder>/` is the other way, with a
 switch of its own; here the status-bar line is one. One OK covers the folder.
@@ -713,14 +712,12 @@ File `moss.json`:
   "manifest": 1,
   "id": "ex-buddy",
   "name": "Ex buddy",
-  "description": "A bot with a header and a side panel of its own, and a Settings section beside it.",
+  "description": "A bot, with a Settings section beside it and a status line in a child plugin.",
   "engines": { "moss": "^1.0.0" },
   "client": { "entry": "client/index.ts" },
   "contributes": {
     "bot": { "name": "Ex buddy", "instructions": "bot/instructions.md" },
     "ui": [
-      { "spot": "bot.header", "id": "header", "component": "BuddyHeader" },
-      { "spot": "bot.side", "id": "side", "component": "BuddySide" },
       { "spot": "settings.section", "id": "buddy", "component": "BuddySettings", "title": "Ex buddy", "app": true }
     ]
   }
@@ -734,21 +731,8 @@ You are Ex buddy, a cheerful study partner. Keep answers short and ask one quest
 
 File `client/index.ts`:
 ```ts
-// Ex buddy's tab (its header and its side panel, each handed the bot it is drawn for) and, beside the bot, its
-// Settings section.
+// Beside Ex buddy: its Settings section.
 import { createElement as h } from "@waifucave/moss-plugin-sdk/ui";
-
-interface TabProps { props: { bot: { id: string; name: string | { en: string } } } }
-
-const nameOf = (bot: TabProps["props"]["bot"]) => (typeof bot.name === "string" ? bot.name : bot.name.en);
-
-export function BuddyHeader({ props }: TabProps) {
-  return h("header", { style: { padding: "var(--moss-space-m)", fontWeight: 600 } }, nameOf(props.bot));
-}
-
-export function BuddySide() {
-  return h("aside", { style: { padding: "var(--moss-space-m)", color: "var(--moss-color-text-muted)" } }, "Today: one page of notes.");
-}
 
 export function BuddySettings() {
   return h("p", null, "Ex buddy has nothing to set yet.");

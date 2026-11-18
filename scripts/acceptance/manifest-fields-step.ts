@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { bridgeShortName } from "../../packages/core/src/agents/plugin-reach";
 import { resolveShell } from "../../packages/plugin-sdk/src/formats/shell";
+import { retiredMessage, retiredPoint } from "../../packages/plugin-sdk/src/catalogs/retired";
 
 export const MANIFEST_FIELDS_STEP = "manifest fields on the app: a host.runtime node and a helper plugin refused with their instead-messages; settings by scope (account, device, bot) read by its host as set; a custom sign-in's handler run and held to the core's flows; a platforms list without this computer off with why; a child off by default until switched on; servers by perComputer and when.os; an agents-scoped plugin offered to a coding session and not to Alpha, an onlyBackends one the other way round; a Claude Code plugin folder wrapped and its skill in Alpha's Glossary; a plugin with a bot: its OK card's lines and checkbox for its parts beyond the bot's tab, a tool inside the bot offered to that bot and not to Alpha, its app parts switched off with the bot kept, and a bot's entry on the sidebar refused with its words; the rest of Bots' offer list refused, each with its words (a panel key besides Browser and agent, another bot's tab, a spot not offered, each same-on-every-tab spot tied to a bot), and a theme's old sidebar names loaded with a warning and ignored; per-entry own-bot: her skill and agent definition in her Glossary and not Alpha's, her command refused to Alpha's session; a folder plugin that asks for the five capabilities that were MOSS's own (browser, terminal, plugins.install, plugins.watch, network:public): its OK card warns of each, OK'd each is granted, and its terminal, its install from npm and its public page answer; a folder plugin naming a program and a folder of the user's outside its sandbox: its OK card names each with a warning, its program runs outside the sandbox and its folder is read, and a plugin naming neither is refused both";
 
@@ -327,14 +328,19 @@ export function writeRefusals(root: string): Refusal[] {
   ];
   const never: [string, Record<string, unknown>][] = [
     ["sidebar", {}],
-    ["sidebar.bot", { key: "alpha" }],
     ["sidebar.app", { title: "Tied", icon: "icon.svg", opens: "settings" }],
     ["settings.section", { title: "Tied" }],
-    ["bot.editor.section", { title: "Tied" }],
   ];
   for (const [spot, fields] of never) {
     out.push({ code: "bot_tied_not_offered", what: `${spot} tied to a bot`, folder: tied(`acc-refuse-tied-${spot.replace(/\./g, "-")}`, { spot, ...fields }),
       words: `"${spot}" looks the same on every tab: nothing tied to a bot's tab dresses it.` });
+  }
+  // The bots' sidebar rows and their Edit page's sections are retired with the bot tab (G8): refused as retired, saying
+  // what to use instead.
+  const retired: [string, Record<string, unknown>][] = [["sidebar.bot", { key: "alpha" }], ["bot.editor.section", { title: "Tied" }]];
+  for (const [spot, fields] of retired) {
+    out.push({ code: "spot_retired", what: `${spot}, retired`, folder: tied(`acc-refuse-tied-${spot.replace(/\./g, "-")}`, { spot, ...fields }),
+      words: retiredMessage(retiredPoint(spot)!) });
   }
   return out;
 }

@@ -1,11 +1,10 @@
-// The column beside the conversation, on the runtime: a coding session's (`panel` keyed `session`) and a bot's slim
-// one (`bot.side`, the owner's item 90).
+// The column beside the conversation, on the runtime: a coding session's (`panel` keyed `session`).
 import { computerView, fakeApi, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
 import type { SessionView } from "@waifucave/moss-plugin-sdk";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { BotColumn, SessionColumn } from "../client/entry";
+import { SessionColumn } from "../client/entry";
 
 afterEach(cleanup);
 
@@ -27,7 +26,7 @@ function mount(node: (navigate: (r: unknown) => void, open: (id: string) => void
     "session.createPr": () => ({ ok: true }),
   });
   const api = fakeApi({
-    conversation: { get: async (id) => SESSIONS.find((x) => x.id === id)!, list: async () => SESSIONS },
+    sessions: { watch: () => () => undefined, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined,  get: async (id) => SESSIONS.find((x) => x.id === id)!, list: async () => SESSIONS },
     computers: { list: async () => [computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true })] },
   });
   const routes: unknown[] = [];
@@ -63,15 +62,3 @@ describe("the session column", () => {
   });
 });
 
-describe("a bot's slim column", () => {
-  test("its agents and tasks, context and outputs; an agent opens in the panel", async () => {
-    const { opened } = mount((_n, open) => <BotColumn props={{ bot: { id: "alpha", name: "Alpha" }, session: "s_alpha", openAgent: "agent-1", onOpenAgent: open }} />);
-    await act(() => settle());
-    for (const title of ["Agents and tasks", "Context", "Outputs"]) expect(screen.getByText(title)).toBeTruthy();
-    expect(screen.queryByText("This computer")).toBeNull();
-    const agent = screen.getByRole("button", { name: /Fix the dates/ });
-    expect(agent.getAttribute("aria-current")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: /Weekly digest/ }));
-    expect(opened).toEqual(["task-1"]);
-  });
-});

@@ -12,7 +12,7 @@ import {
   BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, isPluginId, type ValidationIssue,
 } from "@waifucave/moss-protocol";
 import { capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
-import { RETIRED_BOT_AVATAR, retiredCapability, retiredMessage, retiredPoint } from "../catalogs/retired";
+import { RETIRED_BOT_AVATAR, RETIRED_TAB_LAYOUT, retiredCapability, retiredMessage, retiredPoint } from "../catalogs/retired";
 
 /** Extensions a data file is never: a document, a script, a style, SVG or wasm. */
 const ACTIVE_EXTENSIONS = /\.(html?|xhtml|xml|svgz?|m?js|cjs|mjs|ts|tsx|jsx|css|wasm|php|sh)$/i;
@@ -201,7 +201,7 @@ function collectPaths(m: Record<string, unknown>): { path: Seg[]; value: string;
   const c = isObject(m.contributes) ? m.contributes : {};
   if (isObject(c.bot)) {
     const b = c.bot;
-    for (const k of ["instructions", "layout", "greeting", "memory"]) add(["contributes", "bot", k], b[k], "contribution");
+    for (const k of ["instructions", "greeting", "memory"]) add(["contributes", "bot", k], b[k], "contribution");
   }
   const list = (key: string) => (Array.isArray(c[key]) ? (c[key] as unknown[]) : []);
   list("models").forEach((e, i) => isObject(e) && add(["contributes", "models", i, "catalog"], e.catalog, "entry"));
@@ -615,6 +615,13 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   if (isObject(kept.bot) && kept.bot.avatar !== undefined) {
     f.warn("bot_avatar_retired", ["contributes", "bot", "avatar"], `${retiredMessage(RETIRED_BOT_AVATAR)}; this is ignored`);
     delete (kept.bot as Record<string, unknown>).avatar;
+  }
+
+  // A bot's tab layout was once set here (`contributes.bot.layout`): an older bot still loads, the field ignored (a bot has
+  // no tab in MOSS Code's window).
+  if (isObject(kept.bot) && kept.bot.layout !== undefined) {
+    f.warn("bot_layout_retired", ["contributes", "bot", "layout"], `${retiredMessage(RETIRED_TAB_LAYOUT)}; this is ignored`);
+    delete (kept.bot as Record<string, unknown>).layout;
   }
 
   // Tool names are unique within a top-level plugin and contain no `__` (§5.9, §6.7).
@@ -1123,13 +1130,9 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style`, `layout` or `hide: true`");
     return false;
   }
-  // A layout patch for bots' tabs: on `bot.tab`, its bots by `when.bot` (none: every bot the plugin dresses).
-  if (e.layout !== undefined && e.spot !== "bot.tab") {
-    f.error("entry", "ui_layout_spot", [...at, "spot"], "a `layout` entry rearranges bots' tabs: its spot is `bot.tab`, its bots `when.bot`");
-    return false;
-  }
-  if (e.layout !== undefined && e.key !== undefined) {
-    f.error("entry", "ui_layout_spot", [...at, "key"], "a `layout` entry names its bots with `when.bot`, not `key`");
+  // A layout patch rearranged bots' tabs, which are retired (spec revision 19, §5.5, G8): refused, saying where to go.
+  if (e.layout !== undefined) {
+    f.error("entry", "spot_retired", [...at, "layout"], `${retiredMessage(RETIRED_TAB_LAYOUT)}`);
     return false;
   }
   if (e.component !== undefined && !ctx.hasClient) {
@@ -1240,10 +1243,6 @@ function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCt
   if (ctx.isBot && e.app !== true) {
     const bot = ctx.botName ?? ctx.id ?? "its bot";
     // Inside the bot: only what Bots offers, on its own tab.
-    if (spotName === "bot.editor.section") {
-      f.error("entry", "bot_editor_stock", [...at, "spot"], `${bot}'s Edit page keeps its stock look; its settings show there as a section of their own, from the plugin's settings.`);
-      return false;
-    }
     if (spotName === "panel" && !botsOffer(spotName, typeof e.key === "string" ? e.key : undefined)) {
       const which = typeof e.key === "string" ? `"${e.key}" isn't one of them` : "an entry with no key would fill every panel";
       f.error("entry", "bot_panel_not_offered", [...at, typeof e.key === "string" ? "key" : "spot"], `Bots offers the Browser and agent panels on ${bot}'s tab, and a panel of its own (any other key, with a title); ${which}.`);
@@ -1500,8 +1499,7 @@ export const BACKGROUND_PARTS_MAX = 2;
 const BESIDE_LABELS: Readonly<Record<string, string>> = {
   "island.tab": "an island tab", "sidebar.app": "a sidebar button", "settings.section": "a Settings section", main: "an app page",
   status: "the status bar", "app.surface": "a window of its own", "app.background": "a part running in the background", "pill.target": "a Dispatch pill target", sidebar: "the sidebar",
-  "sidebar.bot": "the bots' sidebar rows", "bot.editor.section": "a section on bots' Edit pages", panel: "a panel", "panel.view": "a panel",
-  "bot.tab": "other bots' tabs", locales: "translations", mcpServers: "tools", skills: "skills", hooks: "hooks",
+  panel: "a panel", "panel.view": "a panel", locales: "translations", mcpServers: "tools", skills: "skills", hooks: "hooks",
   agents: "agent definitions", commands: "commands", "island.line": "a line on the island",
 };
 /** The right panels Bots offers a bot to replace on its tab, as the OK card names them. */
@@ -1565,6 +1563,9 @@ export function ownPanelLines(manifest: Manifest | undefined): string[] {
   return lines;
 }
 
+/** The OK card's line for a plugin that restyles approval cards (`approvals`, or a theme setting `card.*` tokens). */
+export const RESTYLES_CARDS_OK_LINE = "It restyles approval cards.";
+
 export function describeOk(
   report: ManifestReport,
   opts: {
@@ -1605,7 +1606,9 @@ export function describeOk(
     const text = capabilityOkText(cap);
     if (text) lines.push(`It ${text}.`);
   }
-  if (opts.restylesCards && !report.capabilities.includes("approvals")) lines.push(`It ${capabilityOkText("approvals")}.`);
+  // A plugin that draws approval cards' surroundings (`approvals`, or a theme's `card.*` tokens) restyles them (§5.5's limit):
+  // its own line, beside what `approvals` lets it show.
+  if (opts.restylesCards || report.restylesCards) lines.push(RESTYLES_CARDS_OK_LINE);
   // Host code is held to the list only where the fence holds it to its proxy (#371's review: the sandbox there and on,
   // not merely macOS).
   const hostHeld = opts.hostNetworkHeld === true;

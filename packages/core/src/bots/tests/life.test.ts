@@ -6,6 +6,7 @@ import { existsSync, linkSync, mkdirSync, rmSync, symlinkSync, writeFileSync } f
 import { join } from "node:path";
 import { MOSS_ERR, SESSIONS_METHODS as M, userMessageHashInput, userMessageSigningInput, type Caller } from "@waifucave/moss-protocol";
 import { isContractError } from "../../contracts/common";
+import { fenceContextFor, homeAllows } from "../../contracts/fence";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64 } from "../../contracts/fakes/device-registry";
 import { FakeLeaseAuthority } from "../../contracts/fakes/lease";
@@ -163,8 +164,15 @@ describe("the main computer (§6.4, the lease faked until H-M2)", () => {
     b.host.open({ id: "s_code", kind: "coding", computer: "Studio", backend: "codex" }, new FakeSessionDriver({ canFold: false }));
     expect(b.bots.scratchFor("b_alpha")).toBe("home/Studio/.moss/scratch/alpha");
     expect(b.bots.scratchFor("s_side")).toBe("home/Studio/.moss/scratch/alpha");
-    expect(b.bots.scratchFor("s_code")).toBe("home/Studio/.moss/scratch/_/s_code");
-    expect(existsSync(join(home, "scratch", "_", "s_code"))).toBe(true);
+    // A coding session saves into its own outputs folder, the one place in the home its agent's fence lets it write
+    // (`homeAllows` rule 1); `scratch/_/<session>` was fenced to it, and stays so.
+    expect(b.bots.scratchFor("s_code")).toBe("home/Studio/.moss/outputs/s_code");
+    expect(existsSync(join(home, "outputs", "s_code"))).toBe(true);
+    const codeCtx = fenceContextFor(b.host.callerOf("s_code"));
+    expect(homeAllows(join(home, "outputs", "s_code", "c1-0.png"), true, codeCtx, home)).toBe(true);
+    expect(homeAllows(join(home, "scratch", "_", "s_code", "c1-0.png"), true, codeCtx, home)).toBe(false);
+    // Another session's outputs stay closed to it.
+    expect(homeAllows(join(home, "outputs", "b_alpha", "c1-0.png"), true, codeCtx, home)).toBe(false);
     await b.shutdown();
     // A MOSS home outside the user's home has no tree path.
     const lone = await boot({ home: tempDir(), plugins: await alpha(), userHome: user });

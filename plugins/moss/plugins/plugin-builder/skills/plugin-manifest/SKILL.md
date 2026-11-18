@@ -162,12 +162,12 @@ Every entry above may also carry `declares` (below).
 - exactly one of `component` (a client export), `web` (`{ url | entry, partition }`: a web page in a frame of its
   own), `style` (a theme-format file restyling what fills that spot) or `hide: true` (hides that spot, or with
   `target: "<plugin-id>#<entry-id>"` one entry of a list spot);
-- `id`: needed when the plugin fills one spot twice; `key`: the key in a keyed spot (`main`, `panel`, `bot.tab`);
+- `id`: needed when the plugin fills one spot twice; `key`: the key in a keyed spot (`main`, `panel`, `composer.action`);
   `order`: position in a list spot (default 500);
 - `when`: `{ bot, surface, os, setting: { "<key>": <value> }, session }`: show only there or then;
 - `app: true` (in a plugin with a bot only): the entry is beside the bot, not in its tab. Without it a bot's entry
-  fills only what Bots offers on its own tab (inside the tab, its top bar `bar`, the `browser` and `agent` panels, and
-  panels of its own); with it, the entry follows the app's rules, the OK card says so, and the user gets one switch
+  fills only what Bots offers on its own tab (the session tab's parts, the `browser` and `agent` panels, and panels of
+  its own); with it, the entry follows the app's rules, the OK card says so, and the user gets one switch
   for every such part;
 - a `panel` entry whose `key` is not a stock panel's (`session`, `terminal`, `diff`, `files`, `browser`, `agent`)
   adds a right-side panel of the plugin's own with a button of its own: `title` is required (the button's name),
@@ -179,7 +179,7 @@ Every entry above may also carry `declares` (below).
   `audio` capability;
 - the spot's own fields: plugin-catalog lists them (`title` and `icon` for `sidebar.app`, `opens` naming a `main`
   key, `title` for `settings.section`…);
-- `layout` (on `bot.tab` only), `window` (for an `app.surface` entry: `{ type: "overlay" | "window", alwaysOnTop, transparent,
+- `window` (for an `app.surface` entry: `{ type: "overlay" | "window", alwaysOnTop, transparent,
   placement, front, cards, summon }`). `alwaysOnTop` needs the `overlay` capability; `front: "steps-aside"` leaves the screen while
   MOSS's window is in front; `cards: true` draws the pending cards while the window is not in front (needs `approvals` and
   `approvals.all`). A container that holds a sealed card (the surface's card shell, its stack, its panel) must not move, scale, fade or filter it, nor transition those, on hover, focus or press while the user can press: a sealed button is read afresh at the press, and one read while its container moves says "not visible", so the press is refused (give a hover cue that only paints, such as a rim or a shadow); `summon: ["tap"]` is the four-finger tap. `toggles` (an own surface's id) or `command` (an own command) on an

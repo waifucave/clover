@@ -1,22 +1,17 @@
 // Every string the sidebar shows, in one place, for the move to `moss.` keys (plan, F-M3).
-import type { AgentStatus, BotStatus } from "./types";
+import type { AgentStatus } from "./types";
 
 const n = (count: number, one: string, many: string) => (count === 1 ? one : many.replace("#", String(count)));
 
 export const S = {
   app: "MOSS",
   nav: "MOSS",
-  sides: "Show",
-  sideBots: "Bots",
-  sideCode: "Code",
   newSession: "New session",
-  newChat: "New chat",
   newSessionIn: (project: string) => `New session in ${project}`,
   search: "Search",
   outputs: "Outputs",
   plugins: "Plugins",
   more: "More",
-  bots: "Bots",
   projects: "Projects",
   apps: "Apps",
   settings: "Settings",
@@ -26,20 +21,10 @@ export const S = {
   fold: (name: string) => `Fold ${name}`,
   unfold: (name: string) => `Unfold ${name}`,
   close: (title: string) => `Close ${title}`,
-  agentsOf: (bot: string) => `${bot}'s agents`,
   needsYou: (count: number) => n(count, "1 thing needs you", "# things need you"),
-  unread: "New messages",
   branch: (branch: string, changes: number | undefined) =>
     changes === undefined ? `On ${branch}` : `On ${branch}, ${n(changes, "1 file changed", "# files changed")}`,
   noSessions: "No sessions here yet",
-  botStatus: {
-    idle: "",
-    thinking: "Thinking",
-    working: "Working",
-    "needs-you": "Needs you",
-    asleep: "Asleep",
-    paused: "Paused",
-  } satisfies Record<BotStatus, string>,
   agentStatus: {
     running: "Running",
     "needs-you": "Needs you",

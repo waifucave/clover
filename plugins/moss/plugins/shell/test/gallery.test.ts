@@ -18,11 +18,9 @@ import { terminalStories } from "../../panel-terminal/gallery/stories";
 import { panelStories } from "../../panel/gallery/stories";
 import { settingsStories } from "../../settings/gallery/stories";
 import { stories as sidebarStories } from "../../sidebar/gallery/stories";
-import { botEditorStories } from "../../bot-editor/gallery/stories";
 import { pluginIndexStories } from "../../plugin-index/gallery/stories";
 import { archiveStories } from "../../archive/gallery/stories";
 import * as archiveTokens from "../../archive/client/tokens";
-import * as botEditorTokens from "../../bot-editor/client/tokens";
 import * as pluginIndexTokens from "../../plugin-index/client/tokens";
 import * as composerTokens from "../../composer/client/tokens";
 import * as conversationTokens from "../../conversation/client/tokens";
@@ -85,11 +83,11 @@ afterAll(async () => {
 describe("the gallery", () => {
   const all = [
     ...screenStories, ...conversationStories, ...composerStories, ...sidebarStories, ...panelStories,
-    ...terminalStories, ...diffStories, ...filesStories, ...settingsStories, ...botEditorStories, ...pluginIndexStories,
+    ...terminalStories, ...diffStories, ...filesStories, ...settingsStories, ...pluginIndexStories,
     ...archiveStories, ...shellStories,
   ];
   /** The screens of a tab (a bot's, an agent's, a coding session's), not a page of its own. */
-  const PAGES = ["screen/plugins-installed-1440", "screen/plugins-detail-1440", "screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/bot-editor-1440", "screen/archive-1440", "screen/archive-session-1440"];
+  const PAGES = ["screen/plugins-installed-1440", "screen/plugins-detail-1440", "screen/plugin-index-1440", "screen/plugin-index-for-panel-1440", "screen/archive-1440", "screen/archive-session-1440"];
   const tabScreens = screenStories.filter((s) => !PAGES.includes(s.id));
 
   test("builds a page, a script and a stylesheet", () => {
@@ -110,8 +108,8 @@ describe("the gallery", () => {
   });
 
   test("every whole-window screen holds the sidebar; every tab's, the toggles, the conversation and the composer", () => {
-    expect(screenStories.length).toBe(42);
-    expect(M2_SCREENS).toHaveLength(13);
+    expect(screenStories.length).toBe(35);
+    expect(M2_SCREENS).toHaveLength(12);
     expect(screenStories.filter((s) => s.width === 1512 && s.height === 950)).toHaveLength(3);
     for (const story of screenStories) expect([story.id, root!.querySelector(`[data-story="${story.id}"] .cl-window .cl-sidebar`) !== null]).toEqual([story.id, true]);
     for (const story of tabScreens) {
@@ -149,7 +147,7 @@ describe("the gallery", () => {
     expect(frame("files").querySelector(".cl-panel__head .cl-files-title")?.getAttribute("aria-label")).toBe("Files in moss, on Studio");
   });
 
-  test("a bot's tab never shows the terminal, the changes or the files; a code session has them all (the owner's scope ruling)", () => {
+  test("no screen shows a bot's tab (MOSS Code's window has none); a code session has the terminal, the changes and the files (the owner's scope ruling)", () => {
     const toggles = (story: Element) => [...story.querySelectorAll(".cl-window__toggles .cl-panel-toggles .cl-panel-toggle")].map((b) => b.getAttribute("aria-label"));
     for (const story of screenStories) {
       const frame = root!.querySelector(`[data-story="${story.id}"]`)!;
@@ -169,21 +167,7 @@ describe("the gallery", () => {
       }
     }
     const kinds = (k: string) => screenStories.filter((s) => root!.querySelector(`[data-story="${s.id}"] .cl-panel-toggles[data-kind="${k}"]`)).length;
-    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([17, 1, 17]);
-  });
-
-  test("a bot's slim column shows its agents, and one opens in the panel with its own composer and model picker", () => {
-    const column = root!.querySelector('[data-story="screen/bot-column-1440"] .cl-window__side .cl-session[data-kind="bot"]')!;
-    expect(column.textContent).toContain("Fix the CSV export's dates");
-    expect(column.textContent).not.toContain("Where it runs");
-    const agent = root!.querySelector('[data-story="screen/bot-agent-1440"]')!;
-    const panel = agent.querySelector('.cl-panel[data-kind="bot"] .cl-panel__view[data-view="agent"]')!;
-    expect(panel.querySelector(".cl-conv")).toBeTruthy();
-    expect(panel.querySelector(".cl-composer")).toBeTruthy();
-    expect(panel.querySelector(".cl-composer__pill")).toBeTruthy();
-    // No column of its own, and no code-side panel beside it.
-    expect(panel.querySelector(".cl-session, .cl-panel-toggles")).toBeNull();
-    expect(agent.querySelectorAll(".cl-panel__view")).toHaveLength(1);
+    expect([kinds("bot"), kinds("agent"), kinds("coding")]).toEqual([0, 1, 28]);
   });
 
   test("the card-under-bar screen has a waiting card with more of the transcript after it", () => {
@@ -196,7 +180,7 @@ describe("the gallery", () => {
   });
 
   test("every catalog token a part names is in lane B's catalog; the rest are part-local requests", () => {
-    const parts = { composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, botEditorTokens, pluginIndexTokens, archiveTokens };
+    const parts = { composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, pluginIndexTokens, archiveTokens };
     for (const [part, t] of Object.entries(parts)) {
       expect([part, t.CATALOG_TOKENS.filter((n: string) => !CATALOG_SNAPSHOT.has(n))]).toEqual([part, []]);
       expect([part, t.PART_TOKENS.filter((n: string) => !n.startsWith("plugin.moss."))]).toEqual([part, []]);
@@ -205,7 +189,7 @@ describe("the gallery", () => {
 
   test("the gallery theme sets every token any part wears", () => {
     const theme = readFileSync(join(import.meta.dir, "../gallery/theme.css"), "utf8");
-    const parts = [composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, botEditorTokens, pluginIndexTokens, archiveTokens];
+    const parts = [composerTokens, conversationTokens, diffTokens, filesTokens, terminalTokens, panelTokens, settingsTokens, shellTokens, sidebarTokens, pluginIndexTokens, archiveTokens];
     const missing = parts.flatMap((t) => t.TOKENS.map(t.cssVariable)).filter((v) => !theme.includes(`${v}:`));
     expect(missing).toEqual([]);
   });
@@ -236,9 +220,6 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     // The Plugins page: what is installed, by group, and one opened.
     expect([...frame("plugins-installed").querySelectorAll(".cl-plugin-index__subhead")].map((h) => h.textContent)).toContain("On");
     expect(frame("plugins-detail").querySelector(".cl-plugin-index__detail .cl-plugin-index__title")?.textContent).toBe("Alpha");
-    expect(frame("bot-editor").querySelector(".cl-window__content .cl-bot-editor__title")?.textContent).toBe("Edit Alpha");
-    // The figure is no section of the bot editor's now: the avatar plugin keeps it in its own Settings section.
-    expect(frame("bot-editor").querySelectorAll(".cl-avatar-section__avatar")).toHaveLength(0);
     expect(frame("archive").querySelectorAll(".cl-archive__session")).toHaveLength(5);
     // The old session reads through the conversation part, its approval as a note.
     const old = frame("archive-session").querySelector(".cl-archive__transcript .cl-conv")!;
@@ -262,15 +243,16 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     expect([...atItem.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => el.textContent)).toEqual([expect.stringContaining("Laptop")]);
   });
 
-  test("an agent's live tab: its status over its composer", () => {
+  test("an agent's live tab: its status in the title bar, its composer", () => {
     const tab = frame("agent-tab").querySelector('.cl-window__content .cl-agent-tab[data-place="main"]')!;
-    expect(tab.querySelector(".cl-agent-tab__status")?.textContent).toContain("Codex on Studio");
+    // In main its state is in the title bar, beside the panel toggles (it takes none of the conversation's height).
+    expect(frame("agent-tab").querySelector(".cl-window__toggles .cl-agent-tab__status")?.textContent).toContain("Codex on Studio");
+    expect(tab.querySelector(".cl-agent-tab__status")).toBeNull();
     expect(tab.querySelector(".cl-composer")).toBeTruthy();
   });
 
-  test("add-ons: a header button, reactions under answers, a status line and an app button, beside the parts", () => {
+  test("add-ons: reactions under answers, a status line and an app button, beside the parts", () => {
     const f = frame("addons");
-    expect(f.querySelector('.cl-window__toggles [aria-label="Draw a card"]')).toBeTruthy();
     expect(f.querySelectorAll(".story-addon-reactions").length).toBeGreaterThan(0);
     expect(f.querySelector(".cl-window__status")?.textContent).toContain("Usage today");
     expect([...f.querySelectorAll(".cl-sidebar button")].some((b) => b.textContent?.includes("Tarot"))).toBe(true);

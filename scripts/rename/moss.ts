@@ -124,7 +124,8 @@ export const MOSS_ALLOWLIST: readonly AllowlistEntry[] = [
   {
     id: "meadow-scene-name",
     regex: /\b[Cc]lover meadow\b/g,
-    files: ["plugins/alpha/**"],
+    // And the SDK's copy of Alpha's manifest from when she was a plugin (plug-parts.test.ts reads it).
+    files: ["plugins/alpha/**", "packages/plugin-sdk/test/fixtures/alpha-plugin-era.json"],
     why: "the scene is called the clover meadow, after the plant it is drawn with",
   },
   // ── Live infrastructure: the name stays until the owner moves it ──────────────────────────────

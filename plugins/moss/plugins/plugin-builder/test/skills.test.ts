@@ -261,7 +261,6 @@ describe("plugin-ui's \"Fitting the space you get\" matches the runtime", () => 
   test("the fixed boxes, the narrow window, and the avatar plugin's renderer props with its framing", () => {
     expect(read("plugins/moss/plugins/shell/client/styles.css")).toMatch(/\.cl-window__sidebar-content iframe \{[^}]*height: 100% !important;/);
     expect(read("plugins/moss/plugins/sidebar/client/styles.css")).toMatch(/\.cl-sidebar__app-badge > iframe \{\s*width: 48px;\s*height: 18px;/);
-    expect(read("plugins/alpha/tab/layout.css")).toContain(".alpha-figure > *, .alpha-figure iframe { width: 100% !important; height: 100% !important; }");
     expect(read("apps/desktop/src/main/ui/runtime.ts")).toContain("export const NARROW_BELOW = 900;");
     expect(read("packages/plugin-sdk/src/ui/bridge.ts")).toContain("window: { narrow: boolean };");
     const figure = read("plugins/moss/plugins/character/client/figure.tsx");
@@ -368,7 +367,7 @@ describe("the skills teach the plug rule as built", () => {
       manifest: 1, id: "luna", name: "Luna", engines: { moss: "^1.0.0" }, client: { entry: "client/index.ts" }, host: { entry: "host/index.ts" },
       contributes: {
         bot: { name: "Luna", instructions: "bot/instructions.md" },
-        ui: [{ spot: "bot.side", component: "Side" }, { spot: "island.tab", id: "day", title: "Luna's day", component: "Day", app: true }],
+        ui: [{ spot: "composer", id: "side", component: "Side" }, { spot: "island.tab", id: "day", title: "Luna's day", component: "Day", app: true }],
         mcpServers: { stage: { type: "host", scope: "own-bot" } },
         skills: [{ path: "skills/*/SKILL.md", scope: "own-bot" }],
         agents: [{ id: "helper", name: "Helper", backend: "moss-code", instructions: "agents/helper.md", scope: "own-bot" }],

@@ -1,0 +1,421 @@
+{
+ "note": "The bot tab entries the bundled shell filled before bots left MOSS Code's window (lane MC). The runtime still serves the catalog's bot.tab spot, so its tests mount these on the shell as a fixture.",
+ "ui": [
+  {
+   "spot": "bot.tab",
+   "id": "bot-tab",
+   "component": "DefaultBotTab",
+   "declares": {
+    "bot.header": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "The tab's header: in place of the title."
+    },
+    "bot.header.action": {
+     "shape": "list",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "Buttons in the tab's header."
+    },
+    "bot.stage": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "The stage, where the avatar stands."
+    },
+    "bot.side": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "The tab's side: the slim column."
+    },
+    "conversation": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       },
+       "session": {
+        "type": "string"
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "needs": [
+      "conversation.read"
+     ],
+     "doc": "The conversation view."
+    },
+    "composer": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       },
+       "session": {
+        "type": "string"
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "The composer."
+    },
+    "chrome.title": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "The tab's title, drawn by the shell."
+    },
+    "chrome.action": {
+     "shape": "keyed",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "One of the shell's buttons, keyed edit, session or browser."
+    },
+    "chrome.actions": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "Every shell button the layout does not place one by one."
+    },
+    "chrome.sidebar": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "The sidebar's show/hide button."
+    },
+    "chrome.drag": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "A region that drags the window."
+    },
+    "chrome.panels": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "Where the panels the user opens show."
+    },
+    "bot.controls": {
+     "shape": "single",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "The bot's own drawn controls (a title, buttons, a handle to drag the window), placed by its layout, drawn by its plugin in its own frame, calling `shell.*`."
+    }
+   }
+  },
+  {
+   "spot": "bot.header",
+   "id": "bot-header",
+   "component": "BotHeader",
+   "declares": {
+    "bot.header.action": {
+     "shape": "list",
+     "props": {
+      "type": "object",
+      "properties": {
+       "bot": {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string"
+         },
+         "name": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "context": [
+      "bot"
+     ],
+     "doc": "Buttons in the tab's header."
+    }
+   }
+  },
+  {
+   "spot": "chrome.title",
+   "id": "chrome-title",
+   "component": "ChromeTitle"
+  },
+  {
+   "spot": "chrome.action",
+   "id": "chrome-edit",
+   "component": "ChromeEdit",
+   "key": "edit"
+  },
+  {
+   "spot": "chrome.action",
+   "id": "chrome-session",
+   "component": "ChromeSession",
+   "key": "session"
+  },
+  {
+   "spot": "chrome.action",
+   "id": "chrome-browser",
+   "component": "ChromeBrowser",
+   "key": "browser"
+  },
+  {
+   "spot": "chrome.actions",
+   "id": "chrome-actions",
+   "component": "ChromeActions"
+  },
+  {
+   "spot": "chrome.sidebar",
+   "id": "chrome-sidebar",
+   "component": "ChromeSidebar"
+  },
+  {
+   "spot": "chrome.drag",
+   "id": "chrome-drag",
+   "component": "ChromeDrag"
+  },
+  {
+   "spot": "chrome.panels",
+   "id": "chrome-panels",
+   "component": "ChromePanels"
+  }
+ ],
+ "rootDeclares": {
+  "bar": {
+   "shape": "single",
+   "props": {
+    "type": "object",
+    "properties": {
+     "bot": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       }
+      }
+     },
+     "title": {
+      "type": "string"
+     }
+    }
+   },
+   "context": [
+    "bot"
+   ],
+   "doc": "The top bar, where a bot's own plugin may draw it instead (`when.bot`, in a child plugin of the bot): its own component, in its own frame, calling `shell.*`. Nothing fills it for other tabs: the shell's own bar shows."
+  }
+ }
+}

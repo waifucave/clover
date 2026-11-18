@@ -92,6 +92,9 @@ export function readCalls(home: string): { event: string; [k: string]: unknown }
   return readFileSync(file, "utf8").split("\n").filter((l) => l !== "").map((l) => JSON.parse(l) as { event: string });
 }
 
+/** The fake's one code session: MOSS's own coding agent in a folder of the laptop's home, idle. */
+export const FAKE_CODE_SESSION = { id: "s_fakecode0001", kind: "coding", computer: "Laptop", title: "Fake work", status: "idle", startedAt: 1_781_270_000_000, updatedAt: 1_781_270_000_000, backend: "moss-code", model: "fake/model", root: "home/Laptop/fake-work" } as const;
+
 const DEFAULT_STATUS = { bots: [], routines: 0, agents: 0, canHandOver: false, safeMode: false };
 
 /** `card.answer`'s有自己的 verdicts (consume in order) and the answers the fake saw, per fake's options root. Each
@@ -127,6 +130,7 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
   const layerTokens = new Map<string, string>();
   const layerOf = new WeakMap<Socket, string>();
   let terminals = 0;
+  let watches = 0;
   const off = new Set<string>();
   const removed = new Set<string>();
   const summary = (id: string, name: string, source: string) => ({
@@ -206,6 +210,18 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         return bot === undefined ? fail(-32004, "no such bot") : reply({ bot });
       }
       if (method === "session.list") return reply({ sessions: [] });
+      // MOSS Code's window opens on the newest code session (lane MC: no bots in it): the fake has one, with nothing said
+      // yet, through a part's own plugin API calls (`sessions.read`) and its watches (which never fire here).
+      if (method === "plugin.layer.call") {
+        const call = String(params.call);
+        const args = Array.isArray(params.args) ? params.args : [];
+        if (call === "sessions.list") return reply({ result: [FAKE_CODE_SESSION] });
+        if (call === "sessions.get") return args[0] === FAKE_CODE_SESSION.id ? reply({ result: FAKE_CODE_SESSION }) : fail(-32004, "no such session");
+        if (call === "sessions.history") return reply({ result: { events: [], hasMore: false } });
+        return fail(-32003, `a layer doesn't call ${call} here`);
+      }
+      if (method === "plugin.layer.watch") return String(params.call).startsWith("sessions.") ? reply({ watch: `w_${++watches}` }) : fail(-32003, `a layer doesn't watch ${String(params.call)} here`);
+      if (method === "plugin.layer.unwatch") return reply({});
       if (method === "computer.list") return reply({ computers: [] });
       if (method === "device.list") return reply({ devices: [] });
       return fail(-32003, `a layer doesn't call ${method} here`);

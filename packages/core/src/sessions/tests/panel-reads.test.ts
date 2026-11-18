@@ -167,11 +167,20 @@ describe("the session panels' reads", () => {
     expect(await methods({ home: temp("empty") })["session.outputs"]!({ id: "s_code" }, USER)).toEqual({ items: [], more: 0 });
   });
 
-  test("session.context: the last measured turn against the model's window; null without a window or a measured turn", async () => {
+  test("session.context: the last measured turn against the model's window; a bot's is null without a window or a measured turn, a coding session's or an agent's says its agent reported none", async () => {
     const records = [turn(0, 40_000), turn(1, 50_000), turn(2)];
     expect(await methods({ records, window: 200_000 })["session.context"]!({ id: "s_code" }, USER)).toEqual({ used: 0.25, tokens: 50_000, window: 200_000 });
-    expect(await methods({ records })["session.context"]!({ id: "s_code" }, USER)).toBeNull();
-    expect(await methods({ records: [turn(0)], window: 200_000 })["session.context"]!({ id: "s_code" }, USER)).toBeNull();
+    const bot = view({ kind: "bot" as SessionView["kind"] });
+    expect(await methods({ view: bot, records, window: 200_000 })["session.context"]!({ id: "s_code" }, USER)).toEqual({ used: 0.25, tokens: 50_000, window: 200_000 });
+    expect(await methods({ view: bot, records })["session.context"]!({ id: "s_code" }, USER)).toBeNull();
+    expect(await methods({ view: bot, records: [turn(0)], window: 200_000 })["session.context"]!({ id: "s_code" }, USER)).toBeNull();
+    // A coding session or an agent: never nothing; its agent's silence is said.
+    for (const kind of ["coding", "agent"] as const) {
+      const v = view({ kind });
+      expect(await methods({ view: v, records })["session.context"]!({ id: "s_code" }, USER)).toEqual({ reported: false });
+      expect(await methods({ view: v, records: [turn(0)], window: 200_000 })["session.context"]!({ id: "s_code" }, USER)).toEqual({ reported: false });
+      expect(await methods({ view: v, records: [], window: 200_000 })["session.context"]!({ id: "s_code" }, USER)).toEqual({ reported: false });
+    }
   });
 
   test("session.diff from a plugin's own connection needs files too: a third-party layer with conversation.read alone is refused, the bundled diff panel is served", async () => {

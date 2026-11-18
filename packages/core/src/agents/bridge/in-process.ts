@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto";
 import type { McpSdkServerConfigWithInstance, WinterMcpServerInstance } from "@waifucave/clover-agent-sdk";
 import type { BridgeHandlers } from "./handlers";
-import { listedBridgeTool, type BridgeToolDef } from "./tools";
+import { glossaryResultText, listedBridgeTool, type BridgeToolDef } from "./tools";
 
 export interface InProcessBridgeOptions {
   /** The server's name: the session's bridge server name (`moss_<id>`), as the stdio bridge's. */
@@ -41,7 +41,7 @@ export async function inProcessBridgeServer(h: BridgeHandlers, o: InProcessBridg
             ...(args["query"] === undefined ? {} : { query: args["query"] as string | string[] }),
             ...(args["load"] === undefined ? {} : { load: args["load"] as string | string[] }),
           });
-          return result(JSON.stringify(r, null, 2), false);
+          return result(glossaryResultText(r), false);
         }
         const r = await h.call(o.sessionId, { callId: randomUUID(), tool: name, input: args });
         return { content: r.content, isError: r.isError };

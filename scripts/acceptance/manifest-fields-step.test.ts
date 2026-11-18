@@ -74,7 +74,7 @@ test("the plugin with a bot validates and its OK lines are the ones the row look
 
 test("Bots' offer list: each refusal fixture fails validation with its own code and the words the row reads, and nothing else", async () => {
   const refusals = writeRefusals(root);
-  expect(refusals.map((r) => r.code)).toEqual(["bot_panel_not_offered", "bot_when_other_bot", "bot_spot_not_offered", ...Array(5).fill("bot_tied_not_offered")]);
+  expect(refusals.map((r) => r.code)).toEqual(["bot_panel_not_offered", "bot_when_other_bot", "bot_spot_not_offered", ...Array(3).fill("bot_tied_not_offered"), "spot_retired", "spot_retired"]);
   for (const r of refusals) {
     const issues = (await validatePluginFolder(r.folder, { os: "macos" })).issues.filter((i) => i.severity === "error");
     expect([r.what, issues.map((i) => i.code)]).toEqual([r.what, [r.code]]);

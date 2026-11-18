@@ -32,6 +32,8 @@ const SERVERS: Record<string, readonly string[]> = {
   "moss/web/web": WEB_TOOLS.map((t) => t.name),
 };
 const WEB: ReadonlySet<string> = new Set(WEB_TOOLS.map((t) => t.name));
+/** Servers only a bot is offered: not called in a code session. */
+const BOTS_ONLY: ReadonlySet<string> = new Set(["alpha/stage"]);
 
 /** One harmless call per tool: it reads, or changes only a display (Alpha's room, the avatar), and undoes what it pins. */
 const INPUTS: Record<string, Record<string, unknown>> = {
@@ -94,7 +96,10 @@ export async function bundledToolsStep(ctx: ExampleCtx, session: string, web: tr
   if (unknown.length > 0) fail(`a bundled plugin's MCP server this step doesn't call: ${unknown.join(", ")} (add its tools to SERVERS and a harmless call each to INPUTS)`);
   const gone = Object.keys(SERVERS).filter((s) => !servers.includes(s) && !marked.includes(s));
   if (gone.length > 0) fail(`SERVERS names a server no bundled manifest has: ${gone.join(", ")}`);
-  const tools = servers.flatMap((s) => SERVERS[s] ?? []);
+  // Alpha's stage server is her own (scope bots, lane MC2's until her figure is a pack): MOSS Code's run calls every other
+  // bundled tool in its code session, and her stage's are proved where she has a tab.
+  const botsOnly = servers.filter((s) => BOTS_ONLY.has(s));
+  const tools = servers.filter((s) => !BOTS_ONLY.has(s)).flatMap((s) => SERVERS[s] ?? []);
   const unoffered = marked.flatMap((s) => SERVERS[s] ?? []);
   const noInput = tools.filter((t) => INPUTS[t] === undefined);
   if (noInput.length > 0) fail(`no harmless call for ${noInput.join(", ")} (add one to INPUTS)`);
@@ -122,5 +127,5 @@ export async function bundledToolsStep(ctx: ExampleCtx, session: string, web: tr
   const leaked = [...offered].filter((name) => unoffered.some((t) => name === t || name.endsWith(`__${t}`)));
   if (leaked.length > 0) problems.push(`a plugin listed as not available offered ${leaked.join(", ")}`);
   if (problems.length > 0) fail(`${problems.join(" | ")}${lines.length > 0 ? ` (the rest: ${lines.join("; ")})` : ""}`);
-  return `${tools.length} bundled tools from ${servers.join(", ")}: ${lines.join("; ")}${marked.length > 0 ? `; not offered (listed as not available): ${marked.join(", ")}` : ""}`;
+  return `${tools.length} bundled tools from ${servers.filter((x) => !BOTS_ONLY.has(x)).join(", ")}${botsOnly.length > 0 ? ` (not called here, a bot's own: ${botsOnly.join(", ")})` : ""}: ${lines.join("; ")}${marked.length > 0 ? `; not offered (listed as not available): ${marked.join(", ")}` : ""}`;
 }

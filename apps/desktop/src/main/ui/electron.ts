@@ -261,7 +261,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       }
       // A plugin's own picture (its view's `icon`) too, by that exact path: the Plugins page's lists; and a plugin whose point
       // entries bring files (`dataFiles`).
-      const looks = (p: (typeof runtime.registry)[number]) => p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined) || (p.icon !== undefined && p.icon === path);
+      const looks = (p: (typeof runtime.registry)[number]) => p.isBot || p.themes.length > 0 || p.entries.some((e) => e.style !== undefined) || (p.icon !== undefined && p.icon === path);
       const plugin = runtime.registry.find((p) => p.id === id && (looks(p) || p.dataFiles.length > 0));
       if (plugin === undefined) return forbidden();
       let file: string;

@@ -43,6 +43,8 @@ import { BotRecordStore, type BotPluginSettingsPort } from "./records";
 import { botRecordMethods } from "./records-rpc";
 import { recordToolDefs } from "./records-tools";
 import { botSource, type BotSource } from "./source";
+import { DEFAULT_BOT_ID } from "./default-bot";
+import { registerBotOwnership } from "../runtime-sdk/turn-loop/only-backends";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -65,6 +67,8 @@ export interface BotSideOptions {
   home: string;
   /** Where the bots come from (lane BT, `bots/source.ts`): THE switch's value, `MOSS_BOT_SOURCE` or `plugins`. */
   botSource?: BotSource;
+  /** Whether the move offers the default bot (Alpha, default-bot.ts); true unless a test of something else says no. */
+  defaultBot?: boolean;
   /** The plugins' bot-scoped settings, for the records' `bot.pluginSettings` (lane BT). */
   pluginSettings?: BotPluginSettingsPort & Partial<Pick<PluginBotSettings, "views">>;
   /** This computer's name in the folder tree. */
@@ -225,14 +229,25 @@ export function createBotSide(o: BotSideOptions): BotSide {
   if (source === "records") {
     const store: BotRecordStore = new BotRecordStore({
       home: o.home, clock: o.clock,
-      reserved: () => (store.journal() !== undefined ? [] : pendingPluginBots(o.registry, (id) => store.has(id))),
+      // Held: the plugin bots the move hasn't moved yet, and every installed plugin's top-level id (lane MC: a plugin's
+      // `own-bot` parts serve the bot of its own id, so a new bot never takes an installed plugin's id).
+      reserved: () => [...(store.journal() !== undefined ? [] : pendingPluginBots(o.registry, (id) => store.has(id))), ...o.registry.list().map((r) => topPluginIdOf(r.id))],
       ...(o.pluginSettings === undefined ? {} : { pluginSettings: o.pluginSettings }),
       ...(o.warn === undefined ? {} : { warn: o.warn }),
     });
     records = store;
   }
+  // `own-bot` with bots as records: a plugin's own-bot parts reach only a bot its record says was moved from it. The
+  // default bot (Alpha) keeps her old plugin's stage until lane MC2 makes her figure a pack (the controller's ruling).
+  const offOwnership = records === undefined ? undefined : registerBotOwnership((bot) => {
+    const rec = records!.record(bot);
+    if (rec === undefined) return { known: false };
+    if (rec.madeBy.kind === "move") return { known: true, plugin: rec.madeBy.plugin };
+    if (rec.madeBy.kind === "default" && rec.id === DEFAULT_BOT_ID) return { known: true, plugin: DEFAULT_BOT_ID };
+    return { known: true };
+  });
   const bots = new BotService({
-    source, ...(records === undefined ? {} : { records }),
+    source, ...(records === undefined ? {} : { records }), ...(o.defaultBot === undefined ? {} : { defaultBot: o.defaultBot }),
     home: o.home, computer: o.computer, registry: o.registry, host, gate, drivers: o.drivers, clock: o.clock,
     providerConsent: o.providerConsent ?? new BotProviderConsent(grants === undefined ? {} : { grants }),
     defaultModel: o.defaultModel, cacheCold: (id) => compaction.cacheCold(id),
@@ -355,6 +370,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
       if (o.routines?.ingress?.poll !== false) ingress?.start();
     },
     close: async () => {
+      offOwnership?.();
       offBusy?.();
       offQuestions?.();
       offReopen?.();

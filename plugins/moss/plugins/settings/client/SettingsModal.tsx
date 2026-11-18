@@ -8,7 +8,7 @@ import { IconClose, IconPlugin, IconSearch, SECTION_ICONS } from "./icons";
 import { S } from "./strings";
 import type { OneAtATimeView, SettingsModalProps, SettingsSection, ToolAvailability, ToolPermission, ToolsView } from "./types";
 
-export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "tools", "levels", "bots"];
+export const SECTIONS: readonly SettingsSection[] = ["account", "devices", "appearance", "notifications", "plugins", "tools", "levels"];
 
 /** Where the section list breaks into groups, as the dividers show. */
 const GROUP_ENDS: ReadonlySet<SettingsSection> = new Set(["devices", "notifications", "levels"]);
@@ -22,7 +22,6 @@ const INDEX: Record<SettingsSection, string[]> = {
   plugins: [S.plugins, S.pluginManager, S.pluginLogs],
   tools: [S.toolsTitle, S.toolAllow, S.toolDeny],
   levels: [S.levels],
-  bots: [],
 };
 
 export function sectionsMatching(query: string): SettingsSection[] {
@@ -424,30 +423,6 @@ function Page({ props }: { props: SettingsModalProps }) {
           ))}
           {(props.onPairBegin || props.onPairJoin) && <Pairing props={props} />}
         </>
-      );
-    case "bots":
-      if (values.bots && values.bots.length > 0) {
-        return (
-          <>
-            <h3 className="cl-settings__subhead">{S.botsTitle}</h3>
-            <p className="cl-settings__note">{S.botsDetail}</p>
-            {values.bots.map((b) => (
-              <Row key={b.id} label={b.name} mark={marks(props.item, b.id)}>
-                {props.onEditBot && (
-                  <button type="button" className="cl-settings__button" aria-label={S.editBot(b.name)} onClick={() => props.onEditBot?.(b.id)}>
-                    {S.edit}
-                  </button>
-                )}
-              </Row>
-            ))}
-          </>
-        );
-      }
-      return (
-        <div className="cl-settings__later">
-          <p className="cl-settings__later-title">{S.later}</p>
-          <p className="cl-settings__note">{S.laterDetail}</p>
-        </div>
       );
     default:
       return (

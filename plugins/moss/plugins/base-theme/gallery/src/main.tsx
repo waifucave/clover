@@ -10,7 +10,6 @@ import { USAGE_STORIES } from "../../../usage/src/gallery";
 import { NOTIFICATION_STORIES } from "../../../notifications/src/gallery";
 import { LIVE2D_STORIES } from "../../../live2d/src/gallery";
 import { ISLAND_TAB_STORIES } from "./island-tabs";
-import { ALPHA_LAYER, ALPHA_STORIES } from "./alpha";
 import { Specimen } from "./specimen";
 import { BASE_LAYER, scopedCss, themeStyle, type ThemeLayer } from "./themes";
 import type { Appearance } from "../../src/theme";
@@ -33,8 +32,6 @@ export interface GalleryStory {
 const STACKS: Record<string, { layers: readonly ThemeLayer[]; appearance: Appearance }> = {
   "base-light": { layers: [BASE_LAYER], appearance: "light" },
   "base-dark": { layers: [BASE_LAYER], appearance: "dark" },
-  "alpha-light": { layers: [BASE_LAYER, ALPHA_LAYER], appearance: "light" },
-  "alpha-dark": { layers: [BASE_LAYER, ALPHA_LAYER], appearance: "dark" },
 };
 
 const THEME_STORIES: GalleryStory[] = [
@@ -42,7 +39,7 @@ const THEME_STORIES: GalleryStory[] = [
   { id: "theme/base-dark", title: "Base theme, dark", width: 1000, height: 470, theme: "base-dark", render: () => <Specimen title="MOSS, dark" /> },
 ];
 
-export const STORIES: GalleryStory[] = [...THEME_STORIES, ...ISLAND_STORIES, ...ISLAND_TAB_STORIES, ...USAGE_STORIES, ...PILL_STORIES, ...NOTIFICATION_STORIES, ...VRM_STORIES, ...LIVE2D_STORIES, ...ALPHA_STORIES];
+export const STORIES: GalleryStory[] = [...THEME_STORIES, ...ISLAND_STORIES, ...ISLAND_TAB_STORIES, ...USAGE_STORIES, ...PILL_STORIES, ...NOTIFICATION_STORIES, ...VRM_STORIES, ...LIVE2D_STORIES];
 
 declare global {
   interface Window {

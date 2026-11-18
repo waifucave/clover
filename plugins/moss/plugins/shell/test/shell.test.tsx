@@ -1,42 +1,31 @@
 // The default shell on the runtime: routes, the panels each tab offers (the owner's item 90), the dialog layer and its
-// card rule, and the tabs it ships. The other parts stand in as stubs that show the props their spots got.
+// card rule, the tab it ships and its page that starts a session. MOSS Code's window has no bots (spec §9.4, G8): a
+// kept route that names a bot is dropped. The other parts stand in as stubs that show the props their spots got.
 import { type TestEntry as UiEntry, card, fakeApi, fakeApprovals, fakeCore, settle, runtimeWith, TestLayer } from "@waifucave/moss-plugin-sdk/ui/testing";
-import type { BotView, SessionView } from "@waifucave/moss-plugin-sdk";
+import type { SessionView } from "@waifucave/moss-plugin-sdk";
 import type { EntryComponent } from "../client/local";
 import { catalogSpot } from "@waifucave/moss-plugin-sdk/ui/testing";
 import { Spot } from "@waifucave/moss-plugin-sdk/ui";
-import * as React from "react";
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { DEFAULT_TAB_LAYOUT, layoutSpots } from "@waifucave/moss-plugin-sdk";
-import { AgentTab, BotHeader, DefaultBotTab } from "../client/Tabs";
-import { newestCoding, Shell, type ShellStart } from "../client/Shell";
-import { KeptTab, notDrawn } from "../client/KeptTab";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { AgentTab } from "../client/Tabs";
+import { keptRouteOf, newestCoding, Shell, startRoute, type ShellStart } from "../client/Shell";
+import { agentsHere } from "../client/NewSession";
 
 afterEach(cleanup);
 // What a part keeps across a reload is the window's session storage: each test starts with none.
 afterEach(() => sessionStorage.clear());
 
-const bot = (id: string, name: string): BotView => ({ id, name, model: "m", userLayer: [], state: "idle", mainSession: `s_${id}` });
 const s = (id: string, extra: Partial<SessionView>): SessionView => ({ id, kind: "agent", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
-const BOTS = [bot("alpha", "Alpha"), bot("luna", "Luna")];
 const SESSIONS = [
-  s("s_alpha", { kind: "bot", bot: "alpha" }),
-  s("s_luna", { kind: "bot", bot: "luna" }),
   s("agent-1", { parent: "s_alpha", bot: "alpha", backend: "Codex", title: "Fix the dates", status: "prompting" }),
-  s("code-1", { kind: "coding", root: "home/Studio/projects/moss", title: "The panels", backend: "Codex" }),
+  s("code-1", { kind: "coding", root: "home/Studio/projects/moss", title: "The panels", backend: "Codex", startedAt: 5 }),
+  s("code-0", { kind: "coding", root: "home/Studio/projects/old", title: "Older", backend: "moss-code", startedAt: 1 }),
 ];
 
 /** A stub that shows which spot it fills and the props it got (functions by name). */
 const stub = (label: string): EntryComponent => ({ props }) => (
   <div data-stub={label}>{`${label} ${JSON.stringify(props, (k, v) => (typeof v === "function" ? `fn:${k}` : k === "header" ? undefined : v))}`}</div>
-);
-const SideStub: EntryComponent = ({ props }) => (
-  <div data-stub="bot.side">
-    <button type="button" onClick={() => (props.onOpenAgent as (id: string) => void)("agent-1")}>
-      open agent
-    </button>
-  </div>
 );
 const SidebarStub: EntryComponent = ({ props }) => (
   <nav data-stub="sidebar">
@@ -50,9 +39,6 @@ const SidebarStub: EntryComponent = ({ props }) => (
     <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "bot", params: { bot: "alpha" } })}>
       go alpha
     </button>
-    <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "bot", params: { bot: "luna" } })}>
-      go luna
-    </button>
     <button type="button" onClick={() => (props.navigate as (r: unknown) => void)({ route: "plugins", params: {} })}>
       go plugins
     </button>
@@ -61,12 +47,10 @@ const SidebarStub: EntryComponent = ({ props }) => (
 
 const COMPONENTS: Record<string, EntryComponent> = {
   Shell: Shell as EntryComponent,
-  DefaultBotTab: DefaultBotTab as EntryComponent,
   AgentTab: AgentTab as EntryComponent,
   Sidebar: SidebarStub,
   Conversation: stub("conversation"),
   Composer: stub("composer"),
-  Side: SideStub,
   Column: stub("panel:session"),
   Terminal: stub("panel:terminal"),
   Settings: stub("main:settings"),
@@ -81,24 +65,21 @@ const entry = (pluginId: string, spot: string, component: string, extra: Partial
 
 const ENTRIES: UiEntry[] = [
   entry("moss/shell", "app.root", "Shell"),
-  entry("moss/shell", "bot.tab", "DefaultBotTab"),
   entry("moss/shell", "main", "AgentTab", { key: "agent" }),
   entry("moss/shell", "panel", "AgentTab", { key: "agent", when: { session: "agent" } }),
   entry("moss/sidebar", "sidebar", "Sidebar"),
   entry("moss/conversation", "conversation", "Conversation"),
   entry("moss/composer", "composer", "Composer"),
-  entry("moss/panel", "bot.side", "Side"),
   entry("moss/panel", "panel", "Column", { key: "session", when: { session: ["coding", "agent"] } }),
   entry("moss/panel-terminal", "panel", "Terminal", { key: "terminal", when: { session: "coding" } }),
   entry("moss/settings", "main", "Settings", { key: "settings" }),
 ];
 
-async function mount(start?: ShellStart, extra: UiEntry[] = [], _kept?: undefined, onWatch?: (listener: (v: SessionView) => void) => void, shellProps: Record<string, unknown> = {}, onBotWatch?: (listener: (b: BotView) => void, onRemoved?: (id: string) => void) => void) {
-  const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }) });
+async function mount(start?: ShellStart, extra: UiEntry[] = [], sessions: SessionView[] = SESSIONS, onWatch?: (listener: (v: SessionView) => void) => void, shellProps: Record<string, unknown> = {}, handlers: Record<string, (params: any) => unknown> = {}) {
+  const core = fakeCore({ "session.interrupt": () => ({ ok: true }), "session.stop": () => ({ ok: true }), ...handlers });
   const approvals = fakeApprovals();
   const api = fakeApi({
-    bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: (l, r) => { onBotWatch?.(l, r); return () => undefined; } },
-    conversation: { list: async () => SESSIONS, get: async (id) => SESSIONS.find((x) => x.id === id)!, watch: (l) => { onWatch?.(l); return () => undefined; } },
+    sessions: { list: async () => sessions, get: async (id) => sessions.find((x) => x.id === id)!, watch: (l) => { onWatch?.(l); return () => undefined; }, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined },
   });
   const runtime = runtimeWith({
     spot: catalogSpot,
@@ -107,7 +88,7 @@ async function mount(start?: ShellStart, extra: UiEntry[] = [], _kept?: undefine
     api: () => api,
     core: () => core,
     approvals,
-    sessionKind: (id) => SESSIONS.find((x) => x.id === id)?.kind,
+    sessionKind: (id) => sessions.find((x) => x.id === id)?.kind,
   });
   const tree = (extraProps: Record<string, unknown>) => (
     <TestLayer runtime={runtime}>
@@ -116,7 +97,7 @@ async function mount(start?: ShellStart, extra: UiEntry[] = [], _kept?: undefine
   );
   const rendered = render(tree(shellProps));
   await act(() => settle(20));
-  /** The window's `act` prop arriving after it has drawn (what a bot's own frame's `shell.openPanel` becomes). */
+  /** The window's `act` prop arriving after it has drawn (what a plugin frame's `shell.openPanel` becomes). */
   const send = async (extraProps: Record<string, unknown>) => { rendered.rerender(tree(extraProps)); await act(() => settle(20)); };
   return { core, approvals, send };
 }
@@ -127,7 +108,7 @@ const stubText = (label: string) => document.querySelector(`[data-stub="${label}
 describe("the shell's session list", () => {
   test("a coding session started outside the window is known without a tab change: its tab gets the coding panels", async () => {
     let emit: ((v: SessionView) => void) | undefined;
-    await mount({ route: { route: "agent", params: { session: "code-new" } } }, [], undefined, (l) => (emit = l));
+    await mount({ route: { route: "agent", params: { session: "code-new" } } }, [], SESSIONS, (l) => (emit = l));
     expect(toggles()).not.toContain("Terminal");
     await act(async () => emit!(s("code-new", { kind: "coding", root: "home/Studio/projects/cli", title: "From the CLI", startedAt: 5 })));
     await act(() => settle(20));
@@ -147,29 +128,91 @@ describe("the shell's session list", () => {
   });
 });
 
-describe("a bot that is removed", () => {
-  const route = () => document.querySelector('[data-stub="sidebar"]')?.textContent ?? "";
-  test("while its tab shows: the window goes to the first bot left, and its kept panels go", async () => {
-    let removed: ((id: string) => void) | undefined;
-    await mount({ route: { route: "bot", params: { bot: "luna" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
-    expect(route()).toContain('"bot":"luna"');
-    await act(async () => removed!("luna"));
-    await act(() => settle(20));
-    expect(route()).toContain('"bot":"alpha"');
+describe("where the window starts, with no bots in it", () => {
+  test("a first start opens the newest code session's tab; with none, the page that starts one", async () => {
+    expect(startRoute(undefined)).toBeUndefined();
+    expect(startRoute(SESSIONS)).toEqual({ route: "agent", params: { session: "code-1" } });
+    expect(startRoute([])).toEqual({ route: "new", params: {} });
+    await mount();
+    expect(stubText("conversation")).toContain('"session":"code-1"');
+    cleanup();
+    await mount(undefined, [], []);
+    expect(document.querySelector(".cl-new-session")).not.toBeNull();
   });
-  test("a bot that isn't showing is just gone from the list; the tab stays", async () => {
-    let removed: ((id: string) => void) | undefined;
-    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
-    await act(async () => removed!("luna"));
+
+  test("a route the window kept from before (a bot's tab, its editor) is dropped: the window starts as on a first start, and doesn't break", async () => {
+    expect(keptRouteOf({ route: "bot", params: { bot: "alpha" } })).toBeUndefined();
+    expect(keptRouteOf({ route: "bot-editor", params: { bot: "alpha" } })).toBeUndefined();
+    expect(keptRouteOf({ route: "settings", params: {} })).toEqual({ route: "settings", params: {} });
+    expect(keptRouteOf({ route: "agent", params: { session: "code-0" } })).toEqual({ route: "agent", params: { session: "code-0" } });
+    // An old window's session storage: Alpha's tab shown, Settings over it, her panels open.
+    sessionStorage.setItem("moss.kept:moss/shell:shell.route", JSON.stringify({ route: "bot", params: { bot: "alpha" } }));
+    sessionStorage.setItem("moss.kept:moss/shell:shell.under", JSON.stringify({ route: "bot", params: { bot: "alpha" } }));
+    sessionStorage.setItem("moss.kept:moss/shell:shell.panels", JSON.stringify({ "bot:alpha": ["session", "browser"] }));
+    await mount();
+    expect(stubText("conversation")).toContain('"session":"code-1"');
+    expect(document.querySelector(".cl-window__dialog")).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem("moss.kept:moss/shell:shell.under")!)).toBeNull();
+    // A press that would go to a bot goes nowhere.
+    fireEvent.click(screen.getByRole("button", { name: "go alpha" }));
     await act(() => settle(20));
-    expect(route()).toContain('"bot":"alpha"');
+    expect(stubText("conversation")).toContain('"session":"code-1"');
   });
-  test("the last bot: the window shows its empty state", async () => {
-    let removed: ((id: string) => void) | undefined;
-    await mount({ route: { route: "bot", params: { bot: "luna" } } }, [], undefined, undefined, {}, (_l, r) => (removed = r));
-    await act(async () => { removed!("alpha"); removed!("luna"); });
+
+  test("an act that names a bot (a plugin's `shell.go`) has no place here; the Code side goes to the newest session", async () => {
+    const opened = await mount({ route: { route: "plugins", params: {} } });
+    await opened.send({ act: { n: 1, act: { kind: "go", target: { bot: "alpha" } } } });
+    expect(stubText("sidebar")).toContain('"route":"plugins"');
+    await opened.send({ act: { n: 2, act: { kind: "go", target: { side: "code" } } } });
+    expect(stubText("conversation")).toContain('"session":"code-1"');
+  });
+});
+
+describe("the page that starts a session (spec §9.4)", () => {
+  test("the agents installed here, MOSS's own first; a folder from the app's own dialog; Start starts it and shows its tab", async () => {
+    const backends = [
+      { id: "codex", name: "Codex", computers: [{ computer: "Studio", installed: true }] },
+      { id: "gemini", name: "Gemini", computers: [{ computer: "Studio", installed: false }] },
+      { id: "moss-code", name: "MOSS", computers: [{ computer: "Studio", installed: true }] },
+    ];
+    expect(agentsHere(backends, "Studio")).toEqual([
+      { id: "moss-code", name: "MOSS", installed: true }, { id: "codex", name: "Codex", installed: true }, { id: "gemini", name: "Gemini", installed: false },
+    ]);
+    const started = s("code-new", { kind: "coding", title: "New", startedAt: 9 });
+    const sessions = [...SESSIONS];
+    const { core } = await mount({ route: { route: "new", params: {} } }, [], sessions, undefined, {}, {
+      "agent.backends": () => ({ backends }),
+      "computer.list": () => ({ computers: [{ name: "Studio", link: "self" }] }),
+      "ui.pick": () => ({ token: "pick-1", name: "projects" }),
+      "agent.start": () => { sessions.push(started); return { session: "code-new" }; },
+    });
+    const radios = [...document.querySelectorAll<HTMLInputElement>(".cl-new-session__agent input")];
+    expect(radios.map((r) => [r.value, r.checked, r.disabled])).toEqual([["moss-code", true, false], ["codex", false, false], ["gemini", false, true]]);
+    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Choose a folder…" }));
     await act(() => settle(20));
-    expect(document.querySelector(".cl-shell-empty")).not.toBeNull();
+    expect(document.querySelector(".cl-new-session__folder-name")?.textContent).toBe("projects");
+    fireEvent.click(radios[1]!);
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    await act(() => settle(20));
+    expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "folder", use: "agent.start" });
+    expect(core.calls.find((c) => c.method === "agent.start")?.params).toEqual({ backend: "codex", root: "pick-1" });
+    expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-new"}}');
+  });
+
+  test("a refusal (no folder of this computer's home, say) shows its reason and starts nothing", async () => {
+    await mount({ route: { route: "new", params: {} } }, [], SESSIONS, undefined, {}, {
+      "agent.backends": () => ({ backends: [{ id: "moss-code", name: "MOSS", computers: [{ computer: "Studio", installed: true }] }] }),
+      "computer.list": () => ({ computers: [{ name: "Studio", link: "self" }] }),
+      "ui.pick": () => ({ token: "pick-1", name: "elsewhere" }),
+      "agent.start": () => { throw new Error("a session works in a folder of this computer's home"); },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Choose a folder…" }));
+    await act(() => settle(20));
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    await act(() => settle(20));
+    expect(screen.getByRole("alert").textContent).toContain("a folder of this computer's home");
+    expect(stubText("sidebar")).toContain('"route":"new"');
   });
 });
 
@@ -183,12 +226,12 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
     await mount({ route: { route: "agent", params: { session: "code-1" } } }, [sheets]);
     expect(toggles()).toEqual(["Session", "Terminal", "Sheets"]);
     cleanup();
-    // A bot's tab: not a coding session's panel.
-    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [sheets]);
+    // An agent's tab (a bot's coding task): not a coding session's panel.
+    await mount({ route: { route: "agent", params: { session: "agent-1" } } }, [sheets]);
     expect(document.querySelector('[data-own-panel="sheets#sheets"]')).toBeNull();
     cleanup();
-    // No `when.session`: every tab, a bot's included.
-    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [added("docs", "docs", "Documents")]);
+    // No `when.session`: every tab.
+    await mount({ route: { route: "agent", params: { session: "agent-1" } } }, [added("docs", "docs", "Documents")]);
     expect(document.querySelector('[data-own-panel="docs#docs"]')).not.toBeNull();
   });
 
@@ -206,14 +249,6 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
     expect(views()).toEqual(["sheets#sheets"]);
   });
 
-  test("an inside-a-bot panel is on that bot's tab only", async () => {
-    const mine = added("luna", "notes", "Notes", { component: "Notes", botPlugin: "luna" });
-    await mount({ route: { route: "bot", params: { bot: "luna" } } }, [mine]);
-    expect(toggles()).toContain("Notes");
-    cleanup();
-    await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [mine]);
-    expect(toggles()).not.toContain("Notes");
-  });
 
   test("two plugins' panels with one key are two panels: the ids are namespaced by plugin", async () => {
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("one", "notes", "One notes"), added("two", "notes", "Two notes")]);
@@ -225,6 +260,7 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
     await act(() => settle(20));
     expect(views()).toEqual(["two#notes", "one#notes"]);
   });
+
 
   test("past three, the rest are in one menu button, never an overflowing bar", async () => {
     const five = ["a", "b", "c", "d", "e"].map((k) => added(`p-${k}`, k, `Panel ${k.toUpperCase()}`, { order: 500 + k.charCodeAt(0) }));
@@ -241,6 +277,7 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
     expect(screen.getByRole("button", { name: "Other panels" }).getAttribute("aria-pressed")).toBe("true");
   });
 
+
   test("a panel whose part draws nothing shows the host's placeholder", async () => {
     await mount({ route: { route: "agent", params: { session: "code-1" } }, panels: ["terminal"] }, [added("sheets", "sheets", "Sheets", { component: "Missing" })]);
     press("Sheets");
@@ -248,28 +285,14 @@ describe("panels plugins add (§5.5): a `panel` entry whose key isn't a stock pa
     expect(document.querySelector('[data-empty-view="sheets#sheets"]')).not.toBeNull();
   });
 
-  test("a bot's own frame may open its own panel (`shell.openPanel`): the act names it by its plugin", async () => {
-    const mine = added("luna", "notes", "Notes", { component: "Notes", botPlugin: "luna" });
-    const opened = await mount({ route: { route: "bot", params: { bot: "luna" } } }, [mine]);
-    await opened.send({ act: { n: 1, act: { kind: "panel", view: "luna#notes", to: "open" } } });
-    expect(views()).toEqual(["luna#notes"]);
-    cleanup();
-    // A panel that isn't on this tab (another plugin's, or not listed here) is not opened.
-    const other = await mount({ route: { route: "bot", params: { bot: "alpha" } } }, [mine]);
-    await other.send({ act: { n: 1, act: { kind: "panel", view: "luna#notes", to: "open" } } });
-    expect(views()).toEqual([]);
-  });
 });
 
 describe("the shell", () => {
-  test("opens on the first bot's tab: its conversation over its composer, the bot's toggles", async () => {
-    await mount();
-    expect(screen.getByRole("region", { name: "Alpha" })).toBeTruthy();
-    expect(stubText("conversation")).toContain('"session":"s_alpha"');
-    expect(stubText("composer")).toBe('composer {"bot":{"id":"alpha","name":"Alpha"},"session":"s_alpha"}');
-    expect(toggles()).toEqual(["Details"]);
-    expect(screen.getByRole("button", { name: "Edit Alpha" })).toBeTruthy();
-    // A bot without an avatar has no stage, and the default tab has no header of its own.
+  test("a session's tab: its conversation over its composer, the coding panels", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-1" } } });
+    expect(stubText("conversation")).toContain('"session":"code-1"');
+    expect(stubText("composer")).toContain('"session":"code-1"');
+    expect(toggles()).toEqual(["Session", "Terminal"]);
     expect(document.querySelector(".cl-bot-tab__stage")).toBeNull();
     expect(document.querySelector(".cl-bot-header")).toBeNull();
   });
@@ -288,29 +311,13 @@ describe("the shell", () => {
     expect(sessionStorage.length).toBe(0);
     for (const [k, v] of atReload) sessionStorage.setItem(k, v);
     await mount(undefined, []);
-    // The same place from the first render: Settings, with the agent's tab under it (not the first bot's tab).
+    // The same place from the first render: Settings, with the session's tab under it.
     expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
     expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-1"}}');
     expect(stubText("conversation")).toContain('"session":"code-1"');
     expect(JSON.parse(atReload.get("moss.kept:moss/shell:shell.under")!)).toEqual({ route: "agent", params: { session: "code-1" } });
   });
 
-  test("a bot's slim column opens its coding agent in the panel, as a live tab of its own (item 90)", async () => {
-    await mount();
-    fireEvent.click(screen.getByRole("button", { name: "Details" }));
-    await act(() => settle(20));
-    fireEvent.click(screen.getByRole("button", { name: "open agent" }));
-    await act(() => settle(20));
-    const panel = screen.getByRole("region", { name: "Panel" });
-    const agent = panel.querySelector('.cl-agent-tab[data-place="panel"]')!;
-    expect(agent).toBeTruthy();
-    expect(agent.textContent).toContain("Working");
-    expect(agent.textContent).toContain("Codex on Studio");
-    expect(within(agent as HTMLElement).getByText(/^conversation /).textContent).toContain('"session":"agent-1"');
-    // No code panels and no column of its own in there.
-    expect(panel.querySelector('[data-stub="panel:terminal"]')).toBeNull();
-    expect(panel.querySelector('[data-stub="panel:session"]')).toBeNull();
-  });
 
   test("a toggle is offered only for a panel something fills; an open panel whose filler is gone closes, not a placeholder", async () => {
     // Session and terminal are filled; the changes, the browser and the files are not.
@@ -327,57 +334,6 @@ describe("the shell", () => {
     expect(stubText("panel:browser")).toContain('"app":"browser"');
   });
 
-  test("a bot's own Browser panel that does not draw gives way to the stock one's place, says so, and tries again on the person's word", async () => {
-    // The replacement is a frame that never reports a size; the stand-in resolver has no stock-placement hint, so what shows is the title, the retry button and the marks.
-    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["browser"] }, [
-      entry("moss/browser-view", "panel", "Browser", { key: "browser" }),
-      entry("juniper", "panel", "Dead", { key: "browser", source: "installed" }),
-    ]);
-    const region = () => document.querySelector('.cl-panel__view[data-view="browser"]')!;
-    expect(region().getAttribute("aria-label")).toBe("Browser");
-    expect(document.querySelector('[data-replaced-panel="browser"]')).not.toBeNull();
-    await act(() => new Promise((r) => setTimeout(r, 2300)));
-    expect(region().getAttribute("aria-label")).toBe("Alpha's browser panel didn't draw; showing MOSS's.");
-    expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Try Alpha's again" }));
-    await act(() => settle(3));
-    expect(region().getAttribute("aria-label")).toBe("Browser");
-    expect(document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell")).toBe(false);
-  });
-
-  test("a bot's replacement panel always has its way back in the host's header: Show MOSS's panel, and Use the bot's again", async () => {
-    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["browser"] }, [
-      entry("moss/browser-view", "panel", "Browser", { key: "browser" }),
-      entry("juniper", "panel", "Dead", { key: "browser", source: "installed" }),
-    ]);
-    const marked = () => document.querySelector('[data-replaced-panel="browser"]')!.hasAttribute("data-fell");
-    // While the replacement shows (before anything has gone wrong), the button is there and sits in the host's own header, outside the frame.
-    const show = screen.getByRole("button", { name: "Show MOSS's panel" });
-    expect(show.closest(".cl-panel__actions")).not.toBeNull();
-    expect(document.querySelector('[data-replaced-panel="browser"]')!.contains(show)).toBe(false);
-    expect(marked()).toBe(false);
-    fireEvent.click(show);
-    await act(() => settle(3));
-    expect(marked()).toBe(true);
-    // The person's choice keeps the panel's ordinary title (nothing failed), and lasts past the draw timer.
-    expect(document.querySelector('.cl-panel__view[data-view="browser"]')!.getAttribute("aria-label")).toBe("Browser");
-    await act(() => new Promise((r) => setTimeout(r, 2300)));
-    expect(marked()).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Use Alpha's panel" }));
-    await act(() => settle(3));
-    expect(marked()).toBe(false);
-    expect(screen.getByRole("button", { name: "Show MOSS's panel" })).toBeTruthy();
-  });
-
-  test("a panel view hears whose tab it is and whether the person used it last (R8), and draws its head in the host's row", async () => {
-    await mount({ route: { route: "bot", params: { bot: "alpha" } }, panels: ["agent", "browser"], agent: "agent-1" }, [entry("moss/browser-view", "panel", "Browser", { key: "browser" })]);
-    // The newest opened is the one used last, until the person uses the other.
-    expect(stubText("panel:browser")).toContain('"bot":"alpha"');
-    expect(stubText("panel:browser")).toContain('"usedLast":true');
-    fireEvent.pointerDown(document.querySelector('.cl-panel__view[data-view="agent"]')!);
-    expect(stubText("panel:browser")).toContain('"usedLast":false');
-    expect(document.querySelector('.cl-panel__view[data-view="agent"]')!.hasAttribute("data-used-last")).toBe(true);
-  });
 
   test("the agent tab has no interrupt or stop button until the host callbacks cover them (no bare core call)", async () => {
     const { core } = await mount({ route: { route: "agent", params: { session: "agent-1" } } });
@@ -387,24 +343,27 @@ describe("the shell", () => {
     expect(toggles()).toEqual(["Session"]);
   });
 
+
   test("Settings opens as a dialog over the tab; a card with no session (one Settings raised) closes it", async () => {
-    const { approvals } = await mount();
+    const { approvals } = await mount({ route: { route: "agent", params: { session: "code-1" } } });
     fireEvent.click(screen.getByRole("button", { name: "go settings" }));
     await act(() => settle());
     expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
-    expect(stubText("conversation")).toContain('"session":"s_alpha"');
+    expect(stubText("conversation")).toContain('"session":"code-1"');
     act(() => approvals.set([card("card-level")]));
     await act(() => settle());
     expect(document.querySelector(".cl-window__dialog")).toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Answer the waiting card first, then open it again.");
   });
 
+
   test("a card in a session this window doesn't show holds nothing", async () => {
-    const { approvals } = await mount({ route: { route: "settings", params: {} }, under: { route: "bot", params: { bot: "alpha" } } });
-    act(() => approvals.set([card("c-luna", { session: "s_luna" })]));
+    const { approvals } = await mount({ route: { route: "settings", params: {} }, under: { route: "agent", params: { session: "code-1" } } });
+    act(() => approvals.set([card("c-other", { session: "code-0" })]));
     await act(() => settle());
     expect(document.querySelector(".cl-window__dialog [data-stub='main:settings']")).toBeTruthy();
   });
+
 
   test("a route no plugin fills says so; the status bar shows only when a plugin fills it", async () => {
     await mount({ route: { route: "usage", params: {} } });
@@ -414,51 +373,6 @@ describe("the shell", () => {
     await mount(undefined, [entry("moss-usage", "status", "Status")]);
     expect(document.querySelector(".cl-window__status [data-stub='status']")).toBeTruthy();
   });
-});
-
-describe("a bot's own layout's header", () => {
-  const withAvatar: BotView = { ...bot("luna", "Luna"), model: "anthropic/claude-sonnet-5-5", portrait: "/_t/luna/p.svg" };
-  async function mountPart(Part: EntryComponent, b: BotView) {
-    const api = fakeApi({ bots: { list: async () => [b], get: async () => b, watch: () => () => undefined } });
-    const AvatarStub: EntryComponent = ({ props }) => <div data-stub="avatar">{JSON.stringify(props)}</div>;
-    const runtime = runtimeWith({
-      api: () => api,
-      core: () => fakeCore({}),
-      approvals: fakeApprovals(),
-      spot: catalogSpot,
-      entries: [{ pluginId: "moss/vrm", id: "vrm", spot: "avatar", key: "vrm", component: "VrmAvatar" } as UiEntry],
-      component: (_p, name) => (name === "VrmAvatar" ? AvatarStub : undefined),
-    });
-    render(<TestLayer runtime={runtime}>{React.createElement(Part as never, { props: { bot: { id: b.id, name: b.name } } } as never)}</TestLayer>);
-    await act(() => settle(20));
-  }
-
-  test("the default tab draws the stock layout's parts in its order (`extends: \"default\"` means this tab)", async () => {
-    const api = fakeApi({ bots: { list: async () => [withAvatar], get: async () => withAvatar, watch: () => () => undefined } });
-    const Stub = (label: string): EntryComponent => () => <div data-part={label} />;
-    const runtime = runtimeWith({
-      api: () => api,
-      core: () => fakeCore({}),
-      approvals: fakeApprovals(),
-      spot: catalogSpot,
-      entries: [
-        { pluginId: "moss/character", id: "stage", spot: "bot.stage", component: "Stage" } as UiEntry,
-        { pluginId: "moss/conversation", id: "conversation", spot: "conversation", component: "Conversation" } as UiEntry,
-        { pluginId: "moss/composer", id: "composer", spot: "composer", component: "Composer" } as UiEntry,
-      ],
-      component: (_p, name) => (name === "Stage" ? Stub("bot.stage") : name === "Conversation" ? Stub("conversation") : name === "Composer" ? Stub("composer") : undefined),
-    });
-    render(<TestLayer runtime={runtime}>{React.createElement(DefaultBotTab as never, { props: { bot: { id: "luna", name: "Luna" } } } as never)}</TestLayer>);
-    await act(() => settle(20));
-    // `bot.stage` is retired: no part fills it, so the tab draws the rest in the stock order.
-    expect([...document.querySelectorAll("[data-part]")].map((e) => e.getAttribute("data-part"))).toEqual(layoutSpots(DEFAULT_TAB_LAYOUT.root).filter((s) => s !== "bot.stage"));
-  });
-
-  test("the header names the bot and its model", async () => {
-    await mountPart(BotHeader as EntryComponent, withAvatar);
-    expect(document.querySelector(".cl-bot-header")!.textContent).toContain("Luna");
-    expect(document.querySelector(".cl-bot-header")!.textContent).toContain("claude-sonnet-5-5");
-  });
 
   test("an app's title bar says its name from the route's `title` (the shell does not list the sidebar's apps itself), the key when none", async () => {
     await mount({ route: { route: "reel", params: { title: "Reel" } } });
@@ -466,101 +380,5 @@ describe("a bot's own layout's header", () => {
     cleanup();
     await mount({ route: { route: "reel", params: {} } });
     expect(document.querySelector(".cl-window__title-text")?.textContent).toBe("reel");
-  });
-});
-
-// The owner's report on try 14d: coming back to Alpha's tab from an app's page drew the stock layout and an empty
-// conversation for a moment. The last bot tab shown stays mounted while another page shows, and a tab showing with
-// something not drawn yet is held invisible until it is (or the cap).
-describe("the bot tab kept across pages", () => {
-  const kept = () => [...document.querySelectorAll(".cl-shell-kept")] as HTMLElement[];
-  const go = async (name: string) => {
-    fireEvent.click(screen.getByRole("button", { name }));
-    await act(() => settle(20));
-  };
-
-  test("leaving a bot's tab keeps it mounted, hidden and inert; coming back shows the same element, not a new one", async () => {
-    await mount();
-    const [tab] = kept();
-    expect(tab?.hasAttribute("data-shown")).toBe(true);
-    const conversation = tab!.querySelector("[data-stub='conversation']");
-    expect(conversation?.textContent).toContain('"session":"s_alpha"');
-    // Another page (the plugins page here, an app's page alike): the bot tab is there, not shown, and takes no input.
-    await go("go plugins");
-    expect(kept()).toEqual([tab!]);
-    expect(tab!.style.display).toBe("none");
-    expect(tab!.hasAttribute("inert")).toBe(true);
-    expect(tab!.getAttribute("aria-hidden")).toBe("true");
-    // Back: the very same element and conversation, shown, with nothing to rebuild.
-    await go("go alpha");
-    expect(kept()).toEqual([tab!]);
-    expect(tab!.hasAttribute("data-shown")).toBe(true);
-    expect(tab!.style.display).toBe("contents");
-    expect(tab!.querySelector("[data-stub='conversation']")).toBe(conversation);
-    // Settings is a dialog over the tab: the tab stays shown under it.
-    await go("go settings");
-    expect(kept()[0]).toBe(tab!);
-    expect(tab!.hasAttribute("data-shown")).toBe(true);
-  });
-
-  test("one tab is kept: another bot's tab takes the place; an agent's tab is never kept", async () => {
-    await mount();
-    await go("go luna");
-    expect(kept().length).toBe(1);
-    expect(kept()[0]!.querySelector("[data-stub='conversation']")?.textContent).toContain('"session":"s_luna"');
-    await go("go code");
-    expect(kept().length).toBe(1);
-    expect(kept()[0]!.hasAttribute("data-shown")).toBe(false);
-    expect(kept()[0]!.querySelector("[data-stub='conversation']")?.textContent).toContain('"session":"s_luna"');
-  });
-
-  test("what of a tab isn't drawn yet, by the runtime's marks", () => {
-    const root = document.createElement("div");
-    expect(notDrawn(root)).toEqual(["no part yet"]);
-    root.innerHTML = `<div data-moss-entry="alpha#layout" data-moss-part="m1"><div data-moss-spot="bot.side" data-moss-pending=""></div><iframe data-moss-entry="alpha#room"></iframe><div data-moss-entry="alpha#header" data-moss-asleep=""></div><div class="cl-shell-empty"></div></div>`;
-    expect(notDrawn(root)).toEqual(["spot bot.side resolving", "alpha#room loading", "alpha#header asleep", "loading note"]);
-    root.innerHTML = `<div data-moss-entry="alpha#layout" data-moss-part="m1"><div data-moss-spot="bot.side"></div><iframe data-moss-entry="alpha#room" data-moss-drawn=""></iframe></div>`;
-    expect(notDrawn(root)).toEqual([]);
-  });
-
-  test("a tab that shows with a frame not drawn is held invisible until it draws, at most the cap", async () => {
-    const frame = (drawn: boolean) => <iframe data-moss-entry="alpha#room" {...(drawn ? { "data-moss-drawn": "" } : {})} />;
-    const { rerender } = render(<KeptTab shown={true}>{frame(false)}</KeptTab>);
-    const box = document.querySelector(".cl-shell-kept") as HTMLElement;
-    expect(box.hasAttribute("data-held")).toBe(true);
-    expect(box.style.visibility).toBe("hidden");
-    rerender(<KeptTab shown={true}>{frame(true)}</KeptTab>);
-    await act(() => new Promise((r) => setTimeout(r, 60)));
-    expect(box.hasAttribute("data-held")).toBe(false);
-    expect(box.style.visibility).toBe("");
-    cleanup();
-    // Never drawn: shown anyway at the cap.
-    render(<KeptTab shown={true} holdMaxMs={80}>{frame(false)}</KeptTab>);
-    const capped = document.querySelector(".cl-shell-kept") as HTMLElement;
-    expect(capped.hasAttribute("data-held")).toBe(true);
-    await act(() => new Promise((r) => setTimeout(r, 200)));
-    expect(capped.hasAttribute("data-held")).toBe(false);
-    cleanup();
-    // Drawn already (the kept tab coming back): never held.
-    render(<KeptTab shown={true}><div data-moss-entry="moss/shell#x" /></KeptTab>);
-    expect((document.querySelector(".cl-shell-kept") as HTMLElement).hasAttribute("data-held")).toBe(false);
-  });
-
-  test("the cap lifts the hold with no animation frame at all (a hidden window, a display asleep)", async () => {
-    const raf = globalThis.requestAnimationFrame, caf = globalThis.cancelAnimationFrame;
-    // Frames asked for and never given.
-    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
-    globalThis.cancelAnimationFrame = (() => undefined) as typeof cancelAnimationFrame;
-    try {
-      render(<KeptTab shown={true} holdMaxMs={80}><iframe data-moss-entry="alpha#room" /></KeptTab>);
-      const box = document.querySelector(".cl-shell-kept") as HTMLElement;
-      expect(box.hasAttribute("data-held")).toBe(true);
-      await act(() => new Promise((r) => setTimeout(r, 200)));
-      expect(box.hasAttribute("data-held")).toBe(false);
-      expect(box.style.visibility).toBe("");
-    } finally {
-      globalThis.requestAnimationFrame = raf;
-      globalThis.cancelAnimationFrame = caf;
-    }
   });
 });

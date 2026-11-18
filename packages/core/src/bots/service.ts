@@ -53,12 +53,14 @@ import { homedir } from "node:os";
 import { seedMemory } from "./memory";
 import { sweepOwnTempFiles } from "../fence/own-files";
 import { botPaths, botStateFile, homeTreePath, sessionScratchDir, type BotPaths } from "./paths";
+import { outdirPath } from "../sessions/outdir";
 import { botEntries, loadPluginBot, type PluginBot } from "./plugin-bot";
 import { parseUserLayerPatch, userLayerFields, UserLayerStore, type UserLayer, type UserLayerField } from "./user-layer";
 import type { BotProviderConsent, ProviderConsent } from "./provider-consent";
 import type { ArchivedBot, BotFace, BotMaker, BotMoveJournal, BotPatch, BotRecordView, BotSummary } from "@waifucave/moss-protocol";
 import { projectRecords } from "../sessions/wire";
 import { readJson as readJsonFile } from "../sessions/atomic-file";
+import { defaultBotForMove } from "./default-bot";
 import { pendingPluginBots, pluginBotsForMove } from "./move";
 import { readMarkFile, type BotRecordStore } from "./records";
 import type { BotSource } from "./source";
@@ -168,6 +170,8 @@ export interface BotServiceOptions {
   source?: BotSource;
   /** The bots as engine data, with `source: "records"` (required then). */
   records?: BotRecordStore;
+  /** Whether the move offers the default bot (Alpha, default-bot.ts); true unless a test of something else says no. */
+  defaultBot?: boolean;
   /** Built with this gate's `mayStart` and its main computer's `epoch` (wiring.ts does both). */
   host: DurableSessionHost;
   /** When bots may think here: the runner (lane H's lease) and the pause switch. */
@@ -416,12 +420,14 @@ export class BotService {
   }
 
   /** A session's scratch folder here, made if missing, as a folder-tree path (§6.5; lane J's MCP router saves a
-   *  call's files there when it names no `saveTo`). Refused for a MOSS home outside the user's home. */
+   *  call's files there when it names no `saveTo`). Refused for a MOSS home outside the user's home. A coding session
+   *  the user drives saves into its own outputs folder (`<home>/outputs/<session>`), the one place in the home its
+   *  agent's fence lets it write (`homeAllows`, rule 1): a screenshot its Browser call took, a plugin tool's image. */
   scratchFor(sessionId: string): string {
     const view = this.#o.host.get(sessionId);
     if (!view) throw new ContractError("not_found", `no session ${sessionId}`);
     const bot = this.#o.host.callerOf(sessionId).bot;
-    const dir = sessionScratchDir(this.#o.home, { id: sessionId, ...(bot === undefined ? {} : { bot }) });
+    const dir = view.kind === "coding" ? outdirPath(this.#o.home, sessionId) : sessionScratchDir(this.#o.home, { id: sessionId, ...(bot === undefined ? {} : { bot }) });
     const tree = homeTreePath({ userHome: this.#o.userHome ?? homedir(), computer: this.#o.computer, dir });
     if (tree === undefined) throw new ContractError("invalid", `the scratch folder ${dir} isn't inside the user's home, so the folder tree can't name it`);
     mkdirSync(dir, { recursive: true });
@@ -675,7 +681,14 @@ export class BotService {
     }
     let journal: BotMoveJournal;
     try {
-      journal = await store.move(pluginBotsForMove(this.#o.registry, this.#o.home));
+      // The plugin bots first, then the default bot MOSS offers (Alpha, default-bot.ts): a plugin that still brings a
+      // bot of her id (a home's own development folder) is moved as that plugin's, and she isn't offered over it.
+      const plugins = pluginBotsForMove(this.#o.registry, this.#o.home);
+      const offered = this.#o.defaultBot === false ? [] : [defaultBotForMove(this.#o.home)];
+      // A plugin input of the default bot's id that can't be moved (the bundled `alpha` as a stale record still says, its
+      // bot files gone with her plugin's bot) gives way to the default bot, so she isn't left without a record.
+      const usable = offered.length === 0 ? plugins : plugins.filter((b) => !(b.failed !== undefined && offered.some((d) => d.id === b.id)));
+      journal = await store.move([...usable, ...offered]);
     } catch (err) {
       this.#warn(`moving the plugin bots into records failed: ${err instanceof Error ? err.message : String(err)}`);
       return;

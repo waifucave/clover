@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { LAYER_METHODS } from "../src/main/layer-links";
 import { NEVER, SEND_ONLY, TREE_CALLS, needsOf, treeVerdict, type TreeCaller } from "../src/main/ui/tree-calls";
 
@@ -8,9 +9,13 @@ import { NEVER, SEND_ONLY, TREE_CALLS, needsOf, treeVerdict, type TreeCaller } f
 // them), read here from its folder; any other plugin's are what a test gives it.
 const BUNDLED = join(import.meta.dir, "../../../plugins/moss/plugins");
 const capsCache = new Map<string, ReadonlySet<string>>();
+/** A plugin that edits bots (`bots.edit`), as the bot editor the bundled tree shipped before bots left MOSS Code's window
+ *  (lane MC) held: the door still serves the capability to any plugin that holds it. */
+const BOT_EDITOR_CAPS: readonly string[] = ["bots.read", "approvals", "approvals.all", "bots.edit", "plugins.read"];
 function capsOf(pluginId: string): ReadonlySet<string> {
   const hit = capsCache.get(pluginId);
   if (hit !== undefined) return hit;
+  if (pluginId === "bot-editor") return new Set(BOT_EDITOR_CAPS);
   let caps: ReadonlySet<string> = new Set();
   if (pluginId.startsWith("moss/")) {
     try {
@@ -24,14 +29,14 @@ const verdict = (part: string, method: string, params?: unknown) => treeVerdict(
 
 describe("the door for parts: by capability, never by id (F2)", () => {
   test("a read passes for a part whose plugin holds its capability, whichever plugin; a method the table doesn't name isn't its business", () => {
-    for (const m of ["archive.history", "archive.list"]) expect(verdict("moss/conversation", m)).toMatchObject({ ok: true, by: "conversation.read" });
-    for (const m of ["plugin.list", "plugin.get", "plugin.ui"]) expect(verdict("moss/bot-editor", m)).toMatchObject({ ok: true, by: "plugins.read" });
+    for (const m of ["archive.history", "archive.list"]) expect(verdict("moss/archive", m)).toMatchObject({ ok: true, by: "sessions.read+conversation.read" });
+    for (const m of ["plugin.list", "plugin.get", "plugin.ui"]) expect(verdict("bot-editor", m)).toMatchObject({ ok: true, by: "plugins.read" });
     expect(verdict("moss/settings", "ui.settings")).toMatchObject({ ok: true, by: "app.settings" });
-    expect(verdict("moss/bot-editor", "ui.settings")).toMatchObject({ ok: true, by: "bots.edit" });
+    expect(verdict("bot-editor", "ui.settings")).toMatchObject({ ok: true, by: "bots.edit" });
     expect(verdict("moss/shell", "account.status")).toMatchObject({ ok: true, by: "account.read" });
-    expect(verdict("moss/bot-editor", "models.list")).toMatchObject({ ok: true, by: "bots.read" });
+    expect(verdict("bot-editor", "models.list")).toMatchObject({ ok: true, by: "bots.read" });
     // Without the capability: not a door of this table's (models.list, account.status and ui.settings aren't the layer role's).
-    expect(verdict("moss/archive", "models.list")).toMatchObject({ ok: false, owned: true, why: "models.list needs the bots.read capability" });
+    expect(treeVerdict(["files"], "models.list")).toMatchObject({ ok: false, owned: true, why: "models.list needs the sessions.read or bots.read capability" });
     expect(verdict("moss/conversation", "account.status")).toMatchObject({ ok: false, owned: true, why: "account.status needs the account.read capability" });
     expect(verdict("moss/conversation", "ui.settings")).toMatchObject({ ok: false, owned: true });
     expect(verdict("moss/composer", "nonsense.method")).toMatchObject({ ok: false, owned: false });
@@ -47,9 +52,10 @@ describe("the door for parts: by capability, never by id (F2)", () => {
       for (const part of ["moss/conversation", "moss/sidebar"]) expect(verdict(part, m, { patch: { appearance: "dark" } })).toMatchObject({ ok: false, owned: false });
     }
     for (const m of ["tool.setPermission", "tool.setAvailability", "point.active.set", "plugin.remove", "ui.secret", "ui.pick"]) {
+      const params = m === "ui.pick" ? { kind: "folder", use: "plugin.install" } : undefined;
       expect(LAYER_METHODS.has(m)).toBe(false);
-      expect(verdict("moss/conversation", m)).toMatchObject({ ok: false, owned: true });
-      expect(verdict("moss/conversation", m).ok === false && (verdict("moss/conversation", m) as { why: string }).why).toContain("capability");
+      expect(verdict("moss/conversation", m, params)).toMatchObject({ ok: false, owned: true });
+      expect(verdict("moss/conversation", m, params).ok === false && (verdict("moss/conversation", m, params) as { why: string }).why).toContain("capability");
     }
   });
 
@@ -72,12 +78,74 @@ describe("the door for parts: by capability, never by id (F2)", () => {
     }
   });
 
-  test("the session panels' reads: conversation.read, no gesture; without it the layer door (the layer role's own)", () => {
+  test("the session panels' reads: by the kind of the session named, no gesture; with neither read the layer door (the layer role's own)", () => {
     for (const m of ["session.diff", "session.outputs", "session.context", "session.connectors"]) {
-      expect(TREE_CALLS[m]).toEqual({ disposition: "read", needs: "conversation.read" });
+      expect(TREE_CALLS[m]).toEqual({ disposition: "read", needs: ["sessions.read", "conversation.read"], byKind: true });
       expect(verdict("moss/panel", m)).toMatchObject({ ok: true });
-      expect(treeVerdict(["conversation.read"], m)).toMatchObject({ ok: true });
+      expect(treeVerdict(["sessions.read"], m)).toMatchObject({ ok: true });
       expect(treeVerdict([], m)).toMatchObject({ ok: false, owned: false });
+    }
+  });
+
+  test("a new session (spec §9.4): agent.start takes only the part's own pick token for a folder in this computer's home, never a path", async () => {
+    const tokens = new PickTokens();
+    const sent: unknown[] = [];
+    const go = (params: unknown) => {
+      const { r } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: ["sessions.start"], method: "agent.start", params, gesture: true, tokens, request: async (m, p) => { sent.push([m, p]); return appConnection(m, p); } });
+      return routeCall(r).then((v) => v, (e: Error) => e.message);
+    };
+    const inHome = tokens.issue(THIRD, join(homedir(), "projects", "moss"), "agent.start");
+    expect(await go({ backend: "codex", root: inHome })).toEqual({ session: "s_new" });
+    expect(sent.at(-1)).toEqual(["agent.start", { backend: "codex", computer: "Studio", root: "home/Studio/projects/moss" }]);
+    // Spent: a second use is refused.
+    expect(await go({ backend: "codex", root: inHome })).toBe("pick the session's folder first");
+    // A path from the page, another part's token, a token for another use: refused, nothing started.
+    sent.length = 0;
+    expect(await go({ backend: "codex", root: join(homedir(), "projects") })).toBe("pick the session's folder first");
+    expect(await go({ backend: "codex", root: tokens.issue("someone-else", join(homedir(), "x"), "agent.start") })).toBe("pick the session's folder first");
+    expect(await go({ backend: "codex", root: tokens.issue(THIRD, join(homedir(), "x"), "plugin.install") })).toBe("pick the session's folder first");
+    // A folder outside the home, or the home itself: refused.
+    expect(await go({ backend: "codex", root: tokens.issue(THIRD, "/opt/elsewhere", "agent.start") })).toBe("a session works in a folder of this computer's home: pick one inside it");
+    expect(await go({ backend: "codex", root: tokens.issue(THIRD, homedir(), "agent.start") })).toBe("a session works in a folder of this computer's home: pick one inside it");
+    expect(await go({ backend: "../x", root: tokens.issue(THIRD, join(homedir(), "x"), "agent.start") })).toBe("which agent?");
+    expect(sent.filter((x) => (x as string[])[0] === "agent.start")).toEqual([]);
+    // Its own capability: neither sessions.read nor user.send ("sends as you") starts a session, or picks its folder.
+    expect(treeVerdict(["sessions.read"], "agent.start")).toMatchObject({ ok: false, owned: true });
+    expect(treeVerdict(["user.send"], "agent.start")).toMatchObject({ ok: false, owned: true });
+    expect(treeVerdict(["user.send"], "ui.pick", { kind: "folder", use: "agent.start" })).toMatchObject({ ok: false, owned: true });
+  });
+
+  test("reads by kind (spec revision 19, §3.6): conversation.read alone reaches no code session, sessions.read alone no bot's conversation", async () => {
+    const kinds: Record<string, string> = { s_code: "coding", agent_task: "agent", b_alpha: "bot", st_alpha: "side-thread" };
+    const ask = async (caps: string[], method: string, id: string) => {
+      const calls: string[] = [];
+      const { r } = route({
+        tree: { windowId: 1, pluginId: THIRD }, caps, method, params: { id }, gesture: false,
+        request: async (m, p) => { calls.push(m); return m === "session.get" ? (kinds[(p as { id: string }).id] === undefined ? Promise.reject(new Error("no such session")) : { session: { id: (p as { id: string }).id, kind: kinds[(p as { id: string }).id] } }) : "app"; },
+      });
+      const got = await routeCall(r).then((v) => v, (e: Error) => e.message);
+      return { got, calls };
+    };
+    for (const m of ["session.diff", "session.outputs", "session.context", "session.connectors"]) {
+      // A code session (a coding session, or a bot's coding task): sessions.read, never conversation.read.
+      for (const id of ["s_code", "agent_task"]) {
+        expect(await ask(["sessions.read"], m, id)).toEqual({ got: "app", calls: ["session.get", m] });
+        expect(await ask(["conversation.read"], m, id)).toEqual({ got: `${m} on this session needs the sessions.read capability`, calls: ["session.get"] });
+      }
+      // A bot's conversation and its side threads: conversation.read, never sessions.read.
+      for (const id of ["b_alpha", "st_alpha"]) {
+        expect(await ask(["conversation.read"], m, id)).toEqual({ got: "app", calls: ["session.get", m] });
+        expect(await ask(["sessions.read"], m, id)).toEqual({ got: `${m} on this session needs the conversation.read capability`, calls: ["session.get"] });
+      }
+      // A session the core doesn't know, or none named: refused, nothing read.
+      expect(await ask(["sessions.read", "conversation.read"], m, "s_gone")).toEqual({ got: "no session s_gone", calls: ["session.get"] });
+      expect((await ask(["sessions.read"], m, undefined as never)).calls).toEqual([]);
+    }
+    // The archive (the previous app's sessions, whose kind isn't kept): both reads, neither alone.
+    for (const m of ["archive.list", "archive.history"]) {
+      expect(treeVerdict(["sessions.read"], m)).toMatchObject({ ok: false, owned: true });
+      expect(treeVerdict(["conversation.read"], m)).toMatchObject({ ok: false, owned: true });
+      expect(treeVerdict(["sessions.read", "conversation.read"], m)).toMatchObject({ ok: true });
     }
   });
 
@@ -98,7 +166,7 @@ import { PART_LOG_LINES_MAX, PICK_TOKEN_MS, PickTokens, pageParams, routeCall, t
 
 // The bundled parts this file names (their ids only NAME them here; what each may do is its manifest's capabilities).
 const PLUGINS_PART = "moss/plugin-index";
-const BOT_EDITOR_PART = "moss/bot-editor";
+const BOT_EDITOR_PART = "bot-editor";
 const CONVERSATION_PART = "moss/conversation";
 const CHARACTER_PART = "moss/character";
 const SHELL_PART = "moss/shell";
@@ -182,7 +250,7 @@ describe("routing a part's call", () => {
 
   test("a bot's user layer is the bot editor's, with the user's click; no other part's; the retired avatar fields are refused", async () => {
     const patch = { id: "alpha", patch: { instructions: "x" } };
-    const editor = { windowId: 1, pluginId: "moss/bot-editor" };
+    const editor = { windowId: 1, pluginId: "bot-editor" };
     expect(await routeCall(route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: true }).r)).toBe("app");
     const none = route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: false });
     await expect(routeCall(none.r)).rejects.toThrow("only right after");
@@ -218,22 +286,20 @@ describe("routing a part's call", () => {
   });
 });
 
-describe("the bot editor's switch for other plugins' layout patches", () => {
-  const editor = { windowId: 1, pluginId: "moss/bot-editor" };
+describe("the bot editor's lists: a plugin's hides switched off in one spot; a tab's layout patches are retired (G8)", () => {
+  const editor = { windowId: 1, pluginId: "bot-editor" };
   const stored = { picks: [], lists: [{ spot: "status", order: ["a"], hidden: [] }, { spot: "bot.tab", bot: "luna", order: [], hidden: ["old#x"] }, { spot: "bot.tab", bot: "alpha", order: [], hidden: ["m#move"] }] };
   const go = (params: unknown, gesture = true) => {
     const got: [string, unknown][] = [];
     const { r } = route({ tree: editor, method: "ui.set", params, gesture, request: async (m, p) => { got.push([m, p]); return m === "ui.settings" ? stored : "app"; } });
     return { run: routeCall(r), got };
   };
-  test("one bot's switched-off patches, merged into the stored lists by main, with the user's click; nothing else", async () => {
-    const ok = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: ["mover#move", "mover#move"] }] } });
-    expect(await ok.run).toBe("app");
-    expect(ok.got).toEqual([["ui.settings", {}], ["ui.set", { patch: { lists: [stored.lists[0], stored.lists[2], { spot: "bot.tab", bot: "luna", order: [], hidden: ["mover#move"] }] } }]]);
-    // All back on: Luna's entry goes.
-    const on = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }] } });
-    await on.run;
-    expect(on.got.at(-1)).toEqual(["ui.set", { patch: { lists: [stored.lists[0], stored.lists[2]] } }]);
+  test("a tab's switched-off layout patches are refused (retired), and the ones stored before stay; a plugin's hides in one spot, with the user's click; nothing else", async () => {
+    for (const hidden of [["mover#move"], []]) {
+      const retired = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden }] } });
+      await expect(retired.run).rejects.toThrow("retired with the bot tab");
+      expect(retired.got).toEqual([]);
+    }
     for (const patch of [
       { appearance: "dark" },
       { lists: [{ spot: "status", order: [], hidden: ["x"] }] },
@@ -263,7 +329,7 @@ describe("the bot editor's switch for other plugins' layout patches", () => {
       await expect(bad.run).rejects.toThrow();
       expect(bad.got).toEqual([]);
     }
-    const none = go({ patch: { lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: [] }] } }, false);
+    const none = go({ patch: { lists: [{ spot: "status", bot: "luna", order: [], hidden: [], shown: ["tidy#no-roll"] }] } }, false);
     await expect(none.run).rejects.toThrow("only right after the user's own");
     expect(verdict("moss/conversation", "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: false, owned: false, why: "ui.set needs the bots.edit capability" });
     expect(treeVerdict(["bots.edit"], "ui.set", { patch: { lists: [] } })).toMatchObject({ ok: true, by: "bots.edit" });
@@ -330,12 +396,12 @@ describe("the Settings page's ui.set", () => {
 /** What each table entry needs (F2): the capabilities of which any one lets a part through (none: no capability; the
  *  call holds its own rule), and whether it needs the user's press. Shape-dependent entries are listed with the shape
  *  `paramsFor` sends; their other shapes are tested on their own. */
-const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
+const EXPECTED: Record<string, { needs: string[]; /** Every one of these as well (`needsAll`). */ all?: string[]; gesture: boolean }> = {
   "ui.settings": { needs: ["app.settings", "bots.edit"], gesture: false },
-  "session.diff": { needs: ["conversation.read"], gesture: false },
-  "session.outputs": { needs: ["conversation.read"], gesture: false },
-  "session.context": { needs: ["conversation.read"], gesture: false },
-  "session.connectors": { needs: ["conversation.read"], gesture: false },
+  "session.diff": { needs: ["sessions.read", "conversation.read"], gesture: false },
+  "session.outputs": { needs: ["sessions.read", "conversation.read"], gesture: false },
+  "session.context": { needs: ["sessions.read", "conversation.read"], gesture: false },
+  "session.connectors": { needs: ["sessions.read", "conversation.read"], gesture: false },
   "ui.set": { needs: ["app.settings"], gesture: true },
   "ui.secret": { needs: ["plugins.manage", "bots.edit"], gesture: true },
   "plugin.settings.get": { needs: ["plugins.read"], gesture: false },
@@ -345,9 +411,9 @@ const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
   "conversation.messageAction": { needs: [], gesture: true },
   "ui.pick": { needs: ["plugins.manage"], gesture: true },
   "account.status": { needs: ["account.read"], gesture: false },
-  "archive.history": { needs: ["conversation.read"], gesture: false },
-  "archive.list": { needs: ["conversation.read"], gesture: false },
-  "models.list": { needs: ["bots.read"], gesture: false },
+  "archive.history": { needs: [], all: ["sessions.read", "conversation.read"], gesture: false },
+  "archive.list": { needs: [], all: ["sessions.read", "conversation.read"], gesture: false },
+  "models.list": { needs: ["sessions.read", "bots.read"], gesture: false },
   "plugin.logs": { needs: ["logs.read"], gesture: false },
   "tool.permissions": { needs: ["tools.permissions"], gesture: false },
   "tool.setPermission": { needs: ["tools.permissions"], gesture: true },
@@ -356,6 +422,8 @@ const EXPECTED: Record<string, { needs: string[]; gesture: boolean }> = {
   "point.active.list": { needs: ["app.settings"], gesture: false },
   "point.active.set": { needs: ["app.settings"], gesture: true },
   "computer.list": { needs: ["computers.read"], gesture: false },
+  "agent.backends": { needs: ["sessions.read"], gesture: false },
+  "agent.start": { needs: ["sessions.start"], gesture: true },
   ...Object.fromEntries(["plugin.list", "plugin.get", "plugin.ui", "plugin.index.list", "plugin.index.search", "plugin.auth.list", "plugin.dev.list", "plugin.grant.list", "command.list", "notify.mutes"].map((m) => [m, { needs: ["plugins.read"], gesture: false }])),
   ...Object.fromEntries(["plugin.install", "plugin.remove", "plugin.update", "plugin.pin", "plugin.restart", "plugin.index.add", "plugin.index.remove", "plugin.auth.signIn", "plugin.auth.signOut", "plugin.dev.add", "plugin.dev.remove", "plugin.grant.remove", "plugin.setScope", "plugin.setComputers", "plugin.confirmAdult", "plugin.dev.renew", "notify.setMuted", "plugin.setEnabled"].map((m) => [m, { needs: ["plugins.manage"], gesture: true }])),
 };
@@ -366,7 +434,11 @@ const THIRD = "acme-panel";
 
 /** The app's connection as the door's own look-ups see it: a plugin with one plain setting (`k`, `region`) and one key
  *  (`token`), and one `api-key` sign-in (index 0) and one browser sign-in (index 1). */
-async function appConnection(method: string): Promise<unknown> {
+async function appConnection(method: string, params?: unknown): Promise<unknown> {
+  if (method === "computer.list") return { computers: [{ name: "Studio", link: "self" }, { name: "Laptop", link: "lan" }] };
+  if (method === "agent.start") return { session: "s_new" };
+  // The core's own session, for a read by kind: a bot's conversation (`b_…`), else a code session.
+  if (method === "session.get") return { session: { kind: String((params as { id?: unknown } | undefined)?.id ?? "").startsWith("b_") ? "bot" : "coding" } };
   if (method === "plugin.get") return { plugin: { id: "tarot", manifest: { settings: { k: { type: "string" }, region: { type: "string" }, token: { type: "secret" } } } } };
   if (method === "bot.list") return { bots: [{ id: "alpha" }, { id: "tarot-panel" }] };
   if (method === "session.resend") return { seq: 9 };
@@ -411,6 +483,8 @@ const WORST: Record<string, Worst> = {
   "plugin.grant.list": "read", // the files and folders picked for one plugin: paths only the user chose
   "command.list": "read", // each command's default key and whether it is bound, for the Plugins page's Keys lines
   "computer.list": "read", // the computers' names, to tick which a plugin's server runs on
+  "agent.backends": "read", // the coding agents plugins bring and which computers have them
+  "agent.start": "starts a model turn", // a coding session in a folder the person picked in main's dialog, no prompt
   "notify.mutes": "read", // which plugins' notifications are muted
   "notify.setMuted": "harmless change", // mutes or unmutes one plugin's notifications to the user; nothing it may do moves
   "ui.pick": "main-owned dialog", // main's own open dialog; the page gets a one-use token and a name
@@ -464,13 +538,21 @@ function paramsFor(method: string, part: string, tokens: PickTokens, cap = ""): 
     case "notify.setMuted":
       return { pluginId: "tarot", muted: true };
     case "ui.pick":
-      return { kind: "folder", use: "plugin.install" };
+      return { kind: "folder", use: cap === "sessions.start" ? "agent.start" : "plugin.install" };
     case "ui.secret":
       return { id: cap === "bots.edit" ? "alpha" : "tarot", key: "token" };
     case "session.resend":
       return { session: "b_alpha" };
     case "conversation.messageAction":
       return { entry: "alpha#pin", session: "b_alpha", seq: 7 };
+    case "agent.start":
+      return { backend: "moss-code", root: tokens.issue(part, join(homedir(), "projects", "new"), "agent.start") };
+    case "session.diff":
+    case "session.outputs":
+    case "session.context":
+    case "session.connectors":
+      // A bot's conversation for a holder of conversation.read, a code session for any other.
+      return { id: cap === "conversation.read" ? "b_alpha" : "s_code" };
     default:
       return {};
   }
@@ -495,19 +577,20 @@ describe("the door, table by table: what each entry needs, with what press", () 
       expect([method, needsOf(TREE_CALLS[method]!, paramsFor(method, THIRD, new PickTokens())).slice().sort()]).toEqual([method, want.needs.slice().sort()]);
       expect([method, TREE_CALLS[method]!.disposition === "gesture"]).toEqual([method, want.gesture]);
       // plugins.manage carries plugins.read (IMPLIED_CAPABILITIES): its holder passes each read too.
+      expect([method, [...(TREE_CALLS[method]!.needsAll ?? [])].sort()]).toEqual([method, [...(want.all ?? [])].sort()]);
       const holders = want.needs.length === 0 ? [""] : want.needs.includes("plugins.read") ? [...want.needs, "plugins.manage"] : want.needs;
       for (const cap of holders) {
         for (const gesture of [true, false]) {
           const tokens = new PickTokens();
           const calls: string[] = [];
-          const { r } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: cap === "" ? [] : [cap], method, params: paramsFor(method, THIRD, tokens, cap), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, entries: () => PIN_ENTRY, request: async (m) => { calls.push(m); return appConnection(m); } });
+          const { r } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: [...(cap === "" ? [] : [cap]), ...(want.all ?? [])], method, params: paramsFor(method, THIRD, tokens, cap), gesture, tokens, pick: async () => "/picked/folder", openKey: async () => true, entries: () => PIN_ENTRY, request: async (m, p) => { calls.push(m); return appConnection(m, p); } });
           const ok = gesture || !want.gesture;
           const got = await routeCall(r).then(() => "ok", (e: Error) => e.message);
           expect([method, cap, gesture, got]).toEqual([method, cap, gesture, ok ? "ok" : expect.stringContaining("only right after the user's own")]);
           if (!ok) expect([method, cap, calls]).toEqual([method, cap, []]);
         }
       }
-      if (want.needs.length === 0) continue;
+      if (want.needs.length === 0 && want.all === undefined) continue;
       // With none: refused with the capability it needs, or (a method the `layer` role has) the layer door's own rules.
       const { r, calls } = route({ tree: { windowId: 1, pluginId: THIRD }, caps: ["files", "notify"], method, params: paramsFor(method, THIRD, new PickTokens()), gesture: true });
       const got = await routeCall(r).then((v) => v, (e: Error) => e.message);
@@ -526,13 +609,13 @@ describe("the door, table by table: what each entry needs, with what press", () 
       [PLUGINS_PART]: ["plugin.install", "plugin.remove", "plugin.get", "plugin.settings.get", "plugin.settings.set", "ui.pick", "ui.secret", "plugin.logs", "notify.setMuted", "computer.list", "command.list"],
       [BOT_EDITOR_PART]: ["bot.setUserLayer", "models.list", "plugin.list", "plugin.ui", "ui.secret", "ui.settings"],
       [CONVERSATION_PART]: ["archive.history", "session.resend", "conversation.messageAction"],
-      [SHELL_PART]: ["account.status", "computer.list"],
+      [SHELL_PART]: ["account.status", "computer.list", "agent.backends", "agent.start", "ui.pick"],
       "moss/sidebar": ["account.status", "computer.list"],
       "moss/panel": ["session.outputs", "session.context", "session.connectors", "computer.list"],
       "moss/panel-diff": ["session.diff"],
       "moss/archive": ["archive.list", "archive.history"],
     };
-    for (const [part, methods] of Object.entries(makes)) for (const m of methods) expect([part, m, verdict(part, m, paramsFor(m, part, new PickTokens(), part === BOT_EDITOR_PART ? "bots.edit" : "")).ok]).toEqual([part, m, true]);
+    for (const [part, methods] of Object.entries(makes)) for (const m of methods) expect([part, m, verdict(part, m, paramsFor(m, part, new PickTokens(), part === BOT_EDITOR_PART ? "bots.edit" : part === SHELL_PART ? "sessions.start" : "")).ok]).toEqual([part, m, true]);
     const src = readFileSync(join(import.meta.dir, "../src/main/ui/tree-calls.ts"), "utf8");
     expect(src).not.toMatch(/"moss\/[a-z-]+"/);
   });
@@ -835,7 +918,7 @@ describe("Try again on the conversation: main forwards the session to the daemon
   });
 
   test("another part, or no gesture, is refused before anything is sent", async () => {
-    for (const part of ["moss/composer", "moss/bot-editor", PLUGINS_PART, "moss/settings", "moss/sidebar"]) {
+    for (const part of ["moss/composer", "bot-editor", PLUGINS_PART, "moss/settings", "moss/sidebar"]) {
       const t = resendFrom({ part });
       await expect(routeCall(t.r)).rejects.toThrow("session.resend needs the user.send capability");
       expect(t.sent).toEqual([]);

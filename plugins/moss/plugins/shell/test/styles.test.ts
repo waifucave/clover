@@ -80,7 +80,7 @@ describe("the frame's material and its bar", () => {
     // Only in main: a bot tab in the panel (an agent opened from a bot's column) has no bar over it.
     expect(decl(".cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--moss-plugin-moss-bar-height)");
     // An agent's live tab in main runs up under the bar the same way.
-    expect(decl(".cl-window__content > .cl-agent-tab > .cl-bot-tab > .cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--moss-plugin-moss-bar-height)");
+    expect(decl(".cl-window__content .cl-agent-tab[data-place=\"main\"] > .cl-bot-tab > .cl-bot-tab__conversation", "--cl-inset-top")).toBe("var(--moss-plugin-moss-bar-height)");
     expect(decl(".cl-bot-tab__conversation", "--cl-inset-top")).toBeUndefined();
     // Anything else in main starts below the bar.
     expect(decl(".cl-window__content", "padding-top")).toBe("var(--moss-plugin-moss-bar-height)");

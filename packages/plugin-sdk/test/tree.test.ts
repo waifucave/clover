@@ -20,20 +20,18 @@ function folder(files: Record<string, string | object>, opts: { outside?: string
 }
 
 const THEME = { theme: 1, name: "Luna", tokens: { "color.accent": "#7a5cff", "card.approve.background": "#7a5cff", "font.weight.bold": 700, "plugin.luna.glow": "#ffffff" } };
-const LAYOUT = { layout: 1, root: { column: [{ spot: "bot.stage", grow: 1 }, { spot: "conversation", grow: 2 }, { spot: "composer" }] } };
 
 const LUNA = {
   "moss.json": {
     manifest: 1, id: "luna", name: "Luna", version: "1.0.0",
     contributes: {
-      bot: { name: "Luna", instructions: "bot/instructions.md", theme: "luna", layout: "tab/layout.json" },
+      bot: { name: "Luna", instructions: "bot/instructions.md", theme: "luna" },
       themes: [{ id: "luna", file: "tab/theme.json" }],
       locales: [{ lang: "fr", file: "locales/fr.json" }],
     },
   },
   "bot/instructions.md": "You are Luna.",
   "tab/theme.json": THEME,
-  "tab/layout.json": LAYOUT,
   "locales/fr.json": { locale: 1, lang: "fr", strings: { "luna.greeting": "Bonjour", "luna.cards": { one: "{n} carte", other: "{n} cartes" } } },
   "plugins/tarot-panel/moss.json": {
     manifest: 1, name: "Tarot panel", engines: { moss: "^1.0.0" }, client: { entry: "client/index.tsx" },
@@ -105,7 +103,7 @@ describe("a bot plugin with a child", () => {
   });
 
   test("a symlink out of the folder is refused where the reader says so", async () => {
-    const r = await validateTree(folder(LUNA, { outside: ["tab/layout.json"] }), { folderName: "luna" });
+    const r = await validateTree(folder(LUNA, { outside: ["tab/theme.json"] }), { folderName: "luna" });
     expect(r.issues.map((i) => i.code)).toEqual(["path_escape"]);
   });
 
@@ -115,36 +113,19 @@ describe("a bot plugin with a child", () => {
     expect(r.issues.map((i) => `${i.code}:${i.path}`)).toEqual(["locale_foreign_key:/strings/moss.send"]);
   });
 
-  test("a bot's layout places only spots of its tab", async () => {
-    const files = { ...LUNA, "tab/layout.json": { layout: 1, root: { row: [{ spot: "conversation" }, { spot: "sidebar" }] } } };
-    const r = await validateTree(folder(files), { folderName: "luna" });
-    expect(r.issues.map((i) => i.code)).toEqual(["layout_foreign_spot"]);
-  });
-
-  test("another plugin's patch to bots' tabs: its own format, its added spots the tab's or its own, its CSS in its folder", async () => {
-    const mover = (patch: object, extra: Record<string, unknown> = {}) => folder({
+  test("a bot's tab layout is retired (G8): a bot's own is ignored with a warning and never read, another plugin's patch is refused", async () => {
+    const own = { ...LUNA, "moss.json": { ...LUNA["moss.json"], contributes: { ...LUNA["moss.json"].contributes, bot: { ...LUNA["moss.json"].contributes.bot, layout: "tab/layout.json" } } }, "tab/layout.json": { layout: 1, root: { row: [{ spot: "sidebar" }, { image: "../x.png" }] } } };
+    const r = await validateTree(folder(own), { folderName: "luna" });
+    // The layout file is never read (its foreign spot and its path out of the folder are no findings); the manifest says why.
+    expect(r.issues).toEqual([]);
+    expect(r.top.issues.map((i) => `${i.severity}:${i.code}:${i.path}`)).toEqual(["warning:bot_layout_retired:/contributes/bot/layout"]);
+    expect(r.ok).toBe(true);
+    const mover = folder({
       "moss.json": { manifest: 1, id: "mover", name: "Mover", version: "1.0.0", engines: { moss: "^1.0.0" }, contributes: { ui: [{ spot: "bot.tab", id: "move", layout: "tab/move.json", when: { bot: "luna" } }] } },
-      "tab/move.json": patch,
-      ...extra,
+      "tab/move.json": { layout: 1, changes: [{ move: "bot.header", before: "composer" }] },
     } as Record<string, string | object>);
-    const move = { layout: 1, changes: [{ move: "bot.header", before: "composer" }, { wrap: "bot.header", in: "row", class: "nudge" }], css: "tab/move.css" };
-    expect((await validateTree(mover(move, { "tab/move.css": ".nudge { transform: translateY(-6px) }" }), { folderName: "mover" })).issues).toEqual([]);
-    expect((await validateTree(mover(move), { folderName: "mover" })).issues.map((i) => i.code)).toEqual(["file_missing"]);
-    const far = { layout: 1, changes: [{ add: { spot: "sidebar" }, into: ".talk" }, { add: { spot: "composer.action", key: "model" }, before: "composer" }, { set: ".talk", class: "x" }] };
-    expect((await validateTree(mover(far), { folderName: "mover" })).issues.map((i) => i.code).sort()).toEqual(["layout_foreign_spot", "layout_foreign_spot", "layout_patch_reach"]);
-    expect((await validateTree(mover({ layout: 1, extends: "default", changes: [] }), { folderName: "mover" })).issues.map((i) => i.code)).toEqual(["file_format"]);
-  });
-
-  test("a bot's layout may be a patch on the stock tab: checked as what it makes; a change whose node isn't there is no error", async () => {
-    const patch = { layout: 1, extends: "default", changes: [{ set: ".tab", as: "row" }, { set: "bot.stage", size: "42%" }, { remove: "bot.header" }] };
-    expect((await validateTree(folder({ ...LUNA, "tab/layout.json": patch }), { folderName: "luna" })).issues).toEqual([]);
-    // What it adds is checked as any layout's: a spot outside the tab, a path out of the folder.
-    const foreign = { layout: 1, extends: "default", changes: [{ add: { spot: "sidebar" }, into: ".tab" }, { add: { image: "../x.png" }, into: ".talk" }] };
-    const r = await validateTree(folder({ ...LUNA, "tab/layout.json": foreign }), { folderName: "luna" });
-    expect(r.issues.map((i) => i.code).sort()).toEqual(["layout_foreign_spot", "path_escape"]);
-    // The bot's own layout extends the stock tab; "bot" is the user's layout's base.
-    const userBase = { layout: 1, extends: "bot", changes: [] };
-    expect((await validateTree(folder({ ...LUNA, "tab/layout.json": userBase }), { folderName: "luna" })).issues.map((i) => `${i.code}:${i.path}`)).toEqual(["file_format:/extends"]);
+    const moved = await validateTree(mover, { folderName: "mover" });
+    expect([...moved.issues, ...moved.top.issues].map((i) => `${i.refuses}:${i.code}:${i.path}`)).toEqual(["entry:spot_retired:/contributes/ui/0/layout"]);
   });
 
   test("theme tokens are the catalog's or the plugin's own, with safe values", async () => {
@@ -224,7 +205,7 @@ describe("a tree's children are bounded", () => {
   // Whoever owns a plug sets the rules (§5.5, the owner's rule of November 14): Bots offers a bot its top bar, never the
   // sidebar. A child tied to the bot's tab may dress the bar as any app plugin may, and nothing tied to a bot's tab
   // dresses the sidebar; the bot's own plugin fills its bar directly.
-  test("a bot's top bar is its own to fill (directly, or through a child), and the sidebar no part tied to its tab dresses", async () => {
+  test("a bot's top bar is retired (G8), directly or through a child; a child's panel names its capabilities; the sidebar no part tied to its tab dresses", async () => {
     const chromeChild = (ui: Record<string, unknown>[]) => ({
       "plugins/chrome/moss.json": {
         manifest: 1, name: "Luna's chrome", engines: { moss: "^1.0.0" }, client: { entry: "client/index.tsx" },
@@ -232,7 +213,9 @@ describe("a tree's children are bounded", () => {
       },
       "plugins/chrome/client/index.tsx": "export const LunaBar = () => null; export const LunaSidebar = () => null;",
     });
-    const r = await validateTree(folder({ ...LUNA, ...chromeChild([{ spot: "bar", id: "bar", component: "LunaBar", when: { bot: "luna" } }]) }), { folderName: "luna" });
+    const barChild = await validateTree(folder({ ...LUNA, ...chromeChild([{ spot: "bar", id: "bar", component: "LunaBar", when: { bot: "luna" } }]) }), { folderName: "luna" });
+    expect(barChild.children.find((c) => c.folder === "chrome")!.report.issues.map((i) => i.code)).toEqual(["spot_retired"]);
+    const r = await validateTree(folder({ ...LUNA, ...chromeChild([{ spot: "panel", key: "lunabar", title: "Luna", id: "bar", component: "LunaBar", when: { bot: "luna" } }]) }), { folderName: "luna" });
     expect(r.issues).toEqual([]);
     const child = r.children.find((c) => c.folder === "chrome")!;
     expect([child.ok, child.report.id, child.report.class]).toEqual([true, "luna/chrome", "code"]);
@@ -244,7 +227,7 @@ describe("a tree's children are bounded", () => {
     expect(sidebar.children.find((c) => c.folder === "chrome")!.report.issues.some((i) => i.code === "bot_tied_not_offered")).toBe(true);
     const withUi = (ui: Record<string, unknown>[]) => ({ ...LUNA, "moss.json": { ...(LUNA["moss.json"] as { contributes: object }), contributes: { ...(LUNA["moss.json"] as { contributes: object }).contributes, ui }, engines: { moss: "^1.0.0" }, client: { entry: "client/index.tsx" } }, "client/index.tsx": "export const X = () => null;" });
     const bar = await validateTree(folder(withUi([{ spot: "bar", component: "X" }])), { folderName: "luna" });
-    expect([...bar.issues, ...bar.top.issues]).toEqual([]);
+    expect([...bar.issues, ...bar.top.issues].map((i) => i.code)).toEqual(["spot_retired"]);
     const bad = await validateTree(folder(withUi([{ spot: "sidebar", component: "X" }])), { folderName: "luna" });
     expect([...bad.issues, ...bad.top.issues].some((i) => i.code === "bot_spot_not_offered")).toBe(true);
   });

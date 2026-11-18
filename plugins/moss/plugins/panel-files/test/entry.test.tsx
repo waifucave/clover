@@ -17,7 +17,7 @@ describe("the files entry", () => {
     let fire: ((e: { type: "changed"; paths: string[] } | { type: "resync" }) => void) | undefined;
     let stopped = false;
     const api = fakeApi({
-      conversation: { get: async () => CODE },
+      sessions: { list: async () => [], watch: () => () => undefined, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined,  get: async () => CODE },
       files: fakeFiles({
         list: async (path) => {
           listed.push(path);
@@ -64,7 +64,7 @@ describe("the files entry", () => {
     const listed: string[] = [];
     const read: string[] = [];
     const api = fakeApi({
-      conversation: { get: async () => CODE },
+      sessions: { list: async () => [], watch: () => () => undefined, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined,  get: async () => CODE },
       files: fakeFiles({
         list: async (path) => {
           listed.push(path);

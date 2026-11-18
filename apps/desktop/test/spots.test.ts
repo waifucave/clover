@@ -74,13 +74,6 @@ describe("single spots and keyed defaults", () => {
     expect(shownRefs(resolveCell({ plugins: all, ctx }, "file.preview", "text/plain"))).toEqual(["x-files#file.preview"]);
   });
 
-  test("a bot's own keyless bot.tab entry fills only that bot's tab", () => {
-    const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }], { isBot: true });
-    const tabs = plugin("x-tabs", [{ spot: "bot.tab", component: "AnyTab" }]);
-    expect(shownRefs(resolveCell({ plugins: [luna, tabs], ctx }, "bot.tab", "luna"))).toEqual(["luna#bot.tab"]);
-    expect(shownRefs(resolveCell({ plugins: [luna, tabs], ctx }, "bot.tab", "alpha"))).toEqual(["x-tabs#bot.tab"]);
-  });
-
   test("a bot plugin's part beside its bot (`app`, §5.5) follows the app's rules: not held to its own tab", () => {
     const luna = plugin("luna", [{ spot: "bot.tab", component: "LunaTab" }, { spot: "composer", id: "every", component: "Everyone", app: true }], { isBot: true });
     const e = luna.entries.find((x) => x.id === "every")!;
@@ -206,18 +199,15 @@ describe("which entry shows: the seven rules", () => {
     expect(partOf(composer, "composer", { ctx: inTab("alpha") }, tree)).toBe("composer");
     // A plugin whose entries sit in the composer and the conversation dresses the tab around both.
     const both = plugin("both", [{ spot: "composer", component: "C" }, { spot: "conversation", component: "V" }]);
-    expect(partOf(both, "composer", { ctx: inTab("alpha") }, new SpotTree([...DEFAULT, both]))).toBe("bot.tab");
-    // Inside a tab, entries outside it (a sidebar row) don't widen the part.
-    const rowAndComposer = plugin("row-and-composer", [{ spot: "sidebar.bot", component: "Row" }, { spot: "composer", component: "C" }]);
-    expect(partOf(rowAndComposer, "composer", { ctx: inTab("alpha") }, new SpotTree([...DEFAULT, rowAndComposer]))).toBe("composer");
+    expect(partOf(both, "composer", { ctx: inTab("alpha") }, new SpotTree([...DEFAULT, both]))).toBe("main[agent]");
   });
 
   test("3: a plugin's own spots sit under the entry that declares them", () => {
-    const deck = plugin("deck", [{ spot: "bot.side", component: "Deck", declares: { "deck.card": { shape: "keyed", props: {} } } }, { spot: "deck.card", key: "tarot", component: "Tarot" }]);
+    const deck = plugin("deck", [{ spot: "status", component: "Deck", declares: { "deck.card": { shape: "keyed", props: {} } } }, { spot: "deck.card", key: "tarot", component: "Tarot" }]);
     const tarot = plugin("tarot", [{ spot: "deck.card", key: "tarot", component: "Better" }]);
     const plugins = [...DEFAULT, deck, tarot];
     const tree = new SpotTree(plugins);
-    expect(tree.chain("deck.card[tarot]")).toEqual(["deck.card[tarot]", "deck.card", "bot.side", "bot.tab", "main[bot]", "main", "app.root"]);
+    expect(tree.chain("deck.card[tarot]")).toEqual(["deck.card[tarot]", "deck.card", "status", "app.root"]);
     const r = resolveCell({ plugins, ctx: inTab("alpha") }, "deck.card", "tarot");
     expect(shownRefs(r)).toEqual(["tarot#deck.card"]);
     expect(r.decidedBy).toBe(3);
@@ -268,39 +258,39 @@ describe("entries: style and hide, `needs` and `keep`", () => {
   });
 
   test("in a list spot, a hide takes out the one entry it names (`target`), as its `when` and its bot allow; the user's own list wins both ways", () => {
-    const dice = plugin("dice", [{ spot: "bot.header.action", id: "roll", component: "Roll", title: "Roll" }, { spot: "bot.header.action", id: "flip", component: "Flip", title: "Flip", order: 10 }]);
+    const dice = plugin("dice", [{ spot: "status", id: "roll", component: "Roll", title: "Roll" }, { spot: "status", id: "flip", component: "Flip", title: "Flip", order: 10 }]);
     const refs = (r: ReturnType<typeof resolveCell>) => shownRefs(r);
-    const cell = (extra: UiPlugin[], at = inTab("alpha"), choices?: UiChoices) => resolveCell({ plugins: [...DEFAULT, dice, ...extra], ctx: at, ...(choices ? { choices } : {}) }, "bot.header.action");
+    const cell = (extra: UiPlugin[], at = inTab("alpha"), choices?: UiChoices) => resolveCell({ plugins: [...DEFAULT, dice, ...extra], ctx: at, ...(choices ? { choices } : {}) }, "status");
     expect(refs(cell([]))).toEqual(["dice#flip", "dice#roll"]);
     // One entry, by its ref; the rest stay, in order.
-    const tidy = plugin("tidy", [{ spot: "bot.header.action", id: "no-roll", hide: true, target: "dice#roll" }]);
+    const tidy = plugin("tidy", [{ spot: "status", id: "no-roll", hide: true, target: "dice#roll" }]);
     const r = cell([tidy]);
     expect(refs(r)).toEqual(["dice#flip"]);
     expect(r.hiddenByPlugin.map((h) => [entryRef(h.entry.entry), entryRef(h.by.entry)])).toEqual([["dice#roll", "tidy#no-roll"]]);
     expect(r.hidden).toBe(false);
     // No target: nothing goes (never the whole list); a plugin's id: all of that plugin's entries there.
-    expect(refs(cell([plugin("vague", [{ spot: "bot.header.action", id: "x", hide: true }])]))).toEqual(["dice#flip", "dice#roll"]);
-    expect(refs(cell([plugin("sweep", [{ spot: "bot.header.action", id: "x", hide: true, target: "dice" }])]))).toEqual([]);
+    expect(refs(cell([plugin("vague", [{ spot: "status", id: "x", hide: true }])]))).toEqual(["dice#flip", "dice#roll"]);
+    expect(refs(cell([plugin("sweep", [{ spot: "status", id: "x", hide: true, target: "dice" }])]))).toEqual([]);
     // Its `when` limits it, as any entry's does; a bot's own plugin's hide is for its own tab only.
-    const lunaOnly = plugin("tidy", [{ spot: "bot.header.action", id: "no-roll", hide: true, target: "dice#roll", when: { bot: "luna" } }]);
+    const lunaOnly = plugin("tidy", [{ spot: "status", id: "no-roll", hide: true, target: "dice#roll", when: { bot: "luna" } }]);
     expect(refs(cell([lunaOnly], inTab("alpha")))).toEqual(["dice#flip", "dice#roll"]);
     expect(refs(cell([lunaOnly], inTab("luna")))).toEqual(["dice#flip"]);
-    const lunaBot = plugin("luna", [{ spot: "bot.header.action", id: "no-roll", hide: true, target: "dice#roll" }], { isBot: true });
+    const lunaBot = plugin("luna", [{ spot: "status", id: "no-roll", hide: true, target: "dice#roll" }], { isBot: true });
     expect(refs(cell([lunaBot], inTab("alpha")))).toEqual(["dice#flip", "dice#roll"]);
     expect(refs(cell([lunaBot], inTab("luna")))).toEqual(["dice#flip"]);
     // The user keeps what a plugin hid (`shown`), and still hides what they choose.
-    const mine: UiChoices = { picks: [], lists: [{ spot: "bot.header.action", order: [], hidden: ["dice#flip"], shown: ["dice#roll"] }] };
+    const mine: UiChoices = { picks: [], lists: [{ spot: "status", order: [], hidden: ["dice#flip"], shown: ["dice#roll"] }] };
     const back = cell([tidy], inTab("alpha"), mine);
     expect(refs(back)).toEqual(["dice#roll"]);
     expect(back.hiddenByUser.map((c) => entryRef(c.entry))).toEqual(["dice#flip"]);
     // Or the user switches the plugin's hide itself off (`shown` naming it), for this bot.
-    expect(refs(cell([tidy], inTab("alpha"), { picks: [], lists: [{ spot: "bot.header.action", bot: "alpha", order: [], hidden: [], shown: ["tidy#no-roll"] }] }))).toEqual(["dice#flip", "dice#roll"]);
-    expect(refs(cell([tidy], inTab("luna"), { picks: [], lists: [{ spot: "bot.header.action", bot: "alpha", order: [], hidden: [], shown: ["tidy#no-roll"] }] }))).toEqual(["dice#flip"]);
+    expect(refs(cell([tidy], inTab("alpha"), { picks: [], lists: [{ spot: "status", bot: "alpha", order: [], hidden: [], shown: ["tidy#no-roll"] }] }))).toEqual(["dice#flip", "dice#roll"]);
+    expect(refs(cell([tidy], inTab("luna"), { picks: [], lists: [{ spot: "status", bot: "alpha", order: [], hidden: [], shown: ["tidy#no-roll"] }] }))).toEqual(["dice#flip"]);
   });
 
   test("in a single or keyed cell, the user switches a plugin's hide off: the cell is drawn as without it", () => {
     const noNotes = plugin("hide-notes", [{ spot: "conversation.message", key: "note", hide: true }], { caps: ["conversation.read"] });
-    const at = (lists: UiChoices["lists"]) => resolveCell({ plugins: [...DEFAULT, noNotes], choices: { picks: [], lists }, ctx: inTab("alpha") }, "conversation.message", "note");
+    const at = (lists: UiChoices["lists"]) => resolveCell({ plugins: [...DEFAULT, noNotes], choices: { picks: [], lists }, ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "note");
     expect(at([]).hidden).toBe(true);
     const back = at([{ spot: "conversation.message", bot: "alpha", order: [], hidden: [], shown: ["hide-notes#conversation.message"] }]);
     expect(back.hidden).toBe(false);
@@ -309,14 +299,14 @@ describe("entries: style and hide, `needs` and `keep`", () => {
 
   test("a kept key can't be hidden, by an entry or by a pick", () => {
     const hideCards = plugin("hide-cards", [{ spot: "conversation.message", key: "approval", hide: true }], { caps: ["conversation.read"] });
-    const r = resolveCell({ plugins: [...DEFAULT, hideCards], ctx: inTab("alpha") }, "conversation.message", "approval");
+    const r = resolveCell({ plugins: [...DEFAULT, hideCards], ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "approval");
     expect(r.hidden).toBe(false);
     expect(shownRefs(r)).toEqual(["moss/conversation#conversation.message"]);
     const pickNothing: UiChoices = { picks: [{ spot: "conversation.message", key: "approval", entry: null }], lists: [] };
-    expect(resolveCell({ plugins: DEFAULT, choices: pickNothing, ctx: inTab("alpha") }, "conversation.message", "approval").hidden).toBe(false);
+    expect(resolveCell({ plugins: DEFAULT, choices: pickNothing, ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "approval").hidden).toBe(false);
     // Another key of the same spot can be hidden.
     const hideNotes = plugin("hide-notes", [{ spot: "conversation.message", key: "note", hide: true }], { caps: ["conversation.read"] });
-    expect(resolveCell({ plugins: [...DEFAULT, hideNotes], ctx: inTab("alpha") }, "conversation.message", "note").hidden).toBe(true);
+    expect(resolveCell({ plugins: [...DEFAULT, hideNotes], ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "note").hidden).toBe(true);
   });
 
   test("style-only entries don't compete, and apply in reverse rank so the would-be winner applies last", () => {
@@ -326,12 +316,12 @@ describe("entries: style and hide, `needs` and `keep`", () => {
     const r = resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("luna") }, "composer");
     expect(shownRefs(r)).toEqual(["moss/composer#composer"]);
     expect(r.styles.map((c) => c.plugin.id)).toEqual(["moss/look", "rounder", "luna-look"]);
-    expect(resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("alpha") }, "composer").styles.map((c) => c.plugin.id)).toEqual(["moss/look", "rounder"]);
+    expect(resolveCell({ plugins: [...DEFAULT, bundledStyle, userStyle, lunaStyle], ctx: inTab("alpha", { session: "bot" }) }, "composer").styles.map((c) => c.plugin.id)).toEqual(["moss/look", "rounder"]);
   });
 
   test("`needs`: an entry whose plugin lacks a capability the spot's props carry data for isn't mounted", () => {
     const blind = plugin("blind-bubbles", [{ spot: "conversation.message", key: "bot", component: "Bubble" }]);
-    const r = resolveCell({ plugins: [...DEFAULT, blind], ctx: inTab("alpha") }, "conversation.message", "bot");
+    const r = resolveCell({ plugins: [...DEFAULT, blind], ctx: inTab("alpha", { session: "bot" }) }, "conversation.message", "bot");
     expect(shownRefs(r)).toEqual(["moss/conversation#conversation.message"]);
     expect(r.skipped).toEqual([{ ref: "blind-bubbles#conversation.message", reason: "needs", detail: "conversation.read" }]);
   });
@@ -345,10 +335,13 @@ describe("entries: style and hide, `needs` and `keep`", () => {
       const r = resolveCell({ plugins: all, ctx: inTab("alpha", session === undefined ? {} : { session }) }, spot, key);
       return [...shownRefs(r)].map((x) => x.split("#")[0]).filter((x) => ["bots-only", "code-only", "both-kinds"].includes(x!)).sort();
     };
-    for (const session of [undefined, "bot", "side-thread"]) {
+    for (const session of ["bot", "side-thread"]) {
       expect([session, who("conversation.message.extra", session)]).toEqual([session, ["both-kinds", "bots-only"]]);
       expect([session, who("tool.result", session, "Window")]).toEqual([session, ["bots-only"]]);
     }
+    // A cell whose kind isn't told yet: both reads (MOSS Code's window shows no bots, so nothing assumes a bot's).
+    expect(who("conversation.message.extra", undefined)).toEqual(["both-kinds"]);
+    expect(who("tool.result", undefined, "Window")).toEqual([]);
     for (const session of ["coding", "agent"]) {
       expect([session, who("conversation.message.extra", session)]).toEqual([session, ["both-kinds", "code-only"]]);
       expect([session, who("tool.result", session, "Window")]).toEqual([session, ["code-only"]]);
@@ -393,7 +386,6 @@ describe("safe mode", () => {
     const r = resolveCell({ plugins: [...DEFAULT, vn, alphaTab], ctx: inTab("alpha", { safeMode: true }) }, "composer");
     expect(shownRefs(r)).toEqual(["moss/composer#composer"]);
     expect(r.skipped).toEqual([{ ref: "vn-composer#composer", reason: "safe-mode" }]);
-    expect(shownRefs(resolveCell({ plugins: [...DEFAULT, alphaTab], ctx: { os: "macos", safeMode: true } }, "bot.tab", "alpha"))).toEqual(["alpha#bot.tab"]);
   });
 
   test("with nothing to show, the cell is empty, never an error", () => {

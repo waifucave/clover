@@ -13,7 +13,6 @@
   },
   "capabilities": [
     "files",
-    "conversation.read",
     "sessions.read"
   ],
   "contributes": {

@@ -1,5 +1,5 @@
 // Mock sidebar data for the gallery and the tests.
-import type { SidebarAccount, SidebarAgent, SidebarApp, SidebarBot, SidebarProject } from "../client/types";
+import type { SidebarAccount, SidebarApp, SidebarProject } from "../client/types";
 
 /** A soft round portrait with an initial, standing in for a bot's avatar portrait. */
 export function portrait(letter: string, from: string, to: string): string {
@@ -7,19 +7,7 @@ export function portrait(letter: string, from: string, to: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-export const ALPHA_AGENTS: SidebarAgent[] = [
-  { id: "agent-island", title: "Rebuild the island as a plugin", backend: "Codex", computer: "Studio", status: "running" },
-  { id: "agent-lint", title: "Fix the lint warnings", backend: "OpenCode", computer: "Laptop", status: "needs-you" },
-  { id: "agent-docs", title: "Write the plugin SDK docs", backend: "Codex", computer: "Studio", status: "completed" },
-  { id: "agent-hub", title: "Profile the hub's cold start", backend: "Gemini CLI", computer: "Cloud computer", status: "stalled" },
-];
 
-export const BOTS: SidebarBot[] = [
-  { id: "alpha", name: "Alpha", portraitUrl: portrait("A", "#8ccbf0", "#3d7fb0"), state: "working", agents: ALPHA_AGENTS },
-  { id: "luna", name: "Luna", portraitUrl: portrait("L", "#c9a7f2", "#6f4ab0"), state: "needs-you", needsYou: { cards: 1, questions: 1 } },
-  { id: "juniper", name: "Juniper", state: "idle", activity: "Morning brief running on Studio" },
-  { id: "mira", name: "Mira", portraitUrl: portrait("M", "#f6b8a0", "#b0583d"), state: "idle", unread: true },
-];
 
 export const PROJECTS: SidebarProject[] = [
   {

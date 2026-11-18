@@ -12,7 +12,6 @@
     ]
   },
   "capabilities": [
-    "conversation.read",
     "sessions.read",
     "files"
   ],

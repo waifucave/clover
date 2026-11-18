@@ -10,7 +10,7 @@
 //   setting), running, stopped (after crashes, set by the plugin host) or blocked (revoked), each with a reason.
 // * A child is switched on and off by itself, and switching its parent off switches it off (§5.1).
 // * An entry whose point is missing waits ("waiting for `island.tab`"), and starts when the point appears. A UI spot
-//   exists while the entry that declares it is active (§5.4); `app.root`, `app.surface`, `app.background` and `bot.tab` are the app's.
+//   exists while the entry that declares it is active (§5.4); `app.root`, `app.surface` and `app.background` are the app's.
 // * Entry ids other plugins refer to (a model provider, voice, agent backend, trigger type, computer provider) are
 //   unique among enabled plugins: on a clash only that entry is refused, and the plugin enabled first, by the synced
 //   list's order, keeps the id (§5.1 "Entry ids"). Commands are unique within their namespace (§5.4).
@@ -19,8 +19,6 @@
 // * A well-known name's point is recorded with the catalog's declaration (the plugin SDK's `catalogPointDecl`),
 //   whatever its declarer wrote, so its `keep` and `needs` hold (review S2): `conversation.message` keeps `approval`.
 // * A point declared `private` takes entries only from its declarer's own tree; another plugin's entry is refused.
-// * In a bot's own plugin, a `bot.tab` entry with no key takes that bot's id as its key, so it fills its own bot's tab,
-//   never every bot's (§5.5).
 // * An OK card left unanswered never refuses a plugin: it stays found until the user answers; only their deny
 //   (`refuse`) refuses it (the broker's rule 6).
 // * Installs and the switch (F-M2's review, S1 and S2, the controller's rulings): an installed plugin lands found,
@@ -179,4 +177,4 @@ export const UNIQUE_ENTRY_FIELD: Readonly<Partial<Record<keyof CoreEntries, stri
 };
 
 /** The spots the app's own plugin runtime declares (§5.3 "App core points"). Every other spot is a plugin's. */
-export const CORE_SPOTS: readonly string[] = ["app.root", "app.surface", "app.background", "bot.tab"];
+export const CORE_SPOTS: readonly string[] = ["app.root", "app.surface", "app.background"];

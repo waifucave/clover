@@ -1,5 +1,5 @@
 // The notes themselves: a list in the plugin's synced store (key `notes`), so they follow the user to every computer
-// running this plugin, and a count of the Notes bot's turns (key `turns`, which the turn.end hook moves). Pure apart from
+// running this plugin, and a count of the calls of its own tools (key `uses`, which the tool.after hook moves). Pure apart from
 // the store it is handed; every write goes through one chain, so two calls at once never lose a note.
 
 export interface Note {
@@ -17,7 +17,7 @@ export interface NotesStore {
 }
 
 export const NOTES_KEY = "notes";
-export const TURNS_KEY = "turns";
+export const USES_KEY = "uses";
 /** At most this many notes, and this long each: the synced store holds at most 1 MB for the whole plugin. */
 export const NOTES_MAX = 200;
 export const NOTE_TEXT_MAX = 200;
@@ -52,8 +52,8 @@ export class Notes {
     return readNotes(await this.#store.get(NOTES_KEY));
   }
 
-  async turns(): Promise<number> {
-    const t = await this.#store.get(TURNS_KEY);
+  async uses(): Promise<number> {
+    const t = await this.#store.get(USES_KEY);
     return typeof t === "number" && Number.isSafeInteger(t) && t >= 0 ? t : 0;
   }
 
@@ -79,11 +79,11 @@ export class Notes {
     });
   }
 
-  countTurn(): Promise<number> {
+  countUse(): Promise<number> {
     return this.#serial(async () => {
-      const turns = (await this.turns()) + 1;
-      await this.#store.set(TURNS_KEY, turns);
-      return turns;
+      const uses = (await this.uses()) + 1;
+      await this.#store.set(USES_KEY, uses);
+      return uses;
     });
   }
 

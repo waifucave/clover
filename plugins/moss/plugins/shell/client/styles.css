@@ -233,7 +233,7 @@ button.cl-window__title:hover {
 /* In main, the conversation runs up under the bar. A bot tab in the panel has no bar over it, and a stage takes the
    top in its place. */
 .cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation,
-.cl-window__content > .cl-agent-tab > .cl-bot-tab > .cl-bot-tab__conversation {
+.cl-window__content .cl-agent-tab[data-place="main"] > .cl-bot-tab > .cl-bot-tab__conversation {
   --cl-inset-top: var(--moss-plugin-moss-bar-height);
 }
 
@@ -260,7 +260,10 @@ button.cl-window__title:hover {
   flex: none;
 }
 
-.cl-window__content:has(> .cl-agent-tab) {
+/* A session's live tab in main runs up under the bar as a bot's tab did (the tab sits inside its entry's own box, so
+   not a direct child): its conversation's viewport has the bar's height more room, and a card it pins stops below
+   the bar (`--cl-inset-top`) instead of being pushed under it on a short window. */
+.cl-window__content:has(.cl-agent-tab[data-place="main"]) {
   padding-top: 0;
 }
 
@@ -308,6 +311,12 @@ button.cl-window__title:hover {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+}
+
+.cl-window__toggles .cl-agent-tab__status {
+  width: auto;
+  margin: 0 var(--moss-space-s) 0 0;
+  padding: 0;
 }
 
 .cl-agent-tab__status {

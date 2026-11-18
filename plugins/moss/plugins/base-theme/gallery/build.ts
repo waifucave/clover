@@ -44,7 +44,6 @@ if (!result.success) {
 // Assets the stories fetch, at the same paths they have in their plugins.
 const assets: [string, string][] = [
   ["alpha/assets", "plugins/alpha/assets"],
-  ["alpha/tab", "plugins/alpha/tab"],
   // Alpha's figure, her avatar pack's (the 2D and 3D placeholders made by code).
   ["moss/plugins/alpha-figure/live2d", "plugins/moss/plugins/alpha-figure/live2d"],
   ["moss/plugins/alpha-figure/vrm", "plugins/moss/plugins/alpha-figure/vrm"],

@@ -32,22 +32,25 @@ A plugin that brings a bot (a `bot` entry) holds two kinds of things:
 | who it serves | that bot alone: its conversation, its side threads and the agents it starts | every bot and coding agent its scope says |
 | how the user turns it off | with the bot (the plugin's own switch) | one switch for all of them ("its parts beyond the bot's tab"), so the user can keep the bot and turn the rest off |
 
-**What Bots offers a bot, on its own tab only:** everything inside the tab (`bot.tab`, `bot.header`,
-`bot.header.action`, `bot.side`, `bot.controls`, `conversation`, `conversation.message`,
+**What Bots offers a bot, on its own tab only:** the session tab's parts (`conversation`, `conversation.message`,
 `conversation.message.extra`, `conversation.message.action`, `tool.result`, `composer`, `composer.action`,
-`file.preview`); the top bar, which it may restyle or replace (`bar`, `chrome.title`, `chrome.action`,
-`chrome.actions`, `chrome.sidebar`, `chrome.drag`); and the right panels (`panel` keyed `browser` or `agent`, or a panel of its own under any other key, which needs a `title`,
-`chrome.panels`). Its own settings (the manifest's `settings`) are drawn by the app, not by the bot.
+`file.preview`) and the right panels (`panel` keyed `browser` or `agent`, or a panel of its own under any other key,
+which needs a `title`). Its own settings (the manifest's `settings`) are drawn by the app, not by the bot.
+
+**A bot's tab is retired:** MOSS Code's window shows sessions, and MOSS draws its bots in a window of its own. The tab's
+points (`bot.tab`, `bot.header`, `bot.header.action`, `bot.side`, `bot.controls`, the top bar `bar` and the `chrome.*`
+parts, the sidebar's `sidebar.bot` rows, the Edit page's `bot.editor.section`) and a tab layout (a `ui` entry's
+`layout`, a bot's own `contributes.bot.layout`) are refused with `spot_retired` (a bot's own layout is ignored with
+`bot_layout_retired`); each message names what to use instead.
 
 **What Bots never offers**, to a bot or to any entry tied to a bot's tab with `when.bot`: the left sidebar (`sidebar`,
-`sidebar.bot`, `sidebar.app`), Settings (`settings.section`) and the bots' Edit page (`bot.editor.section`). They look
-the same on every tab. The check refuses each case by name: `bot_spot_not_offered` (an unmarked entry on a spot Bots
-doesn't offer), `bot_panel_not_offered` (a stock panel other than `browser` or `agent`: terminal, diff, files and session), `bot_when_other_bot` (an inside
-entry whose `when.bot` names another bot), `bot_tied_not_offered` (any plugin's entry on one of those five with
-`when.bot`) and `bot_editor_stock` (a bot's own `bot.editor.section`). Each message says the fix: mark the entry
-`"app": true` to show it everywhere, with a switch of its own. A bot's theme gets the same treatment: its `shell` block
-may shape the top bar and the panels (`bar`, `accent`, `bar.*`, `panel.*`); a sidebar name there is ignored, with the
-warning `shell_not_offered`.
+`sidebar.app`) and Settings (`settings.section`). They look the same on every tab. The check refuses each case by name:
+`bot_spot_not_offered` (an unmarked entry on a spot Bots doesn't offer), `bot_panel_not_offered` (a stock panel other
+than `browser` or `agent`: terminal, diff, files and session), `bot_when_other_bot` (an inside entry whose `when.bot`
+names another bot) and `bot_tied_not_offered` (any plugin's entry on one of those with `when.bot`). Each message says
+the fix: mark the entry `"app": true` to show it everywhere, with a switch of its own. A bot's theme gets the same
+treatment: its `shell` block may shape the window's bar and the panels (`accent`, `bar.*`, `panel.*`); a sidebar name
+there is ignored, with the warning `shell_not_offered`.
 
 **More scoped wins.** On a bot's tab, what is limited to that bot (its own entries, an entry whose `when.bot` names it,
 or one the user ticked for it) beats what dresses every bot's tab, so a plugin that styles all bots' composers never

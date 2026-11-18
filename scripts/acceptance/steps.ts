@@ -174,6 +174,10 @@ export const COPY_UPGRADE_STEPS = [
   "the old install's home is byte for byte what it was",
 ] as const;
 
+/** What a row another lane runs says when nothing recorded it (elsewhere.ts fills it: kept apart so the table's names import
+ *  nothing of who runs them). */
+export const ELSEWHERE_NOTES = new Map<string, string>();
+
 /** A step's number (1-based) in `steps` by its exact name; throws for a name the table doesn't have. */
 export function stepNumber(steps: readonly string[], name: string): number {
   const i = steps.indexOf(name);
@@ -192,7 +196,7 @@ export function finishTable(recorded: readonly Row[], steps: readonly string[], 
     if (keep !== undefined && !keep.has(n)) continue;
     const mine = recorded.filter((r) => r.n === n);
     const name = steps[n - 1]!;
-    if (mine.length === 0) out.push({ n, name, status: "BLOCKED", detail: "not reached" });
+    if (mine.length === 0) out.push({ n, name, status: "BLOCKED", detail: ELSEWHERE_NOTES.get(name) ?? "not reached" });
     else if (mine.length === 1) out.push(mine[0]!);
     else out.push({ n, name, status: "FAIL", detail: `harness: step ${n} was recorded ${mine.length} times: ${mine.map((r) => `${r.status}: ${r.detail}`).join(" | ")}`.slice(0, 600) });
   }

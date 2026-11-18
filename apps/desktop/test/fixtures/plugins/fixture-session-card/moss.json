@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "id": "fixture-session-card",
+  "name": "Fixture session card",
+  "description": "A third-party part with the approvals capability that places a code session's card's sealed frames (approvals.all: a code session's card has no bot): its field and its two buttons, each an iframe from the app's own scheme, as the code session's whole tab (main, keyed agent).",
+  "engines": {
+    "moss": "^1.0.0"
+  },
+  "capabilities": [
+    "approvals",
+    "approvals.all",
+    "sessions.read"
+  ],
+  "client": {
+    "entry": "client/index.js"
+  },
+  "contributes": {
+    "ui": [
+      {
+        "spot": "main",
+        "key": "agent",
+        "id": "card",
+        "component": "CardEntry"
+      }
+    ]
+  }
+}

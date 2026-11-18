@@ -252,63 +252,6 @@ describe("the manifest", () => {
   });
 });
 
-describe("layout format 1", () => {
-  test("a sound layout passes and lists its spots and files", async () => {
-    const { checkLayout, BOT_TAB_SPOTS } = await import("../src/layout-check");
-    const check = checkLayout(
-      { layout: 1, root: { column: [{ spot: "bot.header" }, { row: [{ spot: "conversation", grow: 1 }, { image: "art/a.png", size: 40 }], gap: 8 }, { tabs: [{ title: "Notes", node: { markdown: "notes.md" } }] }, { spacer: true }] }, background: "bg.svg" },
-      { spots: BOT_TAB_SPOTS },
-    );
-    expect(check.problems).toEqual([]);
-    expect(check.spots).toEqual(["bot.header", "conversation"]);
-    expect(check.paths).toEqual(["bg.svg", "art/a.png", "notes.md"]);
-  });
-
-  test("what it refuses", async () => {
-    const { checkLayout, BOT_TAB_SPOTS } = await import("../src/layout-check");
-    const problems = (json: unknown) => checkLayout(json, { spots: BOT_TAB_SPOTS }).problems;
-    expect(problems({ layout: 2, root: { spacer: true } })).toContain("`layout` must be 1.");
-    expect(problems({ layout: 1 })).toContain("A layout needs a `root`.");
-    expect(problems({ layout: 1, root: { row: [], column: [] } })[0]).toMatch(/exactly one of/);
-    expect(problems({ layout: 1, root: { spot: "island" } })[0]).toMatch(/not a spot here/);
-    expect(problems({ layout: 1, root: { row: [{ spot: "composer" }, { spot: "composer" }] } })[0]).toMatch(/placed twice/);
-    expect(problems({ layout: 1, root: { image: "../outside.png" } })[0]).toMatch(/inside the plugin/);
-    expect(problems({ layout: 1, root: { image: "https://x.test/a.png" } })[0]).toMatch(/inside the plugin/);
-    expect(problems({ layout: 1, root: { spot: "composer", min: 400, max: 200 } })[0]).toMatch(/`min` is more than `max`/);
-    expect(problems({ layout: 1, root: { spot: "composer", grow: -1 } })[0]).toMatch(/from 0 to 1000/);
-    expect(problems({ layout: 1, root: { spot: "composer", size: "12 parsecs" } })[0]).toMatch(/CSS length/);
-    expect(problems({ layout: 1, root: { spot: "composer", hideBelow: 1.5 } })[0]).toMatch(/whole number/);
-    expect(problems({ layout: 1, root: { spot: "composer", class: "two classes" } })[0]).toMatch(/one class name/);
-    expect(problems({ layout: 1, root: { spot: "composer", onClick: "x" } })[0]).toMatch(/unknown key/);
-    expect(problems({ layout: 1, root: { text: { fr: "Bonjour" } } })[0]).toMatch(/words/);
-    expect(problems({ layout: 1, root: { spot: "avatar", key: "" } })[0]).toMatch(/`key` is a name/);
-    expect(problems({ layout: 1, root: { spot: "sidebar" } })[0]).toMatch(/not a spot here/);
-  });
-
-  test("follows lane B's schema: every bot-tab spot of B's catalog, avatar included, a spot's key, words by language, CSS lengths", async () => {
-    const { checkLayout, BOT_TAB_SPOTS, SPOTS } = await import("../src/layout-check");
-    expect(BOT_TAB_SPOTS).toContain("avatar");
-    expect(BOT_TAB_SPOTS).toEqual(SPOTS.filter((s) => s.inBotTab).map((s) => s.name));
-    for (const outside of ["sidebar", "island.tab", "pill.target", "app.surface"]) expect(BOT_TAB_SPOTS).not.toContain(outside);
-    const check = checkLayout(
-      {
-        $schema: "https://waifucave.com/schemas/layout-1.json",
-        layout: 1,
-        root: {
-          row: [
-            { column: [{ text: { en: "Hello", fr: "Bonjour" } }, { spot: "conversation", grow: 1 }], size: "60%" },
-            { spot: "avatar", key: "vrm", min: "12rem", class: "Alpha_stage" },
-            { tabs: [{ title: { en: "Notes" }, node: { markdown: "notes.md" } }] },
-          ],
-          gap: "1rem",
-        },
-      },
-      { spots: BOT_TAB_SPOTS },
-    );
-    expect(check.problems).toEqual([]);
-    expect(check.spots).toEqual(["conversation", "avatar#vrm"]);
-  });
-});
 
 describe("the OS accent colour (lane B's rule)", () => {
   // macOS's accents in light and dark, Windows' default and its dark-mode shade, and the theme's own (Linux).

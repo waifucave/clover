@@ -12,7 +12,6 @@
     ]
   },
   "capabilities": [
-    "conversation.read",
     "sessions.read",
     "computers.read"
   ],
@@ -30,11 +29,6 @@
             "agent"
           ]
         }
-      },
-      {
-        "spot": "bot.side",
-        "id": "bot-column",
-        "component": "BotColumn"
       }
     ]
   }

@@ -13,6 +13,18 @@ import { SealedFrames, type SealedCard } from "../src/main/sealed";
 import { FIXTURES, alphaView, mossViews, folderView } from "./fake-core/registry";
 
 const WIN = 1;
+
+/** The bundled tree's views with the bot tab the shell filled before bots left MOSS Code's window (lane MC): the runtime
+ *  still serves the catalog's `bot.tab` spot (frames, tokens, a tab's theme and layout), so these tests mount it on the
+ *  shell as a fixture (`fixtures/shell-bot-tab.json`). */
+function withBotTab(views: ReturnType<typeof mossViews>): ReturnType<typeof mossViews> {
+  const fixture = JSON.parse(readFileSync(join(FIXTURES, "..", "shell-bot-tab.json"), "utf8")) as { ui: Record<string, unknown>[]; rootDeclares: Record<string, unknown> };
+  return views.map((v) => {
+    if (v.pluginId !== "moss/shell") return v;
+    const ui = v.ui.map((u) => (u.spot === "app.root" ? { ...u, declares: { ...(u.declares as Record<string, unknown>), ...fixture.rootDeclares } } : u));
+    return { ...v, ui: [...ui, ...fixture.ui], capabilities: [...new Set([...(v.capabilities ?? []), "bots.read", "conversation.read"])] };
+  });
+}
 let pid = 100;
 function frame(url: string, parent: FrameRef | null = null, osPid = ++pid): FrameRef {
   return { processId: osPid, routingId: ++pid, url, osPid, parent };
@@ -22,7 +34,7 @@ function setup(extra: UiPlugin[] = [], opts: { safeMode?: boolean; now?: () => n
   const sent: { to: string; m: LayerMessage }[] = [];
   let n = 0;
   const rt = new UiRuntime({ os: "macos", platform: "darwin", ...(opts.safeMode ? { safeMode: true } : {}), ...(opts.now ? { now: opts.now } : {}), ...(opts.log ? { log: opts.log } : {}), token: () => `t${++n}`, send: (f, m) => sent.push({ to: `${f.processId}:${f.routingId}`, m }) });
-  const plugins = [...readUiPlugins([...mossViews(), alphaView()] as never), ...extra];
+  const plugins = [...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...extra];
   rt.setRegistry(plugins);
   rt.openWindow(WIN, { material: "vibrancy", ...(opts.render ? { render: true } : {}) });
   const rootFrame = frame("moss-core://app/");
@@ -59,10 +71,6 @@ describe("the root and the shell", () => {
     const { shellFrame, info } = mountShell(s);
     const sidebar = s.rt.resolve(shellFrame, info.mount, "sidebar");
     expect(sidebar.items).toMatchObject([{ kind: "inline", ref: "moss/sidebar#sidebar", component: "SidebarEntry" }]);
-    const tab = s.rt.resolve(shellFrame, info.mount, "bot.tab", "alpha");
-    expect(tab.items).toMatchObject([{ kind: "inline", ref: "moss/shell#bot-tab", component: "DefaultBotTab", context: { bot: "alpha" } }]);
-    const composer = s.rt.resolve(shellFrame, tab.items[0]!.mount, "composer");
-    expect(composer.items).toMatchObject([{ kind: "inline", ref: "moss/composer#composer" }]);
   });
 
   test("a spot the part doesn't declare waits (its fillers aren't mounted)", () => {
@@ -237,29 +245,6 @@ describe("each part themed by its tab (decision 77)", () => {
     return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"0".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [{ id, file: "theme.json" }], locales: [], bots: "all", isBot: true, botTheme: id, name: id }] as never)[0]!;
   }
 
-  test("one plugin's frames in two bots' tabs take each tab's theme", () => {
-    const s = setup([...composerFixture(), botPlugin("luna", "#123456"), botPlugin("vega", "#654321")]);
-    const shell = mountShell(s);
-    const accents: string[] = [];
-    for (const bot of ["luna", "vega"]) {
-      const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", bot).items[0]!;
-      const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0]!;
-      const token = new URL((item as { url: string }).url).searchParams.get("mount")!;
-      s.rt.serveDocument("fixture-composer", token);
-      accents.push(String(s.rt.describe(frame((item as { url: string }).url, shell.shellFrame), WIN, token).tokens["color.accent"]));
-    }
-    expect(accents).toEqual(["#123456", "#654321"]);
-  });
-
-  test("an inline part in another tab carries its tab's tokens; the frame variables come from the window", () => {
-    const s = setup([botPlugin("luna", "#123456")]);
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    expect(tab.kind === "inline" && tab.tokens?.["color.accent"]).toBe("#123456");
-    expect(shell.info.tokens["frame.inset.top"]).toBe("45px");
-    expect(shell.info.tokens["frame.window.controls"]).toBe("80px");
-  });
-
   test("an appearance or accent change re-themes every document", () => {
     const s = setup();
     const shell = mountShell(s);
@@ -283,37 +268,6 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
   }, { themes: [{ id: "luna", file: "theme.json" }], isBot: true, botTheme: "luna", name: "Luna" });
   const sheetsSent = (s: ReturnType<typeof setup>, f: FrameRef) => s.sent.filter((x) => x.m.type === "sheets" && x.to === `${f.processId}:${f.routingId}`).map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets);
 
-  test("a bot's theme dresses its tab, up to another tab; its fonts and icons are its own, served by the core", () => {
-    const s = setup([lunaBot()]);
-    const shell = mountShell(s);
-    s.sent.length = 0;
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    expect(tab).toMatchObject({ kind: "inline", tab: "luna" });
-    const sheets = sheetsSent(s, shell.shellFrame).at(-1)!;
-    const sheet = sheets.find((x) => x.id === `bot:luna:${tab.mount}`)!;
-    expect(sheet.css).toContain(`@font-face{font-family:"clv-luna__Luna Sans";src:url("/_t/luna/luna.woff2");font-display:swap}`);
-    expect(sheet.css).toContain(`@scope ([data-moss-part="${tab.mount}"]) to ([data-moss-tab]:not(:scope)){:scope{--moss-icon-app-send:url("/_t/luna/send.svg")}}`);
-    expect(sheet.css).toContain(`@scope ([data-moss-part="${tab.mount}"]) to ([data-moss-tab]:not(:scope)){.bubble{color:red;font-family:"clv-luna__Luna Sans"}}`);
-    expect(sheet.css).not.toContain("@import");
-    // The tab's font token names the renamed family, as its CSS does.
-    expect(s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!.kind).toBe("inline");
-  });
-
-  test("a frame in a bot's tab is its own tab root: the theme comes with its document, after the part's own CSS", () => {
-    const s = setup([...composerFixture(), lunaBot()]);
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    const item = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
-    const token = new URL(item.url).searchParams.get("mount")!;
-    s.rt.serveDocument("fixture-composer", token);
-    const info = s.rt.describe(frame(item.url, shell.shellFrame), WIN, token);
-    expect(info.tab).toBe("luna");
-    // MOSS's base theme over the whole document first, then the tab's.
-    expect(info.sheets?.map((x) => x.id)).toEqual(["base:moss/base-theme", `bot:luna:${item.mount}`]);
-    expect(info.sheets![0]!.css).toContain(`@scope ([data-moss-part="${item.mount}"]){:scope{color:var(--moss-color-text)`);
-    expect(info.sheets![1]!.css).toContain(`@scope ([data-moss-part="${item.mount}"]) to ([data-moss-tab]:not(:scope))`);
-  });
-
   test("a style entry dresses its part, stopping at a part another dresses; the user's own CSS goes last and loads nothing", () => {
     const dresser = themed("dresser", {
       "dress.json": JSON.stringify({ theme: 1, name: "Dress", tokens: {}, css: "dress.css" }),
@@ -333,39 +287,6 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
     expect(sheets.at(-1)).toEqual({ id: "user", css: `@scope ([data-moss-part="${shell.info.mount}"]){.x{color:blue}}` });
   });
 
-  test("more scoped wins: a style for all bots goes under a bot's theme and its own styles, in tokens and in sheets", () => {
-    // Luna's theme sets the accent; her own composer style sets the surface. A plugin's style for every bot's composer sets both.
-    const luna = themed("luna", {
-      "theme.json": JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "#123456" }, css: "tab.css" }),
-      "tab.css": ".p { color: green }",
-      "pane.json": JSON.stringify({ theme: 1, name: "Pane", tokens: { "color.surface": "#111111" }, css: "pane.css" }),
-      "pane.css": ".p { color: red }",
-    }, { themes: [{ id: "luna", file: "theme.json" }], isBot: true, botTheme: "luna", name: "Luna", ui: [{ spot: "composer", id: "pane", style: "pane.json" }] });
-    const everyone = themed("paint", {
-      "paint.json": JSON.stringify({ theme: 1, name: "Paint", tokens: { "color.accent": "#AAAAAA", "color.surface": "#222222" }, css: "paint.css" }),
-      "paint.css": ".p { color: blue }",
-    }, { ui: [{ spot: "composer", id: "paint", style: "paint.json" }] });
-    const plain = themed("plainbot", {}, { isBot: true, name: "Plain" });
-    const s = setup([luna, everyone, plain]);
-    const shell = mountShell(s);
-    const composerIn = (bot: string) => {
-      const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", bot).items[0]!;
-      return s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { kind: string; mount: string; tokens?: Record<string, unknown> };
-    };
-    s.sent.length = 0;
-    const onLuna = composerIn("luna");
-    expect([onLuna.tokens?.["color.accent"], onLuna.tokens?.["color.surface"]]).toEqual(["#123456", "#111111"]);
-    // The sheets: the all-bots style, then Luna's theme in her tab, then her own style.
-    const ids = (sheetsSent(s, shell.shellFrame).at(-1) ?? []).map((x) => x.id);
-    const at = (id: string) => ids.findIndex((x) => x.startsWith(id));
-    expect(at(`style:paint#paint:${onLuna.mount}`)).toBeGreaterThanOrEqual(0);
-    expect(at(`style:paint#paint:${onLuna.mount}`)).toBeLessThan(at("bot:luna:"));
-    expect(at("bot:luna:")).toBeLessThan(at(`style:luna#pane:${onLuna.mount}`));
-    // A bot with no theme of its own: the all-bots style shows (over the base for bot tabs).
-    const onPlain = composerIn("plainbot");
-    expect([onPlain.tokens?.["color.accent"], onPlain.tokens?.["color.surface"]]).toEqual(["#AAAAAA", "#222222"]);
-  });
-
   test("the core root takes no sheets; a sheet that didn't change isn't sent again", () => {
     const s = setup([lunaBot()]);
     expect(s.root.sheets).toBeUndefined();
@@ -374,254 +295,6 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
     s.sent.length = 0;
     s.rt.setAppearance("dark", "#FF0000");
     expect(sheetsSent(s, shell.shellFrame)).toEqual([]);
-  });
-});
-
-describe("a bot's layout (§5.5)", () => {
-  function layoutBot(layout: unknown, files: Record<string, string> = {}, extra: Record<string, unknown> = {}): UiPlugin {
-    const dir = mkdtempSync(join(tmpdir(), "moss-layout-"));
-    writeFileSync(join(dir, "layout.json"), JSON.stringify(layout));
-    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
-    return readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...extra }] as never, { luna: { isBot: true, name: "Luna", botLayout: "layout.json" } })[0]!;
-  }
-  const LAYOUT = {
-    layout: 1,
-    css: "layout.css",
-    background: "bg.png",
-    root: { row: [
-      { column: [{ image: "art/luna.png", size: 120 }, { text: { en: "Hello", fr: "Bonjour" } }, { markdown: "about.md" }], size: "240px", hideBelow: 700, class: "side" },
-      { column: [{ spot: "conversation", grow: 1 }, { spot: "composer", prefer: ["moss/composer"] }], grow: 1 },
-    ] },
-  };
-  const FILES = { "layout.css": ".side { padding: 8px } .side img { border-radius: 50% }", "about.md": "# Luna\nLikes *stars*." };
-
-  test("a data-only bot's tab is its layout, drawn inline by the runtime as data: sizes, classes, images, text and markdown resolved", () => {
-    const s = setup([...composerFixture(), layoutBot(LAYOUT, FILES)]);
-    s.rt.setChoices({ picks: [], lists: [], language: "fr" });
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    expect(tab).toMatchObject({ kind: "inline", ref: "luna#layout", component: "$layout", tab: "luna" });
-    const layout = (tab as { layout: unknown }).layout;
-    expect(layout).toEqual({ kind: "row", children: [
-      { kind: "column", size: "240px", hideBelow: 700, className: "clv-luna__side", children: [
-        { kind: "image", src: "/_t/luna/art/luna.png", size: "120px" },
-        { kind: "text", text: "Bonjour" },
-        { kind: "markdown", markdown: "# Luna\nLikes *stars*." },
-      ] },
-      { kind: "column", grow: 1, children: [{ kind: "spot", spot: "conversation", grow: 1 }, { kind: "spot", spot: "composer" }] },
-    ] });
-  });
-
-  test("its spots are the tab's; its `prefer` is rule 4 there (the bundled composer over an installed one)", () => {
-    const s = setup([...composerFixture(), layoutBot(LAYOUT, FILES)]);
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    expect(s.rt.resolve(shell.shellFrame, tab.mount, "composer").items).toMatchObject([{ kind: "inline", ref: "moss/composer#composer" }]);
-    // Without the layout's preference the installed composer wins (rule 6), as in Alpha's tab.
-    const alpha = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
-    expect(s.rt.resolve(shell.shellFrame, alpha.mount, "composer").items).toMatchObject([{ kind: "frame", ref: "fixture-composer#composer" }]);
-    // The composer in a layout is the declaring (bundled, shell) document's own: its session counts through the layout part.
-    const inLayout = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { mount: string };
-    s.rt.setProps(shell.shellFrame, inLayout.mount, { bot: { id: "luna", name: "Luna" }, session: "luna:main" });
-    expect(s.rt.composerOf(shell.shellFrame, inLayout.mount)).toMatchObject({ session: "luna:main", bot: "luna", windowId: WIN });
-    // A spot the tab doesn't declare waits.
-    expect(s.rt.resolve(shell.shellFrame, tab.mount, "sidebar")).toMatchObject({ undeclared: true });
-  });
-
-  test("its CSS is cleaned with its classes prefixed, scoped to the tab and stopping at the parts inside it", () => {
-    const s = setup([layoutBot(LAYOUT, FILES)]);
-    const shell = mountShell(s);
-    s.sent.length = 0;
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
-    const sheet = sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!;
-    const scope = `@scope ([data-moss-part="${tab.mount}"]) to ([data-moss-part]:not(:scope))`;
-    expect(sheet.css).toBe(`${scope}{:scope{background-image:url("/_t/luna/bg.png");background-size:cover;background-position:center}}\n${scope}{.clv-luna__side{padding:8px}.clv-luna__side img{border-radius:50%}}`);
-  });
-
-  test("a patch on the stock tab (the owner's example): the stage to the left of the transcript, wider; its classes the bot's own; a change with no node said once and skipped", () => {
-    const patch = { layout: 1, extends: "default", css: "layout.css", changes: [{ set: ".tab", as: "row" }, { set: "bot.stage", size: "42%", min: 280 }, { remove: "bot.header" }] };
-    const lines: string[] = [];
-    const s = setup([...composerFixture(), layoutBot(patch, { "layout.css": ".stage { border-right: 1px solid }" })], { log: (l) => lines.push(l) });
-    const shell = mountShell(s);
-    s.sent.length = 0;
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    expect(tab).toMatchObject({ kind: "inline", ref: "luna#layout", component: "$layout" });
-    expect((tab as { layout: unknown }).layout).toEqual({ kind: "row", grow: 1, className: "clv-luna__tab", children: [
-      { kind: "spot", spot: "bot.stage", size: "42%", min: "280px", className: "clv-luna__stage" },
-      { kind: "column", grow: 1, className: "clv-luna__talk", children: [{ kind: "spot", spot: "conversation", grow: 1 }, { kind: "spot", spot: "composer" }] },
-    ] });
-    // The patch's own CSS styles the stock tab's boxes by their names, prefixed as the bot's.
-    const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
-    expect(sheets.find((x) => x.id === `layout:luna:${tab.mount}`)!.css).toContain(".clv-luna__stage{border-right:1px solid}");
-    // Its spots are the tab's, as a whole layout's are.
-    expect(s.rt.resolve(shell.shellFrame, tab.mount, "conversation").undeclared).not.toBe(true);
-    s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna");
-    expect(lines.filter((l) => l.includes("change 3 (remove bot.header): no such node; skipped"))).toEqual(["layout: luna/layout.json: change 3 (remove bot.header): no such node; skipped"]);
-  });
-
-  // Another plugin's patch to a bot's tab, and the user's own layout (the owner's "move a button" question).
-  function mover(id: string, patch: unknown, files: Record<string, string> = {}, entry: Record<string, unknown> = {}): UiPlugin {
-    const dir = mkdtempSync(join(tmpdir(), "moss-mover-"));
-    writeFileSync(join(dir, "move.json"), JSON.stringify(patch));
-    for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
-    return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id, assetBase: dir, ui: [{ spot: "bot.tab", id: "move", layout: "move.json", when: { bot: "luna" }, ...entry }], themes: [], locales: [], bots: "all" }] as never)[0]!;
-  }
-  const HEADED = { layout: 1, extends: "default", css: "layout.css", changes: [{ add: { spot: "bot.header" }, into: ".talk", at: "start" }] };
-  const MOVE = { layout: 1, css: "move.css", changes: [{ move: "bot.header", before: "composer" }, { wrap: "bot.header", in: "row", class: "nudge" }] };
-  const layoutOf = (s: ReturnType<typeof setup>, shell: ReturnType<typeof mountShell>) => (s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0] as { layout?: unknown; ref: string });
-
-  test("another plugin's patch moves a part of a bot's tab and nudges it with its own CSS, after the bot's layout; never a cell of the tab", () => {
-    const s = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": ".talk { gap: 4px }" }), mover("mover", MOVE, { "move.css": ".nudge { transform: translateY(-6px); margin: 0 12px } .talk { color: red }" })]);
-    const shell = mountShell(s);
-    s.sent.length = 0;
-    const tab = layoutOf(s, shell);
-    expect(tab.ref).toBe("luna#layout");
-    expect(tab.layout).toEqual({ kind: "column", grow: 1, className: "clv-luna__tab", children: [
-      { kind: "spot", spot: "bot.stage", className: "clv-luna__stage" },
-      { kind: "column", grow: 1, className: "clv-luna__talk", children: [
-        { kind: "spot", spot: "conversation", grow: 1 },
-        { kind: "row", className: "clv-mover__nudge", children: [{ kind: "spot", spot: "bot.header" }] },
-        { kind: "spot", spot: "composer" },
-      ] },
-    ] });
-    // Each plugin's CSS is its own sheet's: the mover's classes are its own, so its `.talk` reaches no box of the bot's.
-    const sheets = s.sent.filter((x) => x.m.type === "sheets").map((x) => (x.m as Extract<LayerMessage, { type: "sheets" }>).sheets).at(-1)!;
-    const css = sheets.find((x) => x.id === `layout:luna:${(tab as unknown as { mount: string }).mount}`)!.css;
-    expect(css).toContain(".clv-luna__talk{gap:4px}");
-    expect(css).toContain(".clv-mover__nudge{transform:translateY(-6px);margin:0 12px}");
-    expect(css).toContain(".clv-mover__talk{color:red}");
-    // A tab patch is no entry anything ranks.
-    expect(s.rt.registry.find((p) => p.id === "mover")!.entries).toEqual([]);
-  });
-
-  test("a bot with no layout of its own: the patch makes its tab the stock one, changed; switched off by the user, or its plugin off, the tab is as before", () => {
-    const lines: string[] = [];
-    const plain = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all" }] as never, { luna: { isBot: true, name: "Luna" } })[0]!;
-    const before = setup([...composerFixture(), plain]);
-    const stock = layoutOf(before, mountShell(before)).ref;
-    expect(stock).not.toBe("luna#layout");
-    const swap = mover("mover", { layout: 1, changes: [{ move: "composer", before: "conversation" }, { set: ".tab", gap: 8 }] });
-    const s = setup([...composerFixture(), plain, swap], { log: (l) => lines.push(l) });
-    const shell = mountShell(s);
-    const talk = (l: unknown) => ((l as { children: { children?: { spot?: string }[] }[] }).children[1]!.children ?? []).map((c) => c.spot);
-    const tab = layoutOf(s, shell);
-    expect(tab.ref).toBe("luna#layout");
-    expect(talk(tab.layout)).toEqual(["composer", "conversation"]);
-    expect((tab.layout as { gap?: string }).gap).toBe("8px");
-    // The user switches it off for Luna: the next resolve (the respot the change sends) draws the stock tab.
-    s.sent.length = 0;
-    s.rt.setChoices({ picks: [], lists: [{ spot: "bot.tab", bot: "luna", order: [], hidden: ["mover#move"] }] });
-    expect(s.sent.some((x) => x.m.type === "respot")).toBe(true);
-    expect(talk(layoutOf(s, shell).layout)).toEqual(["conversation", "composer"]);
-    s.rt.setChoices({ picks: [], lists: [] });
-    expect(talk(layoutOf(s, shell).layout)).toEqual(["composer", "conversation"]);
-    // Its plugin off (gone from the registry): the bot's tab is what it was before any patch.
-    s.sent.length = 0;
-    s.rt.setRegistry(s.rt.registry.filter((p) => p.id !== "mover").map((p) => (p.id === "luna" ? plain : p)));
-    expect(s.sent.some((x) => x.m.type === "respot")).toBe(true);
-    expect(layoutOf(s, shell).ref).toBe(stock);
-  });
-
-  test("the owner's example: another plugin moves ONE top-bar button (the editor's, `chrome.action` keyed edit) to just above the composer of a bot with no layout of its own", () => {
-    const plain = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all" }] as never, { luna: { isBot: true, name: "Luna" } })[0]!;
-    const move = mover("mover", { layout: 1, css: "move.css", changes: [{ add: { spot: "chrome.action", key: "edit" }, before: "composer" }, { wrap: { spot: "chrome.action", key: "edit" }, in: "row", class: "nudge" }] }, { "move.css": ".nudge { transform: translateY(-6px) }" });
-    const s = setup([...composerFixture(), plain, move]);
-    const shell = mountShell(s);
-    const tab = layoutOf(s, shell) as unknown as { mount: string; ref: string; layout: { children: { children?: { kind: string; className?: string; children?: { spot?: string; key?: string }[] }[] }[] } };
-    expect(tab.ref).toBe("luna#layout");
-    const talk = tab.layout.children[1]!.children!;
-    expect(talk.map((c) => c.className ?? c.kind)).toEqual(["spot", "clv-mover__nudge", "spot"]);
-    expect(talk[1]!.children as unknown).toEqual([{ kind: "spot", spot: "chrome.action", key: "edit" }]);
-    // The tab declares the cell, and the shell's own Edit button fills it there (the bar leaves out what the tab places).
-    expect(s.rt.resolve(shell.shellFrame, tab.mount, "chrome.action", "edit").items).toMatchObject([{ kind: "inline", ref: "moss/shell#chrome-edit" }]);
-  });
-
-  test("patches go in turn (order, then plugin id); a change that reaches too far skips its patch, said once", () => {
-    const lines: string[] = [];
-    const a = mover("zeta", { layout: 1, changes: [{ add: { spot: "bot.side" }, into: ".talk", at: "start" }] }, {}, { order: 10 });
-    const b = mover("alpha-mover", { layout: 1, changes: [{ add: { spacer: true }, into: ".talk", at: "start" }] }, {}, { order: 20 });
-    const far = mover("far", { layout: 1, changes: [{ set: ".talk", class: "mine" }] });
-    const s = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": "" }), a, b, far], { log: (l) => lines.push(l) });
-    const shell = mountShell(s);
-    const talk = (layoutOf(s, shell).layout as { children: { children: { kind: string; spot?: string }[] }[] }).children[1]!.children;
-    expect(talk.map((c) => c.spot ?? c.kind)).toEqual(["spacer", "bot.side", "bot.header", "conversation", "composer"]);
-    layoutOf(s, shell);
-    expect(lines.filter((l) => l.includes("far#move"))).toEqual(["layout: luna's tab: far#move (move.json): change 1: `set` gives a class to a node it didn't add; wrap the node in a box with its own class instead; skipped"]);
-  });
-
-  test("another plugin's own component for the tab keeps it: the patches wait (the tab ranks as without them)", () => {
-    const plain = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all" }] as never, { luna: { isBot: true, name: "Luna" } })[0]!;
-    const tabber = readUiPlugins([{ pluginId: "acme-tab", name: "Acme", treeHash: `sha256:${"4".repeat(64)}`, layer: "acme-tab", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.tab", component: "AcmeTab", when: { bot: "luna" } }], themes: [], locales: [], bots: "all" }] as never)[0]!;
-    const without = setup([...composerFixture(), plain, tabber]);
-    const winner = layoutOf(without, mountShell(without)).ref;
-    const s = setup([...composerFixture(), plain, tabber, mover("mover", MOVE)]);
-    expect(layoutOf(s, mountShell(s)).ref).toBe(winner);
-    expect(s.rt.registry.find((p) => p.id === "luna")!.entries).toEqual([]);
-  });
-
-  test("the user's own layout comes last: a patch on the tab as made so far, or on the stock tab; a whole one replaces it", () => {
-    const userLayout = JSON.stringify({ layout: 1, extends: "bot", changes: [{ move: "bot.stage", after: ".talk" }] });
-    const s = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": "" }, { bot: { name: "Luna", userLayout } }), mover("mover", MOVE, { "move.css": "" })]);
-    const shell = mountShell(s);
-    const kids = (l: unknown) => (l as { children: { className?: string }[] }).children.map((c) => c.className);
-    const tab = layoutOf(s, shell);
-    expect(kids(tab.layout)).toEqual(["clv-luna__talk", "clv-luna__stage"]);
-    const talk = (tab.layout as { children: { children: { className?: string; spot?: string }[] }[] }).children[0]!.children;
-    expect(talk.map((c) => c.className ?? c.spot)).toEqual(["conversation", "clv-mover__nudge", "composer"]);
-    // On the stock tab: the bot's and the mover's changes are not in it.
-    const onStock = JSON.stringify({ layout: 1, extends: "default", changes: [{ set: ".tab", as: "row" }] });
-    const t = setup([...composerFixture(), layoutBot(HEADED, { "layout.css": "" }, { bot: { name: "Luna", userLayout: onStock } }), mover("mover", MOVE, { "move.css": "" })]);
-    const tsh = mountShell(t);
-    const made = layoutOf(t, tsh).layout as { kind: string; children: { children?: { spot?: string }[] }[] };
-    expect(made.kind).toBe("row");
-    expect(made.children[1]!.children!.map((c) => c.spot)).toEqual(["conversation", "composer"]);
-    // The user changes their layout while the tab shows: the mounted tab draws the new one at its next resolve.
-    const mountedBefore = layoutOf(t, tsh) as unknown as { mount: string };
-    const again = JSON.stringify({ layout: 1, extends: "default", changes: [] });
-    t.rt.setRegistry(t.rt.registry.map((p) => (p.id === "luna" ? { ...p, userLayout: again } : p)));
-    const after = layoutOf(t, tsh) as unknown as { mount: string; layout: { kind: string } };
-    expect(after.mount).toBe(mountedBefore.mount);
-    expect(after.layout.kind).toBe("column");
-    // A user layout on a bot with none of its own makes one on the stock tab.
-    const own = readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: tmpdir(), ui: [], themes: [], locales: [], bots: "all", bot: { name: "Luna", userLayout: onStock } }] as never)[0]!;
-    expect(own.entries.map((e) => [e.id, e.layout])).toEqual([["layout", ""]]);
-  });
-
-  test("the acceptance fixtures: the mover's row holds the bot's header, and the header's buttons are the mover's Wave alone (the bot hides Pin)", () => {
-    const ACC = join(import.meta.dir, "..", "..", "..", "scripts", "acceptance", "fixtures");
-    const botView = { ...folderView(join(ACC, "acceptance-layout-patch")), bot: { name: "Acceptance Layout Patch", layout: "tab/layout.json" } };
-    const s = setup([...readUiPlugins([botView, folderView(join(ACC, "acceptance-layout-mover"))] as never)]);
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "acceptance-layout-patch").items[0] as { mount: string; layout: { children: { children?: { className?: string; children?: { spot?: string }[] }[] }[] } };
-    const row = tab.layout.children[1]!.children![1]!;
-    expect(row.className).toBe("clv-acceptance-layout-mover__nudge");
-    expect(row.children!.map((c) => c.spot)).toEqual(["bot.header"]);
-    const header = s.rt.resolve(shell.shellFrame, tab.mount, "bot.header").items[0]!;
-    expect(header).toMatchObject({ kind: "inline", ref: "moss/shell#bot-header" });
-    expect(s.rt.resolve(shell.shellFrame, header.mount, "bot.header.action").items.map((i) => i.ref)).toEqual(["acceptance-layout-mover#wave"]);
-  });
-
-  test("a bot whose own component fills its tab keeps it; a broken layout shows nothing", () => {
-    const own = layoutBot(LAYOUT, FILES, { clientEntry: "client/index.js", ui: [{ spot: "bot.tab", component: "LunaTab" }] });
-    expect(own.entries.map((e) => e.id)).toEqual(["bot.tab"]);
-    const s = setup([layoutBot({ layout: 1, root: { row: [{ script: "x" }] } })]);
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    expect((tab as { layout: unknown }).layout).toEqual({ kind: "text", text: "" });
-  });
-
-  test("a layout part acts in no plugin's name in another plugin's document: its api, its open and its terminal hand-over ask refused, and its plugin's events reach only the documents of its own layer (the review's S1)", () => {
-    const s = setup([composerFixture()[0]!, layoutBot(LAYOUT, FILES)]);
-    const shell = mountShell(s);
-    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "luna").items[0]!;
-    expect(tab).toMatchObject({ kind: "inline", ref: "luna#layout" });
-    expect(() => s.rt.partOf(shell.shellFrame, tab.mount)).toThrow("a layout part acts only in its own layer's document");
-    // The layout's plugin's events go only to documents of that plugin's own layer: one inline part in the shell's
-    // layer's document hears nothing (the sheet and token messages the mount built before are the rest of `sent`).
-    s.sent.length = 0;
-    s.rt.pluginMessage("luna", { type: "api-event", pluginId: "luna", method: "core.event", params: {} } as never);
-    expect(s.sent).toEqual([]);
   });
 });
 
@@ -727,15 +400,6 @@ describe("lane B's #179 hooks in the runtime", () => {
     const view = s.rt.resolve(shell.shellFrame, shell.info.mount, "panel", "sheets", { entry: "office#sheets", session: "bot", bot: "alpha" });
     expect(view.undeclared).toBeUndefined();
     expect(view.items.map((i) => i.ref)).toEqual(["office#sheets"]);
-  });
-
-  test("a bot's own bot.side entry fills the shell's column for that bot's tab only (a third-party bot, no layout of its own)", () => {
-    const buddy = readUiPlugins([{ pluginId: "buddy", name: "Buddy", treeHash: `sha256:${"6".repeat(64)}`, layer: "buddy", assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.side", id: "side", component: "BuddySide" }], themes: [], locales: [], bots: "all", bot: { name: "Buddy" } }] as never, { buddy: { enabledAt: 3, source: "installed" } })[0]!;
-    const s = setup([buddy, tabbed("vn", "Visual novel", 2)]);
-    const shell = mountShell(s);
-    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side", undefined, "buddy").map((e) => e.pluginId)).toEqual(["buddy"]);
-    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side", undefined, "alpha").map((e) => e.pluginId)).toEqual(["moss/panel"]);
-    expect(s.rt.entries(shell.shellFrame, shell.info.mount, "bot.side").map((e) => e.pluginId)).toEqual(["moss/panel"]);
   });
 
   test("a message action is data: the declaring part lists it, and nothing is ever mounted for it (no frame per message)", () => {
@@ -906,7 +570,9 @@ describe("what a conversation's inner spots need is the data's own kind (spec re
     const { s, shell, conv } = conversationPart();
     const ask = (session: string | undefined) => refs(s.rt.resolve(shell.shellFrame, conv.mount, "conversation.message.extra", undefined, session === undefined ? {} : { session }));
     for (const session of ["coding", "agent"]) expect([session, ask(session)]).toEqual([session, ["code-only"]]);
-    for (const session of ["bot", "side-thread", undefined]) expect([session, ask(session)]).toEqual([session, ["bots-only"]]);
+    for (const session of ["bot", "side-thread"]) expect([session, ask(session)]).toEqual([session, ["bots-only"]]);
+    // A cell whose kind isn't told: both reads, so neither single-kind plugin.
+    expect(ask(undefined)).toEqual([]);
     expect(ask("archived")).toEqual([]);
   });
 });
@@ -998,7 +664,7 @@ describe("sleeping frames, surfaces, and the brokers' part of the runtime", () =
     const { s, item } = withFixtureFrame();
     s.sent.length = 0;
     // The same plugins: nothing loads again.
-    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...composerFixture()]);
+    s.rt.setRegistry([...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...composerFixture()]);
     expect(s.sent.filter((x) => x.m.type === "child-reload")).toEqual([]);
     // Its client is now the core's build: the frame's document is served again, for the module it has now.
     const built = composerFixture().map((p) => ({ ...p, clientEntry: undefined, clientBuild: { base: "/x", file: "index.js", sha256: "cd".repeat(32) } }));
@@ -1272,7 +938,7 @@ describe("the E-M1 review's fixes", () => {
     const mounts = (s.rt as unknown as { mounts: Map<string, Parameters<UiRuntime["mountForDocument"]>[0]> }).mounts;
     expect(s.rt.mountForDocument(mounts.get(shell.info.mount)!).layers).toEqual(["alpha", "moss"]);
     // A composer from a new layer is installed while the shell shows.
-    s.rt.setRegistry([...readUiPlugins([...mossViews(), alphaView()] as never), ...composerFixture()]);
+    s.rt.setRegistry([...readUiPlugins([...withBotTab(mossViews()), alphaView()] as never), ...composerFixture()]);
     s.sent.length = 0;
     const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
     s.rt.resolve(shell.shellFrame, tab.mount, "composer");
@@ -1288,9 +954,9 @@ describe("the E-M1 review's fixes", () => {
   });
 });
 
-describe("a plugin's sealed frames: its own bot's cards only, bound to the document that placed them", () => {
-  const card = (id: string, bot?: string): SealedCard => ({
-    id, kind: "tool", computer: null, ...(bot === undefined ? {} : { bot }), origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64),
+describe("a plugin's sealed frames: its own cards only (the core's `ownedBy`: its own tools' calls, its moved bot's), bound to the document that placed them", () => {
+  const card = (id: string, bot?: string, ownedBy?: string[]): SealedCard => ({
+    id, kind: "tool", computer: null, ...(bot === undefined ? {} : { bot }), ...(ownedBy === undefined ? {} : { ownedBy }), origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64),
     fields: { title: { type: "text", text: "Run?" } }, options: [{ id: "allow_once", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
   });
   function placed(render = false, all = false) {
@@ -1305,12 +971,15 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     const info = s.rt.describe(docFrame, WIN, token);
     const store = new SealedFrames();
     s.rt.sealed = store;
-    for (const c of [card("card_own", "fixture-card/bot"), card("card_other", "alpha"), card("card_none")]) store.fromCore(c);
+    // Its own: a call to its tool in a code session (no bot), and a bot's call to its tool. Not its own: another plugin's
+    // tool's card, a card of no plugin's tool, and a bot named like it that the core did not mark as its own (no id decides it).
+    for (const c of [card("card_own", undefined, ["fixture-card"]), card("card_ownbot", "alpha", ["fixture-card"]), card("card_other", "alpha", ["other-plugin"]), card("card_none"), card("card_named", "fixture-card/bot")]) store.fromCore(c);
     return { s, store, docFrame, mount: info.mount };
   }
 
-  test("its own bot's card gets a frame, bound to the frame of the document that placed it", () => {
+  test("its own card gets a frame (its tool's call, in a code session or a bot's turn), bound to the frame of the document that placed it", () => {
     const { s, store, docFrame, mount } = placed();
+    expect(s.rt.sealedFrameOf(docFrame, mount, "card_ownbot", "button:allow_once")).toMatch(/^moss-sealed:\/\/card\/card_ownbot\//);
     const url = s.rt.sealedFrameOf(docFrame, mount, "card_own", "button:allow_once")!;
     expect(url).toMatch(/^moss-sealed:\/\/card\/card_own\/button%3Aallow_once\?token=/);
     const token = new URL(url).searchParams.get("token")!;
@@ -1318,16 +987,16 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     expect(store.boundOf(token)).toBe(`p:${docFrame.processId}:${docFrame.routingId}`);
   });
 
-  test("another bot's card, and a card of no bot, are refused, whatever the part holds", () => {
+  test("another plugin's card, a card of no plugin's tool, and a bot's card named like it but not its own, are refused, whatever the part holds", () => {
     const { s, docFrame, mount } = placed();
-    for (const id of ["card_other", "card_none"]) {
-      expect(() => s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toThrow("takes a card of this plugin's own bot");
+    for (const id of ["card_other", "card_none", "card_named"]) {
+      expect(() => s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toThrow("takes a card of this plugin's own tools");
     }
   });
 
   test("with approvals.all a plugin places any card, another bot's and a card of no bot too, whoever it is (no id decides it)", () => {
     const { s, docFrame, mount } = placed(false, true);
-    for (const id of ["card_own", "card_other", "card_none"]) expect(s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toMatch(/^moss-sealed:\/\/card\//);
+    for (const id of ["card_own", "card_other", "card_none", "card_named"]) expect(s.rt.sealedFrameOf(docFrame, mount, id, "button:allow_once")).toMatch(/^moss-sealed:\/\/card\//);
   });
 
   test("approvals.all without approvals places nothing, and with both it places any card", () => {
@@ -1375,7 +1044,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
     // The same rules as a frame: a field the card lacks is nothing, a card not yet here is asked again, another bot's is refused.
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_own", "field:nothing")).toBe("");
     expect(s.rt.sealedFrameOf(docFrame, mount, "card_later", "button:allow_once")).toBeUndefined();
-    expect(() => s.rt.sealedFrameOf(docFrame, mount, "card_other", "button:allow_once")).toThrow("takes a card of this plugin's own bot");
+    expect(() => s.rt.sealedFrameOf(docFrame, mount, "card_other", "button:allow_once")).toThrow("takes a card of this plugin's own tools");
     expect({ minted, heard }).toEqual({ minted: [], heard: [] });
     const page = s.rt.servePlaceholder(new URL(button).pathname.slice(1))!;
     expect(page.html).toContain('<div class="seal-placeholder" aria-hidden="true">approval button</div>');
@@ -1403,7 +1072,7 @@ describe("a plugin's sealed frames: its own bot's cards only, bound to the docum
 });
 
 describe("a part's Review on a plugin's card: the app's own page for it, by the same placing rule", () => {
-  test("a plugin's OK card of its own bot opens; another bot's card is refused; a tool card or an unknown one doesn't open", async () => {
+  test("a plugin's OK card that is its own (its moved bot's) opens; another's is refused; a tool card or an unknown one doesn't open", async () => {
     const s = setup([...readUiPlugins([folderView(join(FIXTURES, "fixture-card"))] as never)]);
     const shell = mountShell(s);
     const item = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
@@ -1415,13 +1084,13 @@ describe("a part's Review on a plugin's card: the app's own page for it, by the 
     const store = new SealedFrames();
     s.rt.sealed = store;
     const base = { computer: null, origin: "user", issuedAt: 1, expiresAt: null, hash: "b".repeat(64), fields: {}, options: [{ id: "approve", kind: "approve", label: "Approve" }] } as const;
-    store.fromCore({ ...base, id: "card_okown", kind: "plugin-ok", bot: "fixture-card/bot" });
-    store.fromCore({ ...base, id: "card_okother", kind: "plugin-ok", bot: "alpha" });
-    store.fromCore({ ...base, id: "card_toolown", kind: "tool", bot: "fixture-card/bot" });
+    store.fromCore({ ...base, id: "card_okown", kind: "plugin-ok", bot: "fixture-card/bot", ownedBy: ["fixture-card"] });
+    store.fromCore({ ...base, id: "card_okother", kind: "plugin-ok", bot: "alpha", ownedBy: ["alpha"] });
+    store.fromCore({ ...base, id: "card_toolown", kind: "tool", ownedBy: ["fixture-card"] });
     const opened: string[] = [];
     s.rt.onCardPage = async (id) => { opened.push(id); return true; };
     expect(await s.rt.cardPageOf(docFrame, info.mount, "card_okown")).toBe(true);
-    await expect(s.rt.cardPageOf(docFrame, info.mount, "card_okother")).rejects.toThrow("takes a card of this plugin's own bot");
+    await expect(s.rt.cardPageOf(docFrame, info.mount, "card_okother")).rejects.toThrow("takes a card of this plugin's own tools");
     expect(await s.rt.cardPageOf(docFrame, info.mount, "card_toolown")).toBe(false);
     expect(await s.rt.cardPageOf(docFrame, info.mount, "card_unknown")).toBe(false);
     expect(opened).toEqual(["card_okown"]);

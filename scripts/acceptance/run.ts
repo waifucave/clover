@@ -77,7 +77,7 @@ import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-fi
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { MossClient, RpcError, hello } from "./client";
-import { BRIDGE_ECHO, CHILD_REPORT, netCommand, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+import { BRIDGE_ECHO, CHILD_REPORT, netCommand, newestDirective as newestDirectiveOf, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
 // lane HS
 import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
@@ -508,10 +508,10 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
   const inStrip = await onlyWindow(ok.id, "the strip's card");
   const from = await pressApprove(appCdp, ok, appLog);
   await until(`${fixtureId} running`, 60_000, async () => ((await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: fixtureId }).catch(() => undefined))?.plugin?.state === "running" ? true : undefined), 500);
-  // The conversation: Alpha's tab shows, and Alpha's call to the fixture's tool (which always asks) raises its card.
+  // The conversation: the code session's tab shows, and its call to the fixture's tool (which always asks) raises its card.
   const before = new Set((await cards(c)).map((k) => k.id));
   await c.request("session.send", { id: session, message: { text: "ACCEPTANCE-CALL ask_card {}", clientMessageId: `host-b1-${randomBytes(3).toString("hex")}` } }, 30_000);
-  const tool = await until("Alpha's tool card", 90_000, async () => (await cards(c)).find((k) => !before.has(k.id) && k.kind === "tool" && k.session === session), 300);
+  const tool = await until("the code session's tool card", 90_000, async () => (await cards(c)).find((k) => !before.has(k.id) && k.kind === "tool" && k.session === session), 300);
   await placed(tool.id, "conversation \\(code main\\)");
   // The host draws none of it (B1). Inside the window, its own card may stand in for the conversation's whose buttons a
   // headless window never reads as visible (the window's own 2-second net, one program's): said, not failed.
@@ -527,22 +527,22 @@ async function oneCardEach(appCdp: Cdp, appLog: string, hostCdp: Cdp, hostLog: s
   }).catch(() => undefined);
   // The window half of the browser: MOSS Code's panel shows the person's own tab the host runs, from its pictures, and
   // only a real press in the panel reaches the page.
-  const panel = await panelShowsHostTab(appCdp, appLog, hostCdp, c, viewportPressFile);
+  const panel = await panelShowsHostTab(appCdp, appLog, hostCdp, c, viewportPressFile, session);
   // The Browser tool with the window and the host both up: the page loads in the host (its pages stay there).
   const seen = browserFixture!.seen.length;
   await turn(c, session, `ACCEPTANCE-CALL Browser ${JSON.stringify({ verb: "open", url: browserFixture!.url })}`, 150_000, { always: true, log: appLog });
   await until("the bot's page loaded with the window and the host up", 60_000, () => (browserFixture!.seen.slice(seen).some((r) => r.path === "/") ? true : undefined), 300);
   if (![...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) await until("the bot's page in the host", 30_000, () => ([...hostCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url)) ? true : undefined), 500);
   if ([...appCdp.frames.values()].some((f) => f.url.startsWith(browserFixture!.url))) fail("the bot's page loaded in MOSS Code's window while the host runs the pages");
-  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); Alpha's tool card with her tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; ${panel}; with both up, the Browser tool's page loaded in the host and not in the window`;
+  return `a plugin's OK card was placed in the window's strip, drawn there only (${inStrip.join(", ")}) and pressed there (${from}); the code session's tool card with its tab focused was placed in the window's conversation and drawn there only (${inConversation.join(", ")}), then with the window back moved to the host's island and pressed there (${onIsland.slice(0, 120)}); the host drew neither past the fallback's 2 s; ${panel}; with both up, the Browser tool's page loaded in the host and not in the window`;
 }
 
 /** The window half of the browser (lane HS): the browser panel opened in Alpha's tab gives MOSS Code's view "browser" its
  *  place; the person's own tab, opened by the run into that view, runs in the host. The window draws it from the engine's
  *  `picture.frame`s (its viewport's canvas painted); an input its page makes up (no real press) never reaches the tab; a
  *  real press at the page's button (DevTools input on the viewport's own contents) clicks it in the host's page. */
-async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: MossClient, viewportPressFile: string): Promise<string> {
-  const header = await until("the Browser button in Alpha's tab", 30_000, async () => {
+async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: MossClient, viewportPressFile: string, session: string): Promise<string> {
+  const header = await until("the Browser button in the code session's tab", 30_000, async () => {
     for (const d of (await appCdp.documents()).filter((x) => x.url.startsWith("moss-plugin://"))) {
       const at = await appCdp.centerOf(d.session, "button", "Browser").catch(() => undefined);
       if (at !== undefined) return { session: d.session, at };
@@ -552,9 +552,9 @@ async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: M
   await appCdp.click(header.session, header.at.x, header.at.y);
   await until("the browser panel's frame in the window", 30_000, () => (readLog(appLog).includes("browser: view browser has a place in the window") ? true : undefined), 300);
   await sleep(1_500);
-  // The panel in Alpha's tab lists Alpha's tabs and keeps its frame only while one is chosen: the tab is hers. MOSS Code's
-  // window shows a bot's tab while the bots are its own (lane BT's switch at its default; the controller's ruling).
-  const opened = await c.request<{ tab: { id: string } }>("browser.open", { owner: { kind: "bot", bot: "alpha" }, url: browserFixture!.url, show: { view: "browser", viewport: { width: 800, height: 600 } } }, 60_000);
+  // The panel in the code session's tab lists that session's tabs and keeps its frame only while one is chosen: the tab
+  // is the session's.
+  const opened = await c.request<{ tab: { id: string } }>("browser.open", { owner: { kind: "session", session }, url: browserFixture!.url, show: { view: "browser", viewport: { width: 800, height: 600 } } }, 60_000);
   const id = opened.tab.id;
   try {
     await until("the window's panel showing the host's tab", 30_000, () => (readLog(appLog).includes(`browser: view browser shows the host's tab ${id}`) ? true : undefined), 300);
@@ -570,7 +570,7 @@ async function panelShowsHostTab(appCdp: Cdp, appLog: string, hostCdp: Cdp, c: M
     if (await clicked()) fail("the host's page was clicked before any press in the panel");
     writeFileSync(viewportPressFile, `${Math.round(button.x)},${Math.round(button.y)}`);
     await until("the host's page clicked by the press in the panel", 20_000, async () => ((await clicked()) ? true : undefined), 300);
-    return `MOSS Code's panel showed Alpha's tab the host runs (the bot switch at its default), drawn from picture.frame (${drew}); a press in the panel's own view (the main process's click into it) went out as browser.view.input and clicked the page's button in the host`;
+    return `MOSS Code's panel showed the code session's tab the host runs, drawn from picture.frame (${drew}); a press in the panel's own view (the main process's click into it) went out as browser.view.input and clicked the page's button in the host`;
   } finally {
     await c.request("browser.close", { id }, 30_000).catch(() => undefined);
   }
@@ -913,6 +913,9 @@ function watchBundledListing(run: number, log: string, graceMs = 0): void {
  *  mcp__moss__… waits on the agent runtime, which keeps `moss` for its standing server). */
 const WEB_SEARCH_TOOL = "mcp__web__WebSearch";
 const WEB_FETCH_TOOL = "mcp__web__WebFetch";
+/** A bundled web tool as a bot gets it (`mcp__web__<name>`) or as a code session's bridge gives it to MOSS's own agent
+ *  (`mcp__moss_<16 hex>__web__<name>`). */
+const isWebTool = (name: string | undefined, bot: string): boolean => name === bot || (name !== undefined && new RegExp(`^mcp__moss_[0-9a-f]{16}__${bot.slice("mcp__".length)}$`).test(name));
 /** The command hook step's outcome, from the plugin's turn on the first daemon. */
 let hookOutcome: { status: Status; detail: string } | undefined;
 /** The plugin's own host API step (acceptance-points; its turn here, on the first daemon; recorded at the end). */
@@ -1192,7 +1195,7 @@ async function bundledMcpStep(n = stepNo("each boot lists the bundled web tools"
       if (first === undefined) continue; // no turn on this boot
       // Offered under their exact names.
       const web = first.tools.filter((t) => /(^|__)Web(Search|Fetch)$/.test(t));
-      const named = [WEB_SEARCH_TOOL, WEB_FETCH_TOOL].every((t) => first.tools.includes(t));
+      const named = [WEB_SEARCH_TOOL, WEB_FETCH_TOOL].every((t) => first.tools.some((x) => isWebTool(x, t)));
       if (listed && !named) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request didn't offer ${WEB_SEARCH_TOOL} and ${WEB_FETCH_TOOL} (web tools: ${web.join(", ") || "none"}; tools: ${first.tools.join(", ").slice(0, 300)})`);
       if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
     }
@@ -2125,50 +2128,33 @@ async function main(): Promise<void> {
     record(2, statusOf(err), why(err));
   }
 
-  // Step 3: a turn on the bundled bot's main conversation, answered by the fake. Alpha is MOSS's own bundled bot, so
-  // its provider asks nothing (the owner's ruling, packages/core/src/bots/provider-consent.ts): a `bot-provider` card
-  // fails the step, approved or not.
+  // Step 3: a first turn, answered by the fake, in a code session with MOSS's own coding agent on the keyed model, started
+  // the app's way (lane MC: MOSS Code's window has no bots). The rows about a bot run in Alpha's main conversation
+  // (`botSession`), on the same model, picked the person's way. MOSS's own agent asks nothing for its provider: a
+  // `bot-provider` card fails the step, approved or not.
   let session: string | undefined;
+  let botSession: string | undefined;
   let turnsWork = false;
   try {
-    const bots = await c.request<{ bots: { id: string; mainSession: string; model?: string }[] }>("bot.list", {});
-    if (bots.bots.length === 0) fail("bot.list lists no bot (the bundled alpha isn't there)");
-    session = bots.bots[0]!.mainSession;
-    const model = bots.bots[0]!.model;
+    if (keyAdded) await pickKeyedModel(c);
+    botSession = (await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.mainSession;
     await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
+    session = await keyedCodeSession(c);
     await c.request("session.attach", { id: session });
+    if (botSession !== undefined) await c.request("session.attach", { id: botSession });
     const seen = fake.requests.length;
     const { events, cards: carded, changes } = await turn(c, session, "ACCEPTANCE-REPLY: say hello");
     const mine = fake.requests.slice(seen).filter((r) => r.path.endsWith("/messages"));
     const replied = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
     turnsWork = replied;
-    if (changes.includes("bot-provider")) fail(`the bundled bot's first turn raised a provider card (bot-provider): MOSS's own bot asks nothing (${carded.join("; ")})`);
-    if (replied) record(3, "PASS", `the reply came from the fake, with no provider card (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
-    else if (mine.length === 0) fail(`the turn never reached the fake provider${model ? ` (the bot runs ${model})` : ""}: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
+    if (changes.includes("bot-provider")) fail(`the code session's first turn raised a provider card (bot-provider): MOSS's own agent asks nothing (${carded.join("; ")})`);
+    if (replied) record(3, "PASS", `a code session on MOSS's own agent (${session}): the reply came from the fake, with no provider card (${mine.length} request(s), key matched: ${mine.some((r) => r.keyMatched)}${carded.length ? `; ${carded.join("; ")}` : ""})`);
+    else if (mine.length === 0) fail(`the turn never reached the fake provider (the session runs ${KEYED_MODEL}): stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
     else if (mine.some((r) => r.answered === "torn")) fail(`the turn's request reached the fake but its body never arrived whole (${mine.filter((r) => r.answered === "torn").map((r) => r.torn).join("; ")}): stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     else fail(`the fake answered, but the reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
   } catch (err) {
     record(3, statusOf(err), why(err));
-    // A key added a moment ago can still be unseen by the bots (their view of the stored keys is re-read lazily,
-    // packages/core/src/bots/key-presence.ts): once its model is the keyed one, a second turn says whether the rest
-    // of the path works, so steps 6 and 7 still run. Step 3 stays a FAIL: a user's first turn went wrong.
-    if (keyAdded && session !== undefined) {
-      try {
-        const model = await until("the bot to take the keyed model", 20_000, async () => {
-          const m = (await c.request<{ bots: { mainSession: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.mainSession === session)?.model;
-          return m !== undefined && m.startsWith("anthropic/") ? m : undefined;
-        }, 1_000);
-        const { events, cards: carded, changes } = await turn(c, session, "ACCEPTANCE-REPLY: say hello again");
-        turnsWork = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
-        const row = rows.find((r) => r.n === 3)!;
-        const asked = changes.includes("bot-provider") ? "; it raised a provider card (bot-provider) too" : "";
-        row.detail = `${row.detail} — a second turn, once the bot runs ${model}: ${turnsWork ? `the fake's reply came${carded.length ? ` (${carded.join("; ")})` : ""}` : `no reply either (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`}${asked}`.slice(0, 700);
-      } catch (again) {
-        const row = rows.find((r) => r.n === 3)!;
-        row.detail = `${row.detail} — and no second turn: ${why(again)}`.slice(0, 700);
-      }
-    }
   }
 
   // The renders (MOSS_ACCEPT_RENDERS): the Plugins page as a new user sees it, signed in (step 2) and nothing installed
@@ -2360,7 +2346,7 @@ async function main(): Promise<void> {
   async function manifestFieldsStep(): Promise<void> {
     if (!STEPS.includes(MANIFEST_FIELDS_STEP)) return;
     if (oldHalf) { manifestOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" }; return; }
-    if (session === undefined || !turnsWork) { manifestOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" }; return; }
+    if (botSession === undefined || !turnsWork) { manifestOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" }; return; }
     const src = join(stateDir !== undefined ? userHome : root, "plugin-src", "fields");
     mkdirSync(src, { recursive: true });
     const installed: string[] = [];
@@ -2404,7 +2390,7 @@ async function main(): Promise<void> {
         const answers = { named: await probe(named.id), plain: await probe(plain.id) };
         // Its read-only tool still asks (read 44): a bot's call at the default level raises a tool card, approved, then it answers.
         const toolSeen = fake!.requests.length;
-        const toolTurn = await turn(c, session, `ACCEPTANCE-CALL ${OUTSIDE_TOOL} {}`, 150_000).catch((err: unknown) => { wrong.push(`P5 the bot's call to ${OUTSIDE_TOOL}: ${why(err)}`); return undefined; });
+        const toolTurn = await turn(c, botSession, `ACCEPTANCE-CALL ${OUTSIDE_TOOL} {}`, 150_000).catch((err: unknown) => { wrong.push(`P5 the bot's call to ${OUTSIDE_TOOL}: ${why(err)}`); return undefined; });
         const tool = { cards: toolTurn?.cards ?? [], answered: fake!.requests.slice(toolSeen).some((r) => r.toolResult?.text.includes(`${OUTSIDE_TOOL}-pong`) === true) };
         const p5 = outsideWrong({ card: named.text, plainCard: plain.text, program: o.program, ...answers, tool });
         if (p5.length > 0) wrong.push(`P5 ${p5.join("; ")}`);
@@ -2459,7 +2445,7 @@ async function main(): Promise<void> {
       await install({ from: "folder", path: reach.cc });
       const botTag = "ACCEPTANCE-REPLY: fields offer";
       const botSeen = fake!.requests.length;
-      await turn(c, session, botTag, 150_000);
+      await turn(c, botSession, botTag, 150_000);
       const botTools = fake!.requests.slice(botSeen).filter((r) => r.lastUserText.includes("fields offer")).flatMap((r) => r.tools);
       const model = (await c.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((x) => x.id === "alpha")?.model;
       const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
@@ -2503,7 +2489,7 @@ async function main(): Promise<void> {
       // 1.33: a Claude Code plugin folder wrapped; its skill in Alpha's Glossary.
       const claude = await install({ from: "wrap", kind: "claude-plugin", value: writeClaudePlugin(src) });
       const gSeen = fake!.requests.length;
-      await turn(c, session, `ACCEPTANCE-CALL Glossary ${JSON.stringify({ query: CLAUDE_SKILL })}`, 150_000);
+      await turn(c, botSession, `ACCEPTANCE-CALL Glossary ${JSON.stringify({ query: CLAUDE_SKILL })}`, 150_000);
       const g = fake!.requests.slice(gSeen).map((r) => r.toolResult).find((x) => x !== undefined);
       if (!claude.text.includes("MOSS made") && !claude.text.toLowerCase().includes("claude")) wrong.push(`${claude.id}'s OK card doesn't say it was made from a Claude Code plugin: ${claude.text.slice(0, 300)}`);
       else if (g === undefined || !g.text.includes(`${claude.id}:${CLAUDE_SKILL}`)) wrong.push(`after ${claude.id}'s OK, Alpha's Glossary search for its skill answered ${JSON.stringify((g?.text ?? "nothing").slice(0, 300))}`);
@@ -2546,7 +2532,18 @@ async function main(): Promise<void> {
         if (cardWrong.length > 0) wrong.push(`${juniper.id}: ${cardWrong.join("; ")}`);
         const own = await until(`${juniper.id}'s bot listed`, 30_000, async () => (await c.request<{ bots: { id: string; mainSession: string }[] }>("bot.list", {})).bots.find((x) => x.id === juniper.id)?.mainSession)
           .catch(() => undefined);
-        if (own === undefined) wrong.push(`${juniper.id} is on, but bot.list has no bot ${juniper.id}`);
+        // With bots as records (the default source), a plugin installed after the one-time move brings no bot: its own-bot
+        // parts reach only a bot its record says was moved from it (the controller's ruling of 2026-11-17), so none.
+        // The move's journal is there only with records as the source.
+        const records = (await c.request<{ journal?: unknown }>("bot.move.status", {}).catch(() => ({ journal: undefined }))).journal !== undefined;
+        if (records) {
+          const seen = fake!.requests.length;
+          await turn(c, botSession, "ACCEPTANCE-REPLY: juniper alpha offer", 150_000);
+          const alphaTools = fake!.requests.slice(seen).filter((r) => r.lastUserText.includes("juniper alpha offer")).flatMap((r) => r.tools);
+          if (own !== undefined) wrong.push(`${juniper.id} was installed after the move, yet bot.list has a bot ${juniper.id}`);
+          else if (alphaTools.some((t) => t.includes("JuniperStage"))) wrong.push(`${juniper.id}'s own-bot JuniperStage is offered to Alpha (${alphaTools.filter((t) => t.includes("Juniper")).join(", ")})`);
+          else if (sidebar === undefined && cardWrong.length === 0) done.push(`§5.5 a plugin with a bot, installed after the move: its OK card says "${BOT_PARTS_LINES.join(" ")}" with its checkbox; it brings no bot (bot.list has no ${juniper.id}) and its own-bot JuniperStage is offered to no bot, Alpha's turn included; a bot's entry on the sidebar refused`);
+        } else if (own === undefined) wrong.push(`${juniper.id} is on, but bot.list has no bot ${juniper.id}`);
         else {
           const offeredOn = async (s: string, tag: string) => {
             const seen = fake!.requests.length;
@@ -2554,7 +2551,7 @@ async function main(): Promise<void> {
             return fake!.requests.slice(seen).filter((r) => r.lastUserText.includes(tag)).flatMap((r) => r.tools);
           };
           await c.request("session.attach", { id: own });
-          const alphaTools = await offeredOn(session, "juniper alpha offer");
+          const alphaTools = await offeredOn(botSession, "juniper alpha offer");
           const botTools = await offeredOn(own, "juniper own offer");
           // 1.99: per-entry own-bot. Her skill and agent definition are in her Glossary and not in Alpha's (her shared
           // skill in both); her command, run through her beside tool's `commands.run` for the session it serves, runs
@@ -2566,8 +2563,8 @@ async function main(): Promise<void> {
           };
           const glossary = `ACCEPTANCE-CALL Glossary ${JSON.stringify({ query: OWN_BOT_MARK })}`;
           const own99 = {
-            juniperGlossary: await answerOf(own, glossary), alphaGlossary: await answerOf(session, glossary),
-            juniperRun: await answerOf(own, "ACCEPTANCE-CALL JuniperRun {}"), alphaRun: await answerOf(session, "ACCEPTANCE-CALL JuniperRun {}"),
+            juniperGlossary: await answerOf(own, glossary), alphaGlossary: await answerOf(botSession, glossary),
+            juniperRun: await answerOf(own, "ACCEPTANCE-CALL JuniperRun {}"), alphaRun: await answerOf(botSession, "ACCEPTANCE-CALL JuniperRun {}"),
           };
           const listed = (text: string) => [OWN_BOT_ITEMS.skill, OWN_BOT_ITEMS.agent, OWN_BOT_ITEMS.shared].filter((n) => text.includes(n)).join(", ") || "none of hers";
           const ownWrong = ownBotWrong(own99);
@@ -2638,6 +2635,9 @@ async function main(): Promise<void> {
       for (const id of installed.reverse()) await c.request("plugin.remove", { id }, 60_000).catch(() => undefined);
     }
   }
+  // The rows that call step 4's plugin run in the same code session, already running when it was installed: a change to
+  // the plugins' tools reaches it at its next turn (lane AG).
+
   // Step 5: a plugin's Review on its OK card (the owner's ruling, 2026-11-13), a row of its own so a red Review never
   // stops the install row and the rows that read its plugin (the controller's ruling). A second plugin, found behind its
   // OK card; its Review asked over RPC as the app's card page asks; the internal job reads that plugin's tree and its
@@ -2770,7 +2770,7 @@ async function main(): Promise<void> {
   // (acceptance-points-page, its sidebar button's component in the run's app) reaches one member of each area a
   // component reaches through the UI SDK's usePluginApi, and the row checks each answer.
   if (!STEPS.some((x) => x.startsWith(POINTS_PREFIX))) { /* not in this run */ }
-  else if (session === undefined || !turnsWork) pointsOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (botSession === undefined || !turnsWork) pointsOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else if (oldHalf) pointsOutcome = { status: "BLOCKED", detail: "not asserted on the upgrade's old half" };
   else {
     try {
@@ -2784,8 +2784,8 @@ async function main(): Promise<void> {
         const st = (await c.request<{ plugin?: { state?: string } }>("plugin.get", { id }).catch(() => undefined))?.plugin?.state;
         return st === "enabled" || st === "running" ? st : undefined;
       });
-      const before = Math.max(0, ...(await history(c, session)).map((e) => (typeof e.seq === "number" ? e.seq : 0)));
-      const probe = (await c.request<{ result: Record<string, unknown> }>("command.run", { name: `${id}.probe`, args: { session } }, 60_000)).result;
+      const before = Math.max(0, ...(await history(c, botSession)).map((e) => (typeof e.seq === "number" ? e.seq : 0)));
+      const probe = (await c.request<{ result: Record<string, unknown> }>("command.run", { name: `${id}.probe`, args: { session: botSession } }, 60_000)).result;
       const wrong: string[] = [];
       // Its commands' `runsOn` (the one-computer case: this computer is the main and the one they're called from).
       const listed = (await c.request<{ commands: { name: string; runsOn?: string }[] }>("command.list", {})).commands.filter((k) => k.name.startsWith(`${id}.`));
@@ -2819,7 +2819,7 @@ async function main(): Promise<void> {
       const computer = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name ?? "";
       if (computer === "") fail("computer.list lists no computer");
       mkdirSync(join(userHome, "acceptance-points-page"), { recursive: true });
-      for (const [key, value] of [["pageFolder", `home/${computer}/acceptance-points-page`], ["pageSite", `http://127.0.0.1:${pageSite.port}`], ["pageSession", session]] as const) {
+      for (const [key, value] of [["pageFolder", `home/${computer}/acceptance-points-page`], ["pageSite", `http://127.0.0.1:${pageSite.port}`], ["pageSession", botSession]] as const) {
         await c.request("plugin.settings.set", { id: pageId, key, value });
       }
       const page = await until("its page's answers (its sidebar button's component, through usePluginApi)", 120_000, async () => {
@@ -2836,14 +2836,15 @@ async function main(): Promise<void> {
       const answerLabel = "High tide";
       const qInput = JSON.stringify({ questions: [{ question, header: "Tide", multiSelect: false, options: [{ label: answerLabel, description: "the first" }, { label: "Low tide", description: "the second" }] }] });
       const qSeen = fake?.requests.length ?? 0;
-      await c.request("session.send", { id: session, message: { text: `ACCEPTANCE-CALL AskUserQuestion ${qInput}`, clientMessageId: `pageq-${qTag}` } }, 30_000);
-      const asked = await until("the bot's question in Alpha's conversation", 90_000, async () => (await history(c, session)).find((e) => e.type === "question_asked" && JSON.stringify(e.questions ?? "").includes(qTag)));
-      await c.request("plugin.settings.set", { id: pageId, key: "pageQuestion", value: JSON.stringify({ session, callId: asked.callId, question, answer: answerLabel }) });
-      const resolved = await until("the question answered by the page", 60_000, async () => (await history(c, session)).find((e) => e.type === "question_resolved" && e.callId === asked.callId)).catch(async (err: unknown) => {
+      await c.request("session.send", { id: botSession, message: { text: `ACCEPTANCE-CALL AskUserQuestion ${qInput}`, clientMessageId: `pageq-${qTag}` } }, 30_000);
+      const asked = await until("the bot's question in Alpha's conversation", 90_000, async () => (await history(c, botSession)).find((e) => e.type === "question_asked" && JSON.stringify(e.questions ?? "").includes(qTag)));
+      await c.request("plugin.settings.set", { id: pageId, key: "pageQuestion", value: JSON.stringify({ session: botSession, callId: asked.callId, question, answer: answerLabel }) });
+      const resolved = await until("the question answered by the page", 60_000, async () => (await history(c, botSession)).find((e) => e.type === "question_resolved" && e.callId === asked.callId)).catch(async (err: unknown) => {
         const r = (await c.request<{ result: { answer?: string } }>("command.run", { name: `${pageId}.report`, args: {} }).catch(() => ({ result: {} as { answer?: string } }))).result;
         return fail(`${why(err)} (the page said ${JSON.stringify(r.answer ?? "nothing")})`);
       });
-      const pageAnswer = (await c.request<{ result: { answer?: string } }>("command.run", { name: `${pageId}.report`, args: {} })).result.answer ?? "";
+      // The page hands its outcome to its host half once its call has come back, which is after the question resolved.
+      const pageAnswer = await until("the page's own word of its answer", 15_000, async () => (await c.request<{ result: { answer?: string } }>("command.run", { name: `${pageId}.report`, args: {} })).result.answer, 300).catch(() => "");
       const resolvedAnswers = (resolved.answers ?? {}) as Record<string, string>;
       if (!pageAnswer.startsWith("answered ") || resolvedAnswers[question] !== answerLabel) wrong.push(`its page's conversation.answer: the page said ${JSON.stringify(pageAnswer)}, the question resolved with ${JSON.stringify(resolvedAnswers)}`);
       else {
@@ -2855,13 +2856,13 @@ async function main(): Promise<void> {
       if (wrong.length > 0) fail(wrong.join("; "));
       // Its note and its message reach Alpha's conversation; the message starts a turn the fake answers.
       await until("its note and its message's turn in Alpha's conversation", 120_000, async () => {
-        const text = JSON.stringify((await history(c, session)).filter((e) => (e.seq ?? 0) > before));
+        const text = JSON.stringify((await history(c, botSession)).filter((e) => (e.seq ?? 0) > before));
         return text.includes("ACCEPTANCE-POINTS-NOTE") && text.includes("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-PTSSEND") && text.includes("ACCEPTANCE-POINTS-PAGE-NOTE") ? true : undefined;
       });
       // Its child's hooks: a turn with a tool call runs six of its events, and the user's compaction of Alpha's
       // conversation (session.compact, the app's own method) the other two (before the child is switched off below).
-      await turn(c, session, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
-      await c.request("session.compact", { id: session }, 120_000).catch((err: unknown) => wrong.push(`session.compact failed: ${why(err)}`));
+      await turn(c, botSession, "ACCEPTANCE-ECHO: call the echo tool", 150_000);
+      await c.request("session.compact", { id: botSession }, 120_000).catch((err: unknown) => wrong.push(`session.compact failed: ${why(err)}`));
       // A plugin's data folder is its tree's (`<home>/plugin-data/<top>`): the child's hook writes its top plugin's.
       const eventsFile = join(home, "plugin-data", id, "events.txt");
       const all = ["message.in", "message.out", "tool.before", "tool.after", "turn.start", "turn.end", "compact.before", "compact.after"];
@@ -3051,9 +3052,11 @@ async function main(): Promise<void> {
       netSite = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (req) => (new URL(req.url).pathname === "/net-page" ? new Response(NET_BODY) : new Response("not here", { status: 404 })) });
       const port = netSite.port;
       const parse = (text: string, mark: string) => Object.fromEntries(text.slice(text.indexOf(mark)).split(/\s+/).slice(1).map((kv) => [kv.slice(0, kv.indexOf("=")), kv.slice(kv.indexOf("=") + 1)]));
+      // Each probe runs in the code session that was running before its plugin's OK: the new tools reach it at its next turn.
+      const probeSession = session!;
       const probeTurn = async (ask: string, mark: string) => {
         const seen = fake!.requests.length;
-        const { events, cards: carded } = await turn(c, session!, ask, 150_000);
+        const { events, cards: carded } = await turn(c, probeSession, ask, 150_000);
         const mine = fake!.requests.slice(seen);
         // The probe's own call and answer (a deferred probe is loaded through Glossary first).
         const called = mine.map((r) => r.toolUse).find((t) => t !== undefined && /(NetProbe|StdioProbe)$/.test(t)) ?? mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -3127,7 +3130,7 @@ async function main(): Promise<void> {
           const pastedUrl = await install({ from: "wrap", kind: "mcp-url", value: remote.url });
           pastedUrlId = pastedUrl.id;
           const seen = fake!.requests.length;
-          const { events } = await turn(c, session!, `ACCEPTANCE-CALL HttpEcho {"text":"from-the-bot"}`, 150_000);
+          const { events } = await turn(c, probeSession, `ACCEPTANCE-CALL HttpEcho {"text":"from-the-bot"}`, 150_000);
           const mine = fake!.requests.slice(seen);
           const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes(HTTP_MCP_MARK));
           if (result === undefined || !result.text.includes("text=from-the-bot")) {
@@ -3158,7 +3161,7 @@ async function main(): Promise<void> {
 
   // The plugin API's served areas (its turn here, on the first daemon; recorded at the end): the acceptance-api fixture
   // from a folder, its OK card approved, its ApiProbe called by the bot; one clause per area (api-areas-step.ts).
-  if (session === undefined || !turnsWork) apiOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  if (botSession === undefined || !turnsWork) apiOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else if (pluginId === undefined || !pluginOk) apiOutcome = { status: "BLOCKED", detail: "the first plugin isn't installed and approved (step 4): no other plugin's command to be refused" };
   else {
     try {
@@ -3178,7 +3181,7 @@ async function main(): Promise<void> {
       writeFileSync(routineFile, "---\ntriggers:\n  - schedule: every 1h\n---\nSay hello (the acceptance run's routine for the API probe).\n");
       await until("the run's routine in routine.list", 30_000, async () => ((await c.request<{ routines: { name: string }[] }>("routine.list", {}).catch(() => ({ routines: [] }))).routines.some((r) => r.name === "acceptance-api") ? true : undefined));
       const seen = fake.requests.length;
-      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-CALL ApiProbe {}", 150_000).finally(() => rmSync(routineFile, { force: true }));
+      const { events, cards: carded } = await turn(c, botSession, "ACCEPTANCE-CALL ApiProbe {}", 150_000).finally(() => rmSync(routineFile, { force: true }));
       const mine = fake.requests.slice(seen);
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
       const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes("acceptance-api-pong"));
@@ -3201,7 +3204,7 @@ async function main(): Promise<void> {
   // fixture from a folder, its OK card approved; Show publishes a picture of its own, then FeedProbe says what the feed and the
   // pictures gave and what was refused (feed-step.ts).
   if (!STEPS.includes(FEED_STEP)) { /* not in this run */ }
-  else if (session === undefined || !turnsWork) feedOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (botSession === undefined || !turnsWork) feedOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
   else {
     try {
       const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-feed");
@@ -3219,7 +3222,7 @@ async function main(): Promise<void> {
       });
       const turnOf = async (tool: string) => {
         const seen = fake!.requests.length;
-        const { events } = await turn(c, session!, `ACCEPTANCE-CALL ${tool} {}`, 150_000);
+        const { events } = await turn(c, botSession!, `ACCEPTANCE-CALL ${tool} {}`, 150_000);
         const mine = fake!.requests.slice(seen);
         const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
         const result = mine.map((r) => r.toolResult).find((x) => x !== undefined && x.text.includes("acceptance-feed-pong"));
@@ -3244,14 +3247,14 @@ async function main(): Promise<void> {
   // A turn on a model a plugin's code adapter serves (its turn here, on the first daemon; recorded at the end).
   // (The `models` unit: in a sharded run, a shard of its own runs them on its own keyed daemon, unitsRun.)
   if (runs("models")) {
-    if (session === undefined || !turnsWork) codeAdapterOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
-    else codeAdapterOutcome = await codeAdapterTurn(c, session);
-    if (session === undefined || !turnsWork) thirdPartyOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
-    else thirdPartyOutcome = await thirdPartyModelTurn(c, session);
-    if (session === undefined || !turnsWork) oauthOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
-    else oauthOutcome = await oauthSignInTurn(c, session);
-    if (session === undefined || !turnsWork) routineOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
-    else routineOutcome = await scheduledRoutineTurn(c, session);
+    if (botSession === undefined || !turnsWork) codeAdapterOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+    else codeAdapterOutcome = await codeAdapterTurn(c, botSession);
+    if (botSession === undefined || !turnsWork) thirdPartyOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+    else thirdPartyOutcome = await thirdPartyModelTurn(c, botSession);
+    if (botSession === undefined || !turnsWork) oauthOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+    else oauthOutcome = await oauthSignInTurn(c, botSession);
+    if (botSession === undefined || !turnsWork) routineOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+    else routineOutcome = await scheduledRoutineTurn(c, botSession);
   }
 
   // Step 14 (its turn here, on the first daemon; recorded at the end with the daemons' logs): the bot's WebSearch, the
@@ -3272,7 +3275,7 @@ async function main(): Promise<void> {
       const result = mine.find((r) => r.toolResult !== undefined)?.toolResult;
       if (called === undefined) fail(`the bot was offered no WebSearch (${offered.length} tools, MCP tools: ${offered.filter((t) => t.startsWith("mcp__")).join(", ") || "none"})`);
       if (result === undefined) fail(`the bot called ${called} but no tool result came back (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
-      if (called !== WEB_SEARCH_TOOL) fail(`the bot's WebSearch is ${called}, not ${WEB_SEARCH_TOOL}`);
+      if (!isWebTool(called, WEB_SEARCH_TOOL)) fail(`the bot's WebSearch is ${called}, not ${WEB_SEARCH_TOOL}`);
       if (result!.isError || !result!.text.includes(FAKE_SEARCH_HIT)) fail(`${called} answered without the fake backend's result: ${result!.text.slice(0, 300)}`);
       searchOutcome = { status: "PASS", detail: `the bot called ${called} and got the fake search backend's result${carded.length ? ` (${carded.join("; ")})` : ""}` };
     } catch (err) {
@@ -3300,7 +3303,7 @@ async function main(): Promise<void> {
       };
       // The address is in the user's message: it runs with no card at ask for risky actions (§9.1).
       const page = await fetchTurn(`https://${FAKE_PUBLIC_SITE}/article`);
-      if (page.called !== WEB_FETCH_TOOL) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL}`);
+      if (!isWebTool(page.called, WEB_FETCH_TOOL)) fail(`the bot's WebFetch is ${page.called}, not ${WEB_FETCH_TOOL}`);
       if (page.result.isError || !page.result.text.includes(FAKE_ARTICLE_TEXT)) fail(`${page.called} didn't read the public page: ${page.result.text.slice(0, 300)}`);
       if (page.cards.length > 0) fail(`a fetch of the address the user gave raised ${page.cards.join("; ")} (it should run with no card) [packages/core/src/approvals/seen-urls.ts]`);
       // The search step's hit (stage 2): a search's hits are seen, so its page runs with no card, though no user gave it.
@@ -3333,23 +3336,23 @@ async function main(): Promise<void> {
   }
 
   // Stage 2 (recorded at the end): the bot's sandboxed shell at "ask for risky actions".
-  shellOutcome = session === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await shellTurns(c, session);
+  shellOutcome = botSession === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await shellTurns(c, botSession);
   // Stage 3 (recorded at the end): a command outside the sandbox, behind its own card.
-  if (STEPS.includes(OUTSIDE_STEP)) outsideOutcome = session === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await outsideTurns(c, session);
+  if (STEPS.includes(OUTSIDE_STEP)) outsideOutcome = botSession === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await outsideTurns(c, botSession);
 
   // Step 7: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
   // sensitive place (a dot-folder in the home) raises an approval card, the app's yes is pressed, then the file lands.
-  if (session === undefined || !turnsWork) record(7, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  if (botSession === undefined || !turnsWork) record(7, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   else {
     try {
       const before = fake.requests.length;
-      const plain = await turn(c, session, "ACCEPTANCE-WRITE-ORDINARY: write the file", 150_000);
+      const plain = await turn(c, botSession, "ACCEPTANCE-WRITE-ORDINARY: write the file", 150_000);
       const plainResult = fake.requests.slice(before).find((r) => r.toolResult !== undefined)?.toolResult;
       const plainLanded = existsSync(ordinaryWritePath) && readFileSync(ordinaryWritePath, "utf8") === writeContent;
       if (plain.cards.length > 0) fail(`a write to an ordinary folder raised ${plain.cards.join("; ")} (it should run with no card at ask for risky actions) [packages/core/src/approvals/ordinary-paths.ts]`);
       if (!plainLanded) fail(`the write to an ordinary folder didn't land; its result: ${(plainResult?.text ?? "none").slice(0, 200)}`);
       const seen = fake.requests.length;
-      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: pressing });
+      const { events, cards: carded } = await turn(c, botSession, "ACCEPTANCE-WRITE: write the file", 150_000, { press: pressing });
       const answered = carded.length ? carded.join("; ") : undefined;
       const mine = fake.requests.slice(seen);
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
@@ -3366,14 +3369,14 @@ async function main(): Promise<void> {
       mkdirSync(dirname(ordinaryReadPath), { recursive: true, mode: 0o700 });
       writeFileSync(ordinaryReadPath, ordinaryReadValue);
       const readSeen = fake.requests.length;
-      const secret = await turn(c, session, `ACCEPTANCE-READ ${secretReadPath}`, 150_000);
+      const secret = await turn(c, botSession, `ACCEPTANCE-READ ${secretReadPath}`, 150_000);
       const secretResult = fake.requests.slice(readSeen).find((r) => r.toolResult !== undefined)?.toolResult;
       if (secret.cards.length > 0) fail(`a Read of ~/.aws/credentials raised ${secret.cards.join("; ")} (it is refused with no card) [packages/core/src/fence/secret-reads.ts]`);
       if (secretResult === undefined) fail("the Read of ~/.aws/credentials got no result back to the model");
       if (secretResult!.text.includes(secretReadValue)) fail("the Read of ~/.aws/credentials showed the model the file's value");
       if (!secretResult!.text.includes("cloud credentials")) fail(`the Read of ~/.aws/credentials wasn't refused as a secret place: ${secretResult!.text.slice(0, 200)}`);
       const ordSeen = fake.requests.length;
-      const ord = await turn(c, session, `ACCEPTANCE-READ ${ordinaryReadPath}`, 150_000);
+      const ord = await turn(c, botSession, `ACCEPTANCE-READ ${ordinaryReadPath}`, 150_000);
       const ordResult = fake.requests.slice(ordSeen).find((r) => r.toolResult !== undefined)?.toolResult;
       if (ord.cards.length > 0) fail(`a Read of an ordinary file raised ${ord.cards.join("; ")}`);
       if (ordResult?.text.includes(ordinaryReadValue) !== true) fail(`the Read of an ordinary file didn't read it: ${(ordResult?.text ?? "none").slice(0, 200)}`);
@@ -3383,12 +3386,12 @@ async function main(): Promise<void> {
     }
   }
 
-  if (runs("stage")) await stageStep(c, session, turnsWork);
-  await agentStep(c, session, turnsWork);
+  if (runs("stage")) await stageStep(c, botSession, turnsWork);
+  await agentStep(c, botSession, turnsWork);
 
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
-  await uiPhase(app, restarted, session, pressing && pluginOk && turnsWork);
+  await uiPhase(app, restarted, session, pressing && pluginOk && turnsWork, undefined, botSession);
   if (keepState !== undefined) await keepFacts(session, pluginOk ? pluginId : undefined);
   await bundledMcpStep();
   searchStep();
@@ -3621,6 +3624,41 @@ async function signInKey(c: MossClient): Promise<void> {
   if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
   const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
   if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+  await pickKeyedModel(c);
+}
+
+/** The model a run's turns are on: the keyed Anthropic one the fake answers. */
+const KEYED_MODEL = "anthropic/claude-sonnet-5-5";
+
+/** Alpha on the keyed model, picked the person's way (`bot.edit`): with bots as records a fresh home's Alpha runs the
+ *  person's default model until they pick one (spec item 124), where her bundled plugin used to name this one. */
+async function pickKeyedModel(c: MossClient): Promise<void> {
+  await until("Alpha's record, to pick her model", 60_000, async () => {
+    const r = await c.request<{ ok?: boolean }>("bot.edit", { id: "alpha", patch: { model: KEYED_MODEL } }).catch(() => undefined);
+    return r !== undefined ? true : undefined;
+  }, 500);
+}
+
+/** A code session with MOSS's own coding agent on the keyed model, in a folder of the run's tree, started the app's way
+ *  (`agent.start`, no bot): what a row that isn't about a bot runs its turns in (lane MC: MOSS Code's window has no bots). */
+async function keyedCodeSession(c: MossClient, folder = "acceptance-work"): Promise<string> {
+  const computer = await selfComputer(c);
+  // The tree's `home/<computer>` is the user's home folder.
+  mkdirSync(join(userHome, folder), { recursive: true });
+  return (await c.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/${folder}`, model: KEYED_MODEL }, 60_000)).session;
+}
+
+/** The newest code session (`session.list`, kind coding), the one MOSS Code's window opens on. */
+async function newestCodeSession(c: MossClient): Promise<string | undefined> {
+  const list = await c.request<{ sessions: { id: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["coding"] }).catch(() => ({ sessions: [] }));
+  return list.sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0]?.id;
+}
+
+/** This computer's name in the tree (`computer.list`'s `self`). */
+async function selfComputer(c: MossClient): Promise<string> {
+  const name = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name;
+  if (name === undefined) fail("computer.list lists no computer");
+  return name!;
 }
 
 /** Step 4's fixture plugin (acceptance-echo) installed from its folder and OK'd over RPC, for a shard whose rows call it. */
@@ -3704,6 +3742,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
   let windowSetup: string | undefined;
   let echoMissing = false;
   let session: string | undefined;
+  let bot: string | undefined;
   let c: MossClient | undefined;
   // lane HS: the host unit runs alone (its own daemon starts the host).
   if (ids.includes("host")) { await hostOnlyRun(app); await hostGaveUpRun(app); return; }
@@ -3717,7 +3756,10 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     await startDaemonProc();
     c = (await appDriver()).client;
     await signInKey(c);
-    session = await keyedSession(c);
+    // The rows about a bot (the models, a bot's builds) in Alpha's conversation; every other one in a code session with
+    // MOSS's own agent, which the window opens on (the newest code session).
+    bot = await keyedSession(c);
+    session = await keyedCodeSession(c);
     if (windowIds.length > 0) {
       // The window's steps run as they did after step 4: its plugin is installed (the slash menu step runs its command).
       try { await installEcho(c); } catch (err) { windowSetup = `the window unit's setup (step 4's plugin): ${why(err)}`; }
@@ -3725,16 +3767,17 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     if (ids.includes("reopen")) {
       // Its own setup: a failure here is the reopen rows' alone, never the shard's other units'.
       try { await installEcho(c); } catch (err) { for (const r of REOPEN_STEPS) record(stepNumber(FULL_STEPS, r.name), statusOf(err), `the reopen shard's setup (step 4's plugin): ${why(err)}`); echoMissing = true; }
+      // Its turns call the plugin's tool in the code session started before the plugin's OK (the one the window opens on).
     }
     if (ids.includes("stage")) {
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
-      await c.request("session.attach", { id: session });
-      await stageStep(c, session, true);
+      await c.request("session.attach", { id: bot });
+      await stageStep(c, bot, true);
     }
     if (ids.includes("models")) {
       // The rows that go over the app's methods with no app (appless): each its own clause, a failure its own row's.
       await c.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
-      await c.request("session.attach", { id: session });
+      await c.request("session.attach", { id: bot });
       // No app is up yet in this shard (its window, if any, comes after): their cards are answered over RPC only, as
       // under their own --only-* (the first 14f table: "the app was never told of the card" for all four).
       const wasAppless = appless;
@@ -3742,7 +3785,7 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
       try {
       for (const [step, turnOf] of [[CODE_ADAPTER_STEP, codeAdapterTurn], [THIRD_PARTY_MODEL_STEP, thirdPartyModelTurn], [OAUTH_SIGN_IN_STEP, oauthSignInTurn], [SCHEDULED_ROUTINE_STEP, scheduledRoutineTurn]] as const) {
         try {
-          const out = await turnOf(c, session);
+          const out = await turnOf(c, bot);
           record(stepNumber(FULL_STEPS, step), out.status, out.detail);
         } catch (err) {
           record(stepNumber(FULL_STEPS, step), statusOf(err), why(err));
@@ -3762,15 +3805,15 @@ async function otherUnitsRun(app: { exe: string; args: string[] }, ids: readonly
     const names = allUnits().filter((u) => windowIds.includes(u.id)).flatMap((u) => u.rows);
     if (windowSetup !== undefined) for (const name of names) record(stepNumber(FULL_STEPS, name), "FAIL", windowSetup);
     else {
-      // Her tab, not the welcome guide: the guide is marked done, as the app marks it once it is.
+      // The session's tab, not the welcome guide: the guide is marked done, as the app marks it once it is.
       const welcomeDone = join(home, "app-data", profile, "welcome-done");
       mkdirSync(dirname(welcomeDone), { recursive: true });
       if (!existsSync(welcomeDone)) writeFileSync(welcomeDone, `${new Date().toISOString()}\n`);
-      await uiPhase(app, true, session, pressing, new Set(windowIds.flatMap((id) => windowIndexes(id)!)));
+      await uiPhase(app, true, session, pressing, new Set(windowIds.flatMap((id) => windowIndexes(id)!)), bot);
     }
   }
   const windowed = ids.filter((id) => id === "examples" || id === "bundled-tools" || id === "cards" || id === "workshop" || id === "arrivals" || id === "addons" || id === "archive" || id === "acp" || id === "builder-examples" || id === "workshop-points" || id === "tab-flash" || id === "browser" || id === "plugin-app");
-  if (windowed.length > 0) await unitWindow(app, windowed, session);
+  if (windowed.length > 0) await unitWindow(app, windowed, session, undefined, bot);
   if (ids.includes("release")) await releaseSteps(app);
   if (ids.includes("cold")) await coldStartStep(app, 1);
   if (ids.includes("reopen") && !echoMissing) await reopenSteps(app);
@@ -3800,7 +3843,7 @@ async function appRowsOnlyRun(app: { exe: string; args: string[] }, names: reado
 /** An app over the shard's daemon (headless, its DevTools port, cards pressed in its window, main's picker), as the full
  *  run's UI phase gives one, and the units' rows in it. The tab flash, when it is this app's first unit, samples the
  *  window's start as its own run does. */
-async function unitWindow(app: { exe: string; args: string[] }, ids: readonly UnitId[], session: string, only?: readonly string[]): Promise<void> {
+async function unitWindow(app: { exe: string; args: string[] }, ids: readonly UnitId[], session: string, only?: readonly string[], bot: string = session): Promise<void> {
   const names = only ?? allUnits().filter((u) => ids.includes(u.id)).flatMap((u) => u.rows);
   let proc: { proc: ChildProcess; log: string } | undefined;
   let cdp: Cdp | undefined;
@@ -3831,7 +3874,7 @@ async function unitWindow(app: { exe: string; args: string[] }, ids: readonly Un
     await rpc.request("events.subscribe", { areas: ["sessions", "approvals"] }).catch(() => undefined);
     await rpc.request("session.attach", { id: session });
     const ctx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, unitAppearance, frontFile, keyPresser(unitKeys));
-    for (const [name, run] of uiRowRunners(ctx, session, launch)) {
+    for (const [name, run] of uiRowRunners(ctx, session, launch, bot)) {
       if (!names.includes(name)) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
       try {
@@ -3891,7 +3934,9 @@ function exampleCtxFor(cdp: Cdp, rpc: MossClient, log: string, pickFile: string,
 }
 
 /** The rows an app over Alpha's conversation drives after the window's steps, in the full run's order. */
-function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnType<typeof launchSamples>>): readonly (readonly [string, () => Promise<string>])[] {
+/** Each row's runner: `session` is the code session the window opens on; `bot` Alpha's conversation, for the rows about a
+ *  bot that run over the engine (a bot's builds). */
+function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnType<typeof launchSamples>>, bot: string = session): readonly (readonly [string, () => Promise<string>])[] {
   return [
     [EXAMPLE_NOTES_STEP, () => exampleNotesStep(ctx, session)],
     [EXAMPLE_WEATHER_STEP, () => exampleWeatherStep(ctx, session)],
@@ -3899,18 +3944,18 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [BUNDLED_TOOLS_STEP, () => bundledToolsStep(ctx, session, skipWebTurns ? "--skip-web-turns: this tree's daemon has no fake web seam"
       : target !== "source" && outsideWorld === undefined ? "this packaged core has no test seam for the outside world" : true)],
     // The user's tool setting (off, on demand, always on) on the fixture plugin's tool, on the real path (lane TS).
-    [TOOL_SETTING_STEP, () => toolSettingStep(ctx, session)],
+    [TOOL_SETTING_STEP, () => toolSettingStep(ctx, bot)],
     // A change to the plugins' tools reaches a coding session on MOSS's own agent that is already running (lane AG).
     [CODE_TOOLS_STEP, () => codeToolsStep(ctx)],
     [CARDS_STEP, () => cardsStep(ctx)],
     // The engine's router (lane RT): a card with no session in the focused window's strip, the island with the window unfocused.
     [ROUTER_STEP, () => routerStep(ctx)],
-    // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation.
-    [WORKSHOP_STEP, () => workshopStep(ctx, session)],
+    // The path the owner tries first: Alpha builds a plugin with the builder's tools, in her own conversation (her scratch).
+    [WORKSHOP_STEP, () => workshopStep(ctx, bot)],
     // Coming back to her tab draws no stock layout and no empty conversation (the owner's report on try 14d).
     [TAB_FLASH_STEP, () => tabFlashStep(ctx, session, launch, tabFlashAlone ? TAB_FLASH_SLEEP_MS : undefined)],
     // The bots' Browser tool, on the real path, against the run's own fixture site.
-    [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, session, browserFixture, panelOpener(ctx.rpc)) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
+    [BROWSER_STEP, () => (browserFixture !== undefined ? browserStep(ctx, session, browserFixture, panelOpener(ctx.rpc), session) : Promise.reject(new Error("the run's browser fixture site isn't up")))],
     // A plugin copied into the plugins folder by hand, a bare skill folder and a bare agent file (checklist 3.1, 1.32).
     [ARRIVALS_STEP, () => arrivalsStep(ctx, session)],
     // A plugin's add-ons of its own, its own question card, and the Plugins page's Restart (checklist 1.19, 2.3, 3.26).
@@ -3921,9 +3966,9 @@ function uiRowRunners(ctx: ExampleCtx, session: string, launch?: Awaited<ReturnT
     [ACP_BACKEND_STEP, () => acpBackendStep(ctx)],
     // The plugin builder's 15 examples installed and drawn on the app (checklist 5.4), and a bot's plugin that takes a plugin (5.12).
     [BUILDER_EXAMPLES_STEP, () => builderExamplesStep(ctx, session)],
-    [WORKSHOP_POINTS_STEP, () => workshopPointsStep(ctx, session)],
+    [WORKSHOP_POINTS_STEP, () => workshopPointsStep(ctx, bot)],
     // A plugin that holds a plugin, and the core's updates reaching the notifier plugins.
-    [CHILD_STEP, () => childStep(ctx, session)],
+    [CHILD_STEP, () => childStep(ctx, bot)],
     [NOTIFY_STEP, () => notifyStep(ctx, session)],
     // The app records for a held talk button and hands the audio to Alpha's listening voice (a generated clip, never the microphone).
     [LISTEN_STEP, () => listenStep(ctx, session)],
@@ -4667,6 +4712,9 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     c = (await appDriver()).client;
     await signInKey(c);
     const session = await keyedSession(c);
+    // MOSS Code's window shows code sessions (lane MC): the one card in one place and the window's browser panel run on a
+    // code session of the user's, the newest, which the window opens on. The bot's own rows below keep Alpha's.
+    const codeSession = await keyedCodeSession(c, "host-cards");
     // 1. The engine started the host by itself (no app window anywhere), which holds its lock and says it is ready.
     const hostPid = await until("the host the engine started, ready and holding its lock", 120_000, () => { const p = hostLockPid(home); if (p !== undefined) startedHosts.add(p); return readyCount(readLog(first.log)) > 0 ? p : undefined; }, 500);
     // Nothing of the host on the screen, read from the window server itself at each stage (no window of a host pid on screen).
@@ -4697,7 +4745,7 @@ async function hostOnlyRun(app: { exe: string; args: string[] }): Promise<void> 
     await until("the window's mount (its own points only)", 60_000, () => (/mount: \{"mainWindow":true,"surfaces":false,"background":false,"tray":"none","browser":false/.test(readLog(appProc.log)) ? true : undefined), 300);
     await sleep(2_000);
     if (islandTarget(appCdp) !== undefined) fail("MOSS Code's window drew an island of its own while the host owns the screen");
-    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, session, (on) => writeFileSync(frontFile, on ? "front" : "back"), viewportPressFile)}`);
+    lines.push(`one card in one place: ${await oneCardEach(appCdp, appProc.log, hostCdp, appLogFile, c, codeSession, (on) => writeFileSync(frontFile, on ? "front" : "back"), viewportPressFile)}`);
     appCdp.close();
     await endChild(appProc.proc);
     lines.push("one island: MOSS Code's window mounted its own points only (no island, no background part, no pages, no menu-bar icon), and its process quit");
@@ -5350,8 +5398,9 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
         } else {
           // A turn that keeps running, then the app quits as the owner's does (the tray's Quit stops both halves).
           const c = (await appDriver()).client;
-          const session = (await c.request<{ bots: { mainSession: string }[] }>("bot.list", {})).bots[0]?.mainSession;
-          if (session === undefined) block("no bot conversation to run a turn in");
+          // The code session the window opens on (the newest; the unit's setup started it on MOSS's own agent).
+          const session = await newestCodeSession(c);
+          if (session === undefined) block("no code session to run a turn in");
           // Mid text (a held model stream), or mid tool call (the fixture's Echo given `acceptance-hold`, never answered).
           const toolCall = "toolCall" in step;
           const tag = `${toolCall ? "ACCEPTANCE-HOLDTOOL" : "ACCEPTANCE-SLOW"}-${randomBytes(3).toString("hex").toUpperCase()}`;
@@ -5363,7 +5412,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
             if (fake!.requests.slice(asked).some((r) => r.lastUserText.includes(tag) && r.answered === "text")) block("the bot has no Echo tool (the fixture plugin isn't installed: step 4)");
             // The call running: its card (if any) answered as the app would, its tool_call in the log with no result.
             heldCall = await until("the held Echo call to be running", 60_000, async () => {
-              for (const card of await cards(c).catch(() => [])) if (card.session === undefined || card.session === session) await approve(c, card).catch(() => undefined);
+              for (const card of await cards(c).catch(() => [])) if (card.session === undefined || card.session === session) await approve(c, card, { log: appA!.log }).catch(() => undefined);
               const evs = (await history(c, session!)).filter((e) => typeof e.seq === "number" && e.seq > sent.seq);
               const call = evs.find((e) => e.type === "tool_call" && /Echo$/.test(String(e.name)));
               const id = call === undefined ? undefined : String(call.callId);
@@ -5406,7 +5455,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
           const at = events.findIndex((e) => JSON.stringify(e).includes(tag));
           const after = at < 0 ? [] : events.slice(at + 1);
           const ends = after.filter((e) => /turn_completed|turn_interrupted|interrupted|agent_error|turn_failed/.test(String(e.type)));
-          const status = (await d.request<{ bots: { mainSession: string; status?: string }[] }>("bot.list", {}).catch(() => ({ bots: [] }))).bots.find((b) => b.mainSession === session)?.status;
+          const status = (await d.request<{ session?: { status?: string } }>("session.get", { id: session }).catch(() => ({ session: undefined }))).session?.status;
           d.close();
           if (at < 0) fail("the quit turn's message isn't in the conversation after the reopen");
           if (ends.length === 0) fail(`the interrupted turn has no end in the conversation (events after it: ${[...new Set(after.map((e) => String(e.type)))].join(", ") || "none"}; bot status ${status ?? "?"})`);
@@ -5439,7 +5488,18 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
             const after3 = (await appDriver()).client;
             const ok = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
             const before = (await history(after3, session!)).length;
-            const { events: next } = await turn(after3, session!, `${ok} are you back?`);
+            const askedBefore = fake!.requests.length;
+            // What the next turn's requests carried (each message's role and blocks, the text cut short), for a failure
+            // to say whether the fake or the product did it: the TAG's words should be in the last user message.
+            const shapes = () => fake!.requests.slice(askedBefore).map((r) => {
+              const msgs = ((r.body as { messages?: { role?: string; content?: unknown }[] } | undefined)?.messages ?? []).slice(-4);
+              const blocks = (c: unknown) => (typeof c === "string" ? [`text:${JSON.stringify(c.slice(-80))}`] : Array.isArray(c) ? c.map((b: { type?: string; text?: string; name?: string; content?: unknown }) => b.type === "text" ? `text:${JSON.stringify(String(b.text).slice(-80))}` : b.type === "tool_use" ? `tool_use:${b.name}` : b.type === "tool_result" ? `tool_result:${JSON.stringify(JSON.stringify(b.content ?? "").slice(0, 60))}` : String(b.type)) : []);
+              return `[answered ${r.answered}; said ${JSON.stringify(newestDirectiveOf(r.lastUserText).slice(0, 60))}; last messages: ${msgs.map((m) => `${m.role}(${blocks(m.content).join(", ")})`).join(" | ")}]`;
+            }).join(" ");
+            // Its cards read from the reopened app's own log (the first app's \`app.log\` never hears of them).
+            const { events: next } = await turn(after3, session!, `${ok} are you back?`, undefined, { log: appB!.log }).catch((err: unknown) => {
+              throw new Error(`${err instanceof Error ? err.message : String(err)}; the fake was asked: ${shapes() || "nothing"}`);
+            });
             const later = (await history(after3, session!)).slice(before);
             after3.close();
             if (!JSON.stringify(next).includes(`ACCEPTANCE-REPLY-OK ${ok}`)) wrong.push(`the next message got no reply of its own (stop ${stopOf(next)}${errorsOf(next).length ? `: ${errorsOf(next)[0]}` : ""})`);
@@ -5447,7 +5507,7 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
             const again = later.filter((e) => e.type === "tool_call" && /Echo$/.test(String(e.name)));
             if (again.length > 0) wrong.push(`the next turn ran the call again (${again.length} Echo call(s))`);
             else seen.push("the call wasn't run again");
-            if (wrong.length > 0) fail(`after quitting mid tool call: ${wrong.join("; ")} (seen: ${seen.join("; ")})`);
+            if (wrong.length > 0) fail(`after quitting mid tool call: ${wrong.join("; ")} (seen: ${seen.join("; ")}; the next turn asked the fake: ${shapes() || "nothing"})`);
             cappedNote = `; mid tool call: ${seen.join("; ")}`;
           }
           if (capped) {
@@ -6058,7 +6118,7 @@ function windowStepsHere(): Set<number> | undefined {
 
 /** The window's steps, then (unless only some were asked for) the reopened app's press and the rows after them. `only`: the steps a
  *  window unit runs (its place in UI_STEPS), in an app of its own. */
-async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, session: string | undefined, pressable: boolean, only?: ReadonlySet<number>): Promise<void> {
+async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, session: string | undefined, pressable: boolean, only?: ReadonlySet<number>, bot?: string): Promise<void> {
   const first = UI_FIRST_ROW;
   const reopened = first + UI_STEPS.length; // after quit and reopen: the same key, one more real press
   const blockAll = (why: string) => { for (let i = 0; i <= UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
@@ -6099,7 +6159,12 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     const rpc = (await appDriver()).client;
     await uiSteps({
       cdp: cdp!, rpc, home, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")),
-      cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined) : undefined,
+      // A card its check left waiting is answered no, so a failed check never holds the window's dialogs and menus shut for
+      // the steps after it (a waiting card closes them).
+      cardTurn: pressable && session !== undefined ? (inspect) => turn(rpc, session, "ACCEPTANCE-EDIT: edit the story", 150_000, { press: { cdp: cdp!, log: proc.log }, inspect }).then(() => undefined, async (err: unknown) => {
+        for (const card of await cards(rpc).catch(() => [])) if (card.session === session) await deny(rpc, card, proc.log).catch(() => undefined);
+        throw err;
+      }) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
       ...(only !== undefined ? { only } : onlyUi !== undefined ? { only: new Set(onlyUi) } : windowStepsHere() !== undefined ? { only: windowStepsHere()! } : {}),
       pickFolder,
@@ -6141,7 +6206,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
     // The SDK's two full examples, third-party plugins installed from their folders on the Plugins page (example-steps.ts),
     // and the rows after them (a shard's units leave out the ones another shard runs).
     const exampleCtx = exampleCtxFor(cdp!, rpc, proc.log, pickFile, appearanceFile, join(root, "main-front"), pressKey);
-    for (const [name, run] of uiRowRunners(exampleCtx, session!)) {
+    // The rows about a bot (the tool setting, a bot's builds) in Alpha's conversation, as the units run them.
+    for (const [name, run] of uiRowRunners(exampleCtx, session!, undefined, bot ?? session!)) {
       if (!runs(unitOf(name))) continue;
       const n = FULL_STEPS.indexOf(name) + 1;
       try {

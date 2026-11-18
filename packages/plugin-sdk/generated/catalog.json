@@ -52,13 +52,13 @@
     },
     {
       "name": "approvals",
-      "lets": "Hear which cards are pending, never their text, and place their sealed frames",
-      "ok": "restyles approval cards",
+      "lets": "Hear which of the cards its own tools' calls raised are pending (in any session or bot's turn), never their text, and place their sealed frames",
+      "ok": "shows approval cards for its own tools",
       "warns": true
     },
     {
       "name": "approvals.all",
-      "lets": "Needs `approvals` too: hear the meta of every pending card, not only its own bots' (a plugin's OK card, a change from Settings), place their sealed frames in a surface of its own, and give each the look of its own `card.*` tokens; the card's words never reach it and the press stays the sealed frame's own",
+      "lets": "Needs `approvals` too: hear the meta of every pending card, not only its own tools' (a plugin's OK card, a change from Settings), place their sealed frames in a surface of its own, and give each the look of its own `card.*` tokens; the card's words never reach it and the press stays the sealed frame's own",
       "ok": "shows all your approval cards, whichever bot or plugin asks, and takes your yes or no on them",
       "warns": true
     },
@@ -205,6 +205,12 @@
       "lets": "Read the user's code sessions and follow them live, and nothing of bots' conversations; sealed card fields never reach it",
       "ok": "reads your code sessions",
       "warns": false
+    },
+    {
+      "name": "sessions.start",
+      "lets": "Start a session with a coding agent, on the user's own press, in a folder the user picked in the app's own dialog (never a path the plugin names), with no words of the plugin's",
+      "ok": "starts sessions with a coding agent in a folder you pick",
+      "warns": true
     },
     {
       "name": "activity.read.sessions",
@@ -468,15 +474,6 @@
       "runsOn": "every app instance",
       "doc": "Runs parts that have no place in the window, in a hidden window of their own.",
       "shipsWith": "nothing yet; any plugin"
-    },
-    {
-      "name": "bot.tab",
-      "side": "app",
-      "shape": "keyed",
-      "kind": "code",
-      "runsOn": "every app instance",
-      "doc": "Holds each bot's tab, which the shell shows.",
-      "shipsWith": "the default bot tab"
     },
     {
       "name": "locales",
@@ -794,63 +791,6 @@
       }
     },
     {
-      "name": "bot.tab",
-      "shape": "keyed",
-      "declaredBy": "app",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "Each bot's tab, keyed by bot; an entry with no key fills every bot without one of its own, except in a bot's own plugin, where a keyless entry takes that bot's id as its key.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
       "name": "sidebar",
       "shape": "single",
       "declaredBy": "shell",
@@ -868,111 +808,6 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {}
-      }
-    },
-    {
-      "name": "bar",
-      "shape": "single",
-      "declaredBy": "shell",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "The top bar. A child plugin of a bot may fill it with `when.bot` (its own component, in its own frame, calling `shell.*`); with the bot's theme `bar.mode: \"none\"` there is no bar at all and the bot's own controls (`bot.controls`) sit in its page.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "sidebar.bot",
-      "shape": "keyed",
-      "declaredBy": "shell",
-      "botsOffer": false,
-      "context": [
-        "bot"
-      ],
-      "doc": "A bot's row in the sidebar, keyed by bot: its state and what waits for the user.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          },
-          "selected": {
-            "type": "boolean"
-          },
-          "state": {
-            "type": "string"
-          },
-          "needsYou": {
-            "type": "object",
-            "properties": {
-              "cards": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "questions": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "cards",
-              "questions"
-            ]
-          }
-        },
-        "required": [
-          "bot",
-          "selected",
-          "state",
-          "needsYou"
-        ]
       }
     },
     {
@@ -1037,13 +872,12 @@
       "declaredBy": "shell",
       "botsOffer": false,
       "keys": [
-        "bot",
         "agent",
         "settings",
         "plugins",
         "app"
       ],
-      "doc": "The main area, keyed by route: bot, agent, settings, plugins, app.",
+      "doc": "The main area, keyed by route: agent, settings, plugins, app.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1246,92 +1080,6 @@
       }
     },
     {
-      "name": "bot.editor.section",
-      "shape": "list",
-      "declaredBy": "bot-editor",
-      "botsOffer": false,
-      "context": [
-        "bot"
-      ],
-      "doc": "A section of a bot's editor (the bot editor part, `main` key `bot-editor`, declares it): a plugin adds the fields of the part of the bot it owns, each entry drawing its own section for the bot it is given.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "en": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "en"
-                ],
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            ]
-          },
-          "icon": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "format": "path",
-            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
-          }
-        }
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
       "name": "status",
       "shape": "list",
       "declaredBy": "shell",
@@ -1378,619 +1126,12 @@
       }
     },
     {
-      "name": "bot.header",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "The tab's header.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "bot.header.action",
-      "shape": "list",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "Buttons in the tab's header.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "en": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "en"
-                ],
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            ]
-          },
-          "icon": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1024,
-            "format": "path",
-            "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
-          }
-        },
-        "required": [
-          "title"
-        ]
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "bot.side",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "The tab's side area.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "bot.controls",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "The bot's own drawn controls (its name, buttons, a handle to drag the window), placed by its layout and drawn by its plugin in its own frame; what they do is `shell.*`, the user's own press.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "chrome.title",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "The tab's title (the bot's name), drawn by the shell; it opens the tab's menu where it has one.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "chrome.action",
-      "shape": "keyed",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "keys": [
-        "edit",
-        "session",
-        "browser"
-      ],
-      "context": [
-        "bot"
-      ],
-      "doc": "One of the shell's buttons, keyed: `edit` (the bot's editor), `session` (the column beside the conversation), `browser` (the browser panel). Drawn by the shell; a press is the app's own.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "chrome.actions",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "Every button the layout does not place one by one: the buttons plugins add to the bar (`bot.header.action`), the editor, the panel toggles.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "chrome.sidebar",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "The sidebar's show/hide button, drawn by the shell. A layout with no bar that does not place it gets a small one from the shell: the user never loses the sidebar.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "chrome.drag",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "A region that drags the window (empty, as wide and tall as the node the layout gives it). A layout with no bar that places none gets a thin one from the shell.",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
-      "name": "chrome.panels",
-      "shape": "single",
-      "declaredBy": "bot-tab",
-      "botsOffer": true,
-      "context": [
-        "bot"
-      ],
-      "doc": "Where the panels the user opens show (the session column excepted), in the shape the layout's container gives them. Left out, they show where the bot's `panel.mode` says (the standard right column by default).",
-      "fields": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {}
-      },
-      "props": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bot": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "name": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "en": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "en"
-                    ],
-                    "additionalProperties": {
-                      "type": "string"
-                    }
-                  }
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "name"
-            ]
-          }
-        },
-        "required": [
-          "bot"
-        ]
-      }
-    },
-    {
       "name": "conversation",
       "shape": "single",
-      "declaredBy": "bot-tab",
+      "declaredBy": "session-tab",
       "botsOffer": true,
       "needs": [
-        "conversation.read"
+        "sessions.read"
       ],
       "context": [
         "bot"
@@ -2051,7 +1192,7 @@
     {
       "name": "composer",
       "shape": "single",
-      "declaredBy": "bot-tab",
+      "declaredBy": "session-tab",
       "botsOffer": true,
       "needs": [
         "conversation.post"
@@ -2222,7 +1363,7 @@
         "approval"
       ],
       "needs": [
-        "conversation.read"
+        "sessions.read"
       ],
       "context": [
         "bot"
@@ -2315,7 +1456,7 @@
       "declaredBy": "conversation",
       "botsOffer": true,
       "needs": [
-        "conversation.read"
+        "sessions.read"
       ],
       "context": [
         "bot"
@@ -2477,7 +1618,7 @@
       "declaredBy": "conversation",
       "botsOffer": true,
       "needs": [
-        "conversation.read"
+        "sessions.read"
       ],
       "context": [
         "bot"

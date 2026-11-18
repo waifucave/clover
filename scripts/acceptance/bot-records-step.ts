@@ -1,6 +1,5 @@
 // The bots-as-engine-data row (lane BT, spec §6.1, §13 Split 1): on a daemon with records as the bots' source
-// (`MOSS_BOT_SOURCE=records`, packages/core/src/bots/source.ts; the default stays plugins, so every other row runs as
-// today), over the app's methods with no app (its cards answered over RPC): the move made the bundled Alpha a record; a
+// (`MOSS_BOT_SOURCE=records`, packages/core/src/bots/source.ts, the default since lane MC), over the app's methods with no app (its cards answered over RPC): the move made the bundled Alpha a record; a
 // bot made with `bot.create` answers a turn in its one conversation and is listed with its last line; it makes another
 // bot with `MakeBot` behind the person's card; it is removed (archived) and brought back with its conversation whole.
 // Run last in the chain (its own daemon on the chain's home), or alone with --only-bot-records.
@@ -22,7 +21,9 @@ export function botRecordsWrong(o: {
 }): string | undefined {
   if (o.journal === undefined) return "bot.move.status has no journal: the move didn't run";
   if (!o.journal.bots.some((b) => b.id === "alpha" && b.outcome === "moved")) return `the move's journal doesn't say Alpha moved: ${JSON.stringify(o.journal.bots).slice(0, 300)}`;
-  if (!o.records.some((r) => r.id === "alpha" && r.madeBy.kind === "move")) return "Alpha isn't a record made by the move";
+  // MOSS's own default bot (engine data, lane MC): the move writes her record, made by MOSS (`default`); a home whose
+  // journal predates that has her as a plain move of her old plugin.
+  if (!o.records.some((r) => r.id === "alpha" && (r.madeBy.kind === "default" || r.madeBy.kind === "move"))) return "Alpha isn't a record the move made";
   if (o.made === undefined) return "bot.create made no record";
   if (o.summary === undefined || o.summary.last?.from !== "bot") return `bot.summaries doesn't list ${o.maker}'s reply as its last line: ${JSON.stringify(o.summary)}`;
   if (!o.cards.some((c) => c.includes("confirm"))) return `MakeBot raised no card (cards: ${o.cards.join("; ") || "none"})`;

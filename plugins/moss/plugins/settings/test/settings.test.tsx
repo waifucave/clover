@@ -30,7 +30,7 @@ describe("the settings window", () => {
     const nav = screen.getByRole("navigation", { name: "Sections" });
     expect(within(nav).getAllByRole("button")).toHaveLength(SECTIONS.length);
     expect(within(nav).getAllByRole("button").map((b) => b.textContent)).toEqual([
-      "Account", "Devices", "Appearance", "Notifications", "Plugins", "Tools", "Levels", "Bots",
+      "Account", "Devices", "Appearance", "Notifications", "Plugins", "Tools", "Levels",
     ]);
     expect(within(nav).getByRole("button", { name: "Appearance" }).getAttribute("aria-current")).toBe("page");
     fireEvent.click(within(nav).getByRole("button", { name: "Levels" }));
@@ -110,7 +110,7 @@ describe("the settings window", () => {
     expect(screen.getByText("Usage today")).toBeTruthy();
   });
 
-  test("an item marks its row on each page that has rows: a device, a plugin, a computer, a bot", () => {
+  test("an item marks its row on each page that has rows: a device, a plugin, a computer (no Bots page in MOSS Code)", () => {
     const h = setup({ section: "devices", item: "d2" });
     const marked = () => [...document.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => el.dataset.item);
     expect(marked()).toEqual(["d2"]);
@@ -119,10 +119,6 @@ describe("the settings window", () => {
     expect(marked()).toEqual([VALUES.plugins[1]!.id]);
     h.rerender(<SettingsModal {...h.props} section="levels" item="Cloud computer" />);
     expect(marked()).toEqual(["Cloud computer"]);
-    h.rerender(<SettingsModal {...h.props} section="bots" item="alpha" />);
-    expect(marked()).toEqual(["alpha"]);
-    h.rerender(<SettingsModal {...h.props} section="bots" item="nobody" />);
-    expect(marked()).toEqual([]);
   });
 
   test("devices: make another computer the main one, and pair a device by a code or by joining one", () => {

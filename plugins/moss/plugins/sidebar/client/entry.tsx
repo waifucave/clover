@@ -1,16 +1,16 @@
-// The sidebar on the runtime: the `sidebar` entry. It reads the bots (`bots.read`), their sessions and the coding
-// sessions (`conversation.read`) through the plugin API, draws each bot's row through `sidebar.bot` keyed by bot (its
-// own row when no plugin fills the key), and shows the `sidebar.app` entries as app buttons, each opening the `main`
-// key its `opens` field names.
+// The sidebar on the runtime: the `sidebar` entry. It reads the code sessions (`sessions.read`) through the plugin API
+// and lists them by project folder (MOSS Code's window has no bots, spec §9.4), offers New (the shell's page that
+// starts a session), and shows the `sidebar.app` entries as app buttons, each opening the `main` key its `opens` field
+// names.
 //
 // The shell hands it where `main` is (`route`) and a way to go elsewhere (`navigate`): B's catalog gives `sidebar` no
 // props, so how the sidebar moves the shell is a question for B and E.
-import type { BotView, SessionView } from "@waifucave/moss-plugin-sdk";
-import { fieldText, plain } from "./local";
+import type { SessionView } from "@waifucave/moss-plugin-sdk";
+import { fieldText } from "./local";
 import { Spot, useCore, useSpotEntries, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Sidebar } from "./Sidebar";
-import type { AgentStatus, AppGlyph, BotStatus, SidebarApp, SidebarBot, SidebarProject, SidebarRoute, SidebarSide } from "./types";
+import type { AgentStatus, AppGlyph, SidebarApp, SidebarProject, SidebarRoute } from "./types";
 
 /** `main`'s route, as the shell holds it. */
 export interface ShellRoute {
@@ -21,7 +21,7 @@ export interface ShellRoute {
 export interface SidebarEntryProps {
   route: ShellRoute;
   navigate: (route: ShellRoute) => void;
-  /** The shell holds whether the sidebar is a rail of icons (a bot's tab may start it collapsed): set, the sidebar follows it. */
+  /** The shell holds whether the sidebar is a rail of icons: set, the sidebar follows it. */
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
 }
@@ -29,8 +29,8 @@ export interface SidebarEntryProps {
 /** The shell's route as the sidebar's, and back. */
 export function toSidebarRoute(r: ShellRoute): SidebarRoute {
   switch (r.route) {
-    case "bot":
-      return { kind: "bot", botId: r.params.bot ?? "" };
+    case "new":
+      return { kind: "new" };
     case "agent":
       return { kind: "agent", agentId: r.params.session ?? "" };
     case "settings":
@@ -44,8 +44,8 @@ export function toSidebarRoute(r: ShellRoute): SidebarRoute {
 
 export function toShellRoute(r: SidebarRoute): ShellRoute {
   switch (r.kind) {
-    case "bot":
-      return { route: "bot", params: { bot: r.botId } };
+    case "new":
+      return { route: "new", params: {} };
     case "agent":
       return { route: "agent", params: { session: r.agentId } };
     case "settings":
@@ -82,13 +82,6 @@ export function leftTheList(s: SessionView): boolean {
   return s.archived === true;
 }
 
-/** A bot's state as the sidebar draws it: what waits for the user comes first. */
-export function botStatus(b: BotView, main: SessionView | undefined): BotStatus {
-  if (main?.needsYou && main.needsYou.cards + main.needsYou.questions > 0) return "needs-you";
-  if (b.state === "asleep" || b.state === "paused") return b.state;
-  if (b.state === "thinking") return main?.status === "prompting" ? "working" : "thinking";
-  return "idle";
-}
 
 /** The folder a tree path names, and its parent's name, for a project's label. */
 const folderName = (path: string) => path.split("/").filter(Boolean).pop() ?? path;
@@ -98,10 +91,8 @@ const GLYPHS: Record<string, AppGlyph> = { archive: "archive", usage: "chart", b
 
 export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
   const api = usePluginApi();
-  const [bots, setBots] = useState<BotView[]>([]);
   const [sessions, setSessions] = useState<SessionView[]>([]);
-  const [side, setSide] = useState<SidebarSide>("bots");
-  // The shell may hold the state (a bot's tab can start it collapsed, and its own sidebar button toggles it); on its own it is local.
+  // The shell may hold the state (its own sidebar button toggles it); on its own it is local.
   const [ownCollapsed, setOwnCollapsed] = useState(false);
   const collapsed = props.collapsed ?? ownCollapsed;
   const setCollapsed = (next: (c: boolean) => boolean): void => {
@@ -121,46 +112,20 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
       const name = a?.user?.name ?? a?.user?.email ?? here?.name ?? "";
       setAccount({ name, ...(here && name !== here.name ? { detail: here.name } : {}) });
     });
-    api.bots?.list().then((b) => live && setBots(b), () => undefined);
-    api.conversation?.list?.().then((s) => live && setSessions(s), () => undefined);
-    const stop = api.bots?.watch(
-      (b) => setBots((list) => (list.some((x) => x.id === b.id) ? list.map((x) => (x.id === b.id ? b : x)) : [...list, b])),
-      (id) => setBots((list) => list.filter((x) => x.id !== id)),
-    );
-    // A session started outside the window (the CLI, another window, a bot's agent) or changed anywhere shows without a remount.
-    // Bots' sessions come from `conversation.watch`, code sessions from `sessions.watch` (each by the kind its capability reads).
-    const onSession = (v: SessionView) => setSessions((list) => (list.some((x) => x.id === v.id) ? list.map((x) => (x.id === v.id ? v : x)) : [...list, v]));
-    const stopBotSessions = api.conversation?.watch?.(onSession);
-    const stopCodeSessions = api.sessions?.watch?.(onSession);
-    const stopSessions = () => { stopBotSessions?.(); stopCodeSessions?.(); };
+    api.sessions?.list?.().then((s) => live && setSessions(s), () => undefined);
+    // A session started outside the window (the CLI, another window, a bot's coding task) or changed anywhere shows
+    // without a remount (`sessions.watch`, code sessions only).
+    const stop = api.sessions?.watch?.((v: SessionView) => setSessions((list) => (list.some((x) => x.id === v.id) ? list.map((x) => (x.id === v.id ? v : x)) : [...list, v])));
     return () => {
       live = false;
       stop?.();
-      stopSessions?.();
     };
   }, [api, core]);
 
-  // A coding session's tab shows the code side.
-  const shown = props.route.route === "agent" ? sessions.find((s) => s.id === props.route.params.session) : undefined;
-  useEffect(() => {
-    if (shown?.kind === "coding") setSide("code");
-  }, [shown?.kind]);
-
-  const sidebarBots: SidebarBot[] = bots.map((b) => {
-    const main = sessions.find((s) => s.id === b.mainSession);
-    const agents = sessions.filter((s) => s.kind === "agent" && !leftTheList(s) && (s.parent === b.mainSession || s.bot === b.id));
-    return {
-      id: b.id,
-      name: plain(b.name),
-      ...(b.portrait ? { portraitUrl: b.portrait } : {}),
-      state: botStatus(b, main),
-      ...(main?.needsYou ? { needsYou: main.needsYou } : {}),
-      agents: agents.map((a) => ({ id: a.id, title: a.title ?? a.backend ?? a.id, backend: a.backend ?? "", computer: a.computer, status: agentStatus(a) })),
-    };
-  });
-
+  // Code sessions by project folder: a coding session the person started, and a bot's coding task (an agent), which is
+  // a code session too.
   const projects: SidebarProject[] = [];
-  for (const s of sessions.filter((x) => x.kind === "coding" && !leftTheList(x))) {
+  for (const s of sessions.filter((x) => (x.kind === "coding" || x.kind === "agent") && !leftTheList(x))) {
     const path = s.root ?? `home/${s.computer}`;
     let project = projects.find((p) => p.path === path);
     if (!project) projects.push((project = { id: path, name: folderName(path), path, sessions: [] }));
@@ -196,30 +161,18 @@ export function SidebarEntry({ props }: { props: SidebarEntryProps }) {
 
   return (
     <Sidebar
-      side={side}
-      onSideChange={setSide}
       route={toSidebarRoute(props.route)}
       onNavigate={go}
-      bots={sidebarBots}
       projects={projects}
       apps={apps}
       renderAppBadge={(app) => (app.badgeRef !== undefined ? <Spot name="sidebar.app" only={app.badgeRef} props={{}} /> : null)}
       account={account}
+      onNew={() => go({ kind: "new" })}
+      onNewSession={() => go({ kind: "new" })}
       onOpenSettings={() => go({ kind: "settings" })}
       onPlugins={() => go({ kind: "plugins" })}
       collapsed={collapsed}
       onToggleCollapsed={() => setCollapsed((c) => !c)}
-      renderBot={(bot, standard: ReactNode) => {
-        const view = bots.find((b) => b.id === bot.id);
-        return (
-          <Spot
-            name="sidebar.bot"
-            spotKey={bot.id}
-            props={{ bot: { id: bot.id, name: bot.name }, selected: props.route.route === "bot" && props.route.params.bot === bot.id, state: view?.state ?? "idle", needsYou: bot.needsYou ?? { cards: 0, questions: 0 } }}
-            fallback={standard}
-          />
-        );
-      }}
     />
   );
 }

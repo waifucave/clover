@@ -113,14 +113,14 @@ describe("the daemon's MOSS parts, booted", () => {
     const side = daemon.mossParts.bots()!;
     expect(links).toBeDefined();
     expect(node.registry.self()).toMatchObject({ name: "Studio", device: links.key.id });
-    expect(side.bots.list().map((b) => b.id)).toEqual(["luna"]);
+    expect(side.bots.list().map((b) => b.id).sort()).toEqual(["alpha", "luna"]); // the default bot (lane MC) and the moved plugin bot
     expect(bots.fakes.made.length).toBeGreaterThan(0); // the bot side opened Luna's conversation
 
     const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
     const call = <T>(method: string, params: unknown = {}) => mossCall(daemon!.socketPath, cli, method, params) as Promise<T>;
     const listed = await call<{ devices: { id: string; isThis: boolean }[] }>("device.list");
     expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
-    expect((await call<{ bots: { id: string }[] }>("bot.list")).bots.map((b) => b.id)).toEqual(["luna"]);
+    expect((await call<{ bots: { id: string }[] }>("bot.list")).bots.map((b) => b.id).sort()).toEqual(["alpha", "luna"]);
     expect(await call("update.status")).toMatchObject({ idle: true }); // lane M's handlers sit beside the lanes'
     // Lane A's app methods: the model picker and a plugin's sign-ins answer (an unknown plugin is not_found, not an
     // unknown method).
@@ -141,7 +141,7 @@ describe("the daemon's MOSS parts, booted", () => {
     // The laptop isn't the main computer: nothing that runs on the main alone runs there, and it runs no bots.
     expect(laptopNode.registry.self().isMain).toBe(false);
     expect(laptop.parts.bots!.bots.botsRunHere()).toEqual([]);
-    expect(side.bots.botsRunHere()).toEqual(["luna"]);
+    expect(side.bots.botsRunHere().sort()).toEqual(["alpha", "luna"]);
     expect((await call<{ lease: { holder: string | null } }>("main.get")).lease.holder).toBe(links.key.id);
     expect((await call<{ devices: { id: string; isMain: boolean }[] }>("device.list")).devices.find((d) => d.id === links.key.id)?.isMain).toBe(true);
 
@@ -193,9 +193,9 @@ describe("the daemon's MOSS parts, booted", () => {
     expect(node.registry.self()).toMatchObject({ name: "Studio", device: links.key.id });
     expect(node.tree).toBeDefined();
     const side = daemon.mossParts.bots()!;
-    expect(side.bots.list().map((b) => b.id)).toEqual(["luna"]);
+    expect(side.bots.list().map((b) => b.id).sort()).toEqual(["alpha", "luna"]); // the default bot (lane MC) and the moved plugin bot
     // Its own main: it runs its bots.
-    await waitFor("this computer running the bots", () => side.bots.botsRunHere().length === 1);
+    await waitFor("this computer running the bots", () => side.bots.botsRunHere().length === 2); // Luna and the default bot (lane MC)
     const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
     expect((await mossCall(daemon.socketPath, cli, "device.list", {}) as { devices: { isThis: boolean }[] }).devices).toEqual([expect.objectContaining({ isThis: true })]);
   }, 30_000);
@@ -317,7 +317,7 @@ describe("the daemon's MOSS parts at the edges", () => {
       parts: { userHome: temp("moss-int-user-") },
     });
     await daemon.mossParts.ready;
-    expect(daemon.mossParts.bots()?.bots.list()).toEqual([]); // from source: no bundled plugins, none installed
+    expect(daemon.mossParts.bots()?.bots.list().map((b) => b.id)).toEqual(["alpha"]); // from source: no bundled plugins, none installed; the default bot only (lane MC)
     expect(existsSync(join(home, "plugins"))).toBe(true);
   }, 30_000);
 
@@ -579,7 +579,7 @@ describe("the sessions' records across computers", () => {
     await pair(links, laptop.links);
     const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
     expect(await mossCall(daemon.socketPath, cli, "main.set", { device: links.key.id })).toEqual({ applied: true });
-    await waitFor("the laptop seeing Studio hold the lease", () => laptop.links.main!.lease.state().holder === links.key.id && side.bots.botsRunHere().length === 1);
+    await waitFor("the laptop seeing Studio hold the lease", () => laptop.links.main!.lease.state().holder === links.key.id && side.bots.botsRunHere().length === 2); // Luna and the default bot (lane MC)
 
     // Luna's turn on Studio: its records reach the laptop as they're written.
     const luna = mainSessionIdFor("luna");

@@ -16,9 +16,6 @@ const uiPluginView = (pluginId: string, themes: { id: string; file: string }[] =
 import archiveManifest from "../../archive/moss.json";
 import * as archiveClient from "../../archive/client/index";
 import { ARCHIVED, HISTORY as ARCHIVE_HISTORY } from "../../archive/gallery/fixtures";
-import botEditorManifest from "../../bot-editor/moss.json";
-import * as botEditorClient from "../../bot-editor/client/index";
-import { AVATARS } from "../../bot-editor/gallery/fixtures";
 import characterManifest from "../../character/moss.json";
 import * as characterClient from "../../character/client/index";
 import composerManifest from "../../composer/moss.json";
@@ -74,7 +71,6 @@ const PARTS: { dir: string; manifest: Manifest; client: Record<string, unknown> 
   { dir: "panel-diff", manifest: panelDiffManifest as Manifest, client: panelDiffClient },
   { dir: "panel-files", manifest: panelFilesManifest as Manifest, client: panelFilesClient },
   { dir: "settings", manifest: settingsManifest as Manifest, client: settingsClient },
-  { dir: "bot-editor", manifest: botEditorManifest as Manifest, client: botEditorClient },
   { dir: "plugin-index", manifest: pluginIndexManifest as Manifest, client: pluginIndexClient },
   { dir: "archive", manifest: archiveManifest as Manifest, client: archiveClient },
 ];
@@ -390,7 +386,7 @@ export function world(options: WorldOptions = {}): UiRuntime {
         { pluginId: "moss/vrm", entryId: "vrm", value: { id: "vrm", format: "vrm", name: "VRM", entry: { extensions: [".vrm"] }, files: { kinds: [{ ext: [".vrm", ".glb"], type: "binary" }], maxFiles: 1 }, import: { accepts: ["file"] } } },
         { pluginId: "moss/live2d", entryId: "live2d", value: { id: "live2d", format: "live2d", name: "Live2D (Cubism)", entry: { extensions: [".model3.json", ".zip"] }, files: { kinds: [{ ext: [".json"], type: "json" }] }, import: { accepts: ["folder", "zip"] } } },
       ],
-      "avatar.packs": AVATARS.map((a) => ({ pluginId: a.id.split("#")[0]!, entryId: a.id.split("#")[1]!, value: { id: a.id.split("#")[1]!, name: a.name, file: a.file, format: a.format, ...(a.portraitUrl ? { portrait: a.portraitUrl } : {}) } })),
+      "avatar.packs": [],
     };
     const base = fakeApi({ pluginId, computer: "Studio" });
     return {
@@ -406,6 +402,18 @@ export function world(options: WorldOptions = {}): UiRuntime {
               history: (id: string) => later({ events: events(id), hasMore: false }),
               follow: () => () => undefined,
               answer: () => later(undefined),
+            },
+          }
+        : {}),
+      // Code sessions (`sessions.read`): the coding sessions and agents, never a bot's conversation.
+      ...(has("sessions.read")
+        ? {
+            sessions: {
+              list: () => later(sessions.filter((s) => s.kind === "coding" || s.kind === "agent")),
+              get: (id: string) => (sessions.find((s) => s.id === id && (s.kind === "coding" || s.kind === "agent")) ? later(sessions.find((s) => s.id === id)!) : fail("no session")),
+              watch: () => () => undefined,
+              history: (id: string) => later({ events: events(id), hasMore: false }),
+              follow: () => () => undefined,
             },
           }
         : {}),

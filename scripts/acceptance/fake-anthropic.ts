@@ -276,7 +276,9 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           else if (b.type === "tool_removal") record.tools = record.tools.filter((t) => t !== name);
         }
       }
-      const last = messages[messages.length - 1];
+      // The last message of the conversation's own: a mid-conversation `system` message after it (the runtime's tool
+      // changes, sent after the user's turn) isn't what the request asks.
+      const last = [...messages].reverse().find((m) => m.role !== "system");
       const lastBlocks = Array.isArray(last?.content) ? (last!.content as Block[]) : [];
       // A user turn that carries results AND a new message with a directive (the runtime's own results for calls a stop
       // cut off, sent with the next message): the message is what this request asks, not the results.
@@ -356,7 +358,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         tool: callLine[1]!,
         input: (() => { try { return JSON.parse(callLine[2]!) as Record<string, unknown>; } catch { return undefined; } })(),
       });
-      const callTool = callWant === undefined ? undefined : record.tools.find((t) => t === callWant.tool || t.endsWith(`__${callWant.tool}`));
+      const callTool = callWant === undefined ? undefined : record.tools.find((t) => toolNamed(t, callWant.tool));
       const callInput = callWant?.input;
       const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
       const callLoaded = callTool !== undefined && messages.some((m) => m.role === "system" && Array.isArray(m.content) && (m.content as { type?: string; tool?: { name?: unknown } }[]).some((b) => b.type === "tool_addition" && b.tool?.name === callTool));
@@ -646,3 +648,11 @@ function slowTurn(signal: AbortSignal, id: string, model: string, stream: boolea
 
 /** What the fake's plugin Review report starts with (the acceptance run's Review clause looks for it). */
 export const REVIEW_MARK = "ACCEPTANCE-REVIEW";
+
+/** Whether the offered `name` is the tool `tool`: by name, by the end of its name (`mcp__<server>__<tool>`), or as a code
+ *  session's bridge shortens a long one (`<server cut>__<tool>_<hex>`, agents/plugin-reach.ts `bridgeShortName`). */
+export function toolNamed(name: string, tool: string): boolean {
+  if (name === tool || name.endsWith(`__${tool}`)) return true;
+  const i = name.lastIndexOf(`__${tool}_`);
+  return i >= 0 && /^[0-9a-f]{6,16}$/.test(name.slice(i + tool.length + 3));
+}

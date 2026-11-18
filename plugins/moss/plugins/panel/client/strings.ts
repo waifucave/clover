@@ -31,6 +31,8 @@ export const S = {
   context: "Context",
   contextUsed: (pct: number) => `${pct}%`,
   contextLabel: (pct: number) => `${pct}% of the context used`,
+  contextNotReported: "Not reported",
+  contextNotReportedNote: "This agent doesn't say how much of its context it uses.",
   connectors: "Connectors",
   connectorsState: (total: number, needSignIn: number) =>
     needSignIn > 0 ? n(needSignIn, "1 to sign in again", "# to sign in again") : n(total, "1 connected", "# connected"),

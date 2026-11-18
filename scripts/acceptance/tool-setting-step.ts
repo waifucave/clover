@@ -101,6 +101,10 @@ export async function toolSettingStep(ctx: ExampleCtx, session: string): Promise
       return r.plugins.some((x) => x.pluginId === PLUGIN && x.tools.some((t) => t.name === "Echo")) ? read() : undefined;
     });
     const { server } = start;
+    // The conversation holds more exchanges than a compaction keeps (the runtime's four-pair retention window) before
+    // the row starts, whatever rows ran on it before: a compaction that keeps its first message keeps the tool list it
+    // started with, and the row's "starts over" below would not. Its own plain turns, so the row doesn't lean on others.
+    for (let i = 0; i < 6; i++) await ctx.turn(session, `ACCEPTANCE-REPLY: before the tool setting (${i + 1})`, 150_000);
     if (start.echo.declared !== "preload" || start.echo.availability !== "always" || start.echo.permission !== "ask") {
       fail(`Echo's row with nothing chosen reads declared ${start.echo.declared}, availability ${start.echo.availability}, permission ${start.echo.permission}; its manifest preloads it, so always on and ask`);
     }

@@ -39,6 +39,20 @@ describe("a rule key's shape", () => {
   });
 });
 
+describe("a coding agent's card (lane MC)", () => {
+  test("its edit of one file offers an always, whose rows say the file, no bot and the computer; pressed, the same edit is answered by it", async () => {
+    const b = broker();
+    const agentReq = (): MossApprovalRequest => req({ kind: "agent-permission", bot: undefined, effect: "edit", paths: ["/Users/k/p/a.md"], ruleKey: "Agent(moss-code):Write(/Users/k/p/a.md)" });
+    const card = answerNext(b, "always");
+    const first = await b.request(agentReq());
+    const shown = await card;
+    expect(shown.options.some((o) => o.remember === "always")).toBe(true);
+    expect(rows(shown)).toEqual({ kind: "file", target: "/Users/k/p/a.md", bot: "", computers: "Studio" });
+    expect(first.allowed).toBe(true);
+    expect(await b.request(agentReq())).toMatchObject({ allowed: true, by: "rule" });
+  });
+});
+
 describe("the card's rule rows", () => {
   test("a card that offers an always carries the rule's kind, thing, bot and computers", async () => {
     const cases: [string, string, string][] = [

@@ -42,6 +42,14 @@ describe("the session column", () => {
     expect(screen.getByText(/28,000 of 200,000/)).toBeTruthy();
   });
 
+  test("an agent that reports no context use says so, with no meter", () => {
+    render(<SessionView {...SESSION} context={{ notReported: true }} />);
+    expect(screen.queryByRole("meter")).toBeNull();
+    expect(screen.getByText("Not reported")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Unfold Context" }));
+    expect(screen.getByText("This agent doesn't say how much of its context it uses.")).toBeTruthy();
+  });
+
   test("outputs open; changes show their stat, create a PR, and list the PRs", () => {
     const onOpen = mock((_id: string) => undefined);
     const onCreatePr = mock(() => undefined);

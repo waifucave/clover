@@ -22,7 +22,6 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@waifucave/moss-plugin-archive": "workspace:*",
-    "@waifucave/moss-plugin-bot-editor": "workspace:*",
     "@waifucave/moss-plugin-browser-view": "workspace:*",
     "@waifucave/moss-plugin-character": "workspace:*",
     "@waifucave/moss-plugin-composer": "workspace:*",

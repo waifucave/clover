@@ -6,7 +6,7 @@
 // still waiting, and the card is then denied (the plugin never installs).
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fail, sleep, until, type ExampleCtx, toAlphasTab } from "./example-steps";
+import { fail, sleep, until, type ExampleCtx, toSessionTab } from "./example-steps";
 
 export const REVIEW_STEP = "Review on a plugin's OK card: pressed on the card's own page, the report (the fake model's reading of this plugin's files) shows as text under a heading that says it is a model's reading, the note names the model, and the card is unchanged and still waiting";
 
@@ -32,7 +32,7 @@ export function reviewProblem(v: ReviewView, model: string): string | undefined 
 }
 
 export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<string> {
-  await toAlphasTab(ctx);
+  await toSessionTab(ctx);
   const { cdp, rpc } = ctx;
   let cardId: string | undefined;
   let installed = false;

@@ -95,8 +95,8 @@ Each cell says what proves it:
 | `commands` from the slash menu | acc (Alpha) | acc (`/note`, `/rain-alert`) | same path | as skills |
 | `skills` through Glossary | acc | acc (`example-notes:tidy-up`) | same path | test |
 | `agents` (agent definitions) | acc (Alpha) | acc (`example-notes:tidier` on MOSS's own agent, no card, its report back) | same path | test |
-| A bot in a child plugin, its theme and window skin | acc (Alpha) | acc (Notes keeper skins the window while its tab shows) | same path | — |
-| A bot's model, chosen by its plugin | acc (Alpha's: no card, MOSS's own) | acc (Notes keeper's first turn asks once, `bot-provider`) | same path | — |
+| A bot in a child plugin, its theme and window skin | acc (Alpha) | — (no plugin brings a bot, G8: the notes example has none) | same path | — |
+| A bot's model, chosen by its plugin | acc (Alpha's: no card, MOSS's own) | — (no plugin brings a bot, G8) | same path | — |
 | `client`: a page (`main`) and a sidebar entry | acc (the moss tree) | acc (TSX, its own layer connection, `host.call`, its synced store) | same path | — |
 | `locales` | acc | acc (its page in its own words) | same path | — |
 | `settings`: its own page changes a plain one with no card | — (the moss tree's parts use `plugin.settings.*`) | acc (the page's order switch) | same path | same path |

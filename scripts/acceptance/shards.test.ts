@@ -4,7 +4,8 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { COLD_START_STEP, FULL_STEPS, IDLE_STEP, REOPEN_STEPS, STAGE_STEP, stepNumber } from "./steps";
+import { COLD_START_STEP, FULL_STEPS, IDLE_STEP, REOPEN_STEPS, STAGE_STEP, finishTable, stepNumber } from "./steps";
+import { ROWS_ELSEWHERE } from "./elsewhere";
 import { UI_STEPS } from "./ui-steps";
 import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { WORKSHOP_STEP } from "./workshop-step";
@@ -15,24 +16,30 @@ import { MAIN_PARTS, expandUnitIds, homePlan, mergeShards, planShards, serialUni
 const row = (name: string, status: TimedRow["status"] = "PASS", seconds = 1): TimedRow => ({ n: stepNumber(FULL_STEPS, name), name, status, detail: status === "PASS" ? "ok" : "red", seconds });
 
 describe("the split", () => {
-  test("every row of the table is in exactly one unit; the chain has the rest", () => {
+  test("every row of the table is in exactly one unit, but a row another lane runs, which is in none; the chain has the rest", () => {
     const all = units();
     const named = all.flatMap((u) => u.rows);
     expect(new Set(named).size).toBe(named.length);
-    expect([...named].sort()).toEqual([...FULL_STEPS].sort());
-    for (const s of FULL_STEPS) expect(unitOf(s)).toBeDefined();
+    expect([...named].sort()).toEqual(FULL_STEPS.filter((s) => !ROWS_ELSEWHERE.has(s)).sort());
+    for (const s of FULL_STEPS) expect([s.slice(0, 60), unitOf(s) === undefined]).toEqual([s.slice(0, 60), ROWS_ELSEWHERE.has(s)]);
+    // Each names a row of the table, and a full table reads it BLOCKED with who runs it.
+    for (const name of ROWS_ELSEWHERE.keys()) expect(FULL_STEPS as readonly string[]).toContain(name);
+    const table = finishTable([], FULL_STEPS);
+    for (const name of ROWS_ELSEWHERE.keys()) expect(table.find((r) => r.name === name)).toMatchObject({ status: "BLOCKED", detail: expect.stringMatching(/^runs elsewhere \((retired|lane MA's moss unit|lane MC2)\): /) });
   });
 
   test("the rows that share a home and an order stay together: main's chain, the reopen steps in order, the examples in order", () => {
     const main = units().find((u) => u.id === "chain")!.rows;
     // The first start, the key, the turns and the restart are the chain's, in the table's order; the window's steps are not.
-    for (const s of [FULL_STEPS[0], FULL_STEPS[1], FULL_STEPS[2], FULL_STEPS[3], FULL_STEPS[4], FULL_STEPS[5], FULL_STEPS[6]]) expect(main).toContain(s);
+    for (const s of [FULL_STEPS[0], FULL_STEPS[1], FULL_STEPS[2], FULL_STEPS[3], FULL_STEPS[4], FULL_STEPS[5]]) expect(main).toContain(s);
     for (const u of UI_STEPS) expect(main).not.toContain(`window: ${u}`);
     expect(main).toEqual(FULL_STEPS.filter((s) => main.includes(s)));
     expect(units().find((u) => u.id === "reopen")!.rows).toEqual(REOPEN_STEPS.map((s) => s.name));
     // The reopen shard installs step 4's plugin first (its mid-tool-call step calls the Echo tool).
     expect(readFileSync(join(import.meta.dir, "run.ts"), "utf8")).toContain("try { await installEcho(c); }");
+    // The notes example brings no bot (G8): its row runs here, in a code session, beside weather.
     expect(units().find((u) => u.id === "examples")!.rows).toEqual([EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP]);
+    expect(ROWS_ELSEWHERE.has(EXAMPLE_NOTES_STEP)).toBe(false);
   });
 
   test("`main` names the chain and the window's three units; the window's steps are dealt out once each, in order", () => {
@@ -41,13 +48,14 @@ describe("the split", () => {
     expect(expandUnitIds(["cards", "main", "chain"])).toEqual(["cards", "chain", "window-1", "window-2", "window-3"]);
     expect(MAIN_PARTS.flatMap((id) => windowIndexes(id) ?? [])).toEqual(UI_STEPS.map((_, i) => i));
     expect(windowIndexes("chain")).toBeUndefined();
-    for (const id of ["window-1", "window-2", "window-3"] as const) expect(units().find((u) => u.id === id)!.rows).toEqual(windowIndexes(id)!.map((i) => `window: ${UI_STEPS[i]}`));
+    for (const id of ["window-1", "window-2", "window-3"] as const) expect(units().find((u) => u.id === id)!.rows).toEqual(windowIndexes(id)!.map((i) => `window: ${UI_STEPS[i]}`).filter((r) => !ROWS_ELSEWHERE.has(r)));
   });
 
-  test("the rows that measure run alone after the parallel phase: the stage (card timing, stream cost), the tab flash, the cold start, idle", () => {
+  test("the rows that measure run alone after the parallel phase: the cold start, idle (the stage and the tab flash run elsewhere)", () => {
     // lane HS: and the host's row, alone too (its own daemon starts the host, so it shares no shard's home).
-    expect(serialUnits()).toEqual(["stage", "tab-flash", "cold", "idle", "host", "browser-host", "surface-copy-host"]);
-    for (const s of [STAGE_STEP, TAB_FLASH_STEP, COLD_START_STEP, IDLE_STEP]) expect(units().find((u) => u.rows.includes(s))!.phase).toBe("serial");
+    expect(serialUnits()).toEqual(["cold", "idle", "host", "browser-host", "surface-copy-host"]);
+    for (const s of [COLD_START_STEP, IDLE_STEP]) expect(units().find((u) => u.rows.includes(s))!.phase).toBe("serial");
+    for (const s of [STAGE_STEP, TAB_FLASH_STEP]) expect(unitOf(s)).toBeUndefined();
     for (const n of [1, 2, 3, 4]) expect(planShards(n).flat()).not.toEqual(expect.arrayContaining(["stage"]));
   });
 

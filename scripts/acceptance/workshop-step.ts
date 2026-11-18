@@ -44,12 +44,13 @@
 //    within a few seconds (the sidebar follows `bot_removed`).
 //
 // Each step's failure starts with its number and clause, so a red row names the step.
+import { partElsewhere } from "./elsewhere-parts";
 import { ownTurnCompleted } from "./turn-end";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
-import { escape, fail, frames, installFromPage, leave, sleep, toAlphasTab, treeDocs, until, type ExampleCtx } from "./example-steps";
+import { escape, fail, frames, installFromPage, leave, sleep, toSessionTab, treeDocs, until, type ExampleCtx } from "./example-steps";
 import { clickShown } from "./window-open";
 
 export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; Glossary loads it by id with its tool, and lists it to her as waiting for the OK while its card waits; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers; a bot she makes the same way (a plugin from PluginNew's bot template, with her own instructions) lands behind its OK card naming her, and OK'd it is in bot.list and the sidebar under Bots, its tab opens and answers a turn with her instructions in its prompt; her edit of its instructions applies with no card at its next turn; removed, it leaves bot.list";
@@ -407,16 +408,14 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   // 6. Another bot: no status, no edit.
   let peerSession: string | undefined;
   await own(() => stepOf("6. another bot can't read its status or edit it", async () => {
-    await installFromPage(ctx, join(FIXTURES, PEER_ID), PEER_ID);
-    const peer = await until("the peer bot in bot.list", 60_000, async () => (await ctx.rpc.request<{ bots: { id: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.id === PEER_ID && b.mainSession !== undefined));
-    const other = peer.mainSession!;
-    peerSession = other;
-    // The model the user gives it, as in the bot editor: Alpha's (the run's one keyed model). A new bot starts on the
-    // user's default, which this home doesn't have signed in.
+    // No plugin ships a bot (G8): the other bot is one the person makes (bot.create), on Alpha's model (the run's one keyed
+    // model; a new bot starts on the person's default, which this home doesn't have signed in).
     const alphaModel = (await ctx.rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
     if (alphaModel === undefined) fail("bot.list gives Alpha no model to give the peer");
-    const set = await ctx.rpc.request<{ applied: boolean; card?: string }>("bot.setUserLayer", { id: PEER_ID, patch: { model: alphaModel } });
-    if (!set.applied && set.card !== undefined) await ctx.approveCard(set.card);
+    await ctx.rpc.request("bot.create", { name: "Workshop peer", model: alphaModel });
+    const peer = await until("the peer bot in bot.list", 60_000, async () => (await ctx.rpc.request<{ bots: { id: string; name?: string; mainSession?: string }[] }>("bot.list", {})).bots.find((b) => b.name === "Workshop peer" && b.mainSession !== undefined));
+    const other = peer.mainSession!;
+    peerSession = other;
     const status = await callOnce(ctx, other, "PluginStatus", { id: WORKSHOP_ID });
     if (!status.result!.isError) fail(`the other bot's PluginStatus answered "${status.result!.text.slice(0, 200)}"`);
     const hostFile = join(installed, "host", "index.ts");
@@ -434,7 +433,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   // at her tab draws the card as placeholders: every card frame in the render window is moss-sealed://placeholder,
   // none moss-sealed://card, and the app logs no sealed ask for a render window. Then her card is pressed in the
   // user's own window as usual.
-  await own(() => stepOf("6b. while her card waits, a look at her tab draws it as placeholders, never a live card frame", async () => {
+  const away6b = partElsewhere("workshop", "6b");
+  if (away6b !== undefined) done.push(`6b runs elsewhere (${away6b.owner === "MOSS" ? "lane MA's moss unit" : away6b.owner}): ${away6b.why}`);
+  else await own(() => stepOf("6b. while her card waits, a look at her tab draws it as placeholders, never a live card frame", async () => {
     if (peerSession === undefined) fail("no peer session (step 6 didn't make one)");
     let look: { text: string; isError: boolean } | undefined;
     const looking: ExampleCtx = {
@@ -523,7 +524,9 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
   }));
 
   // 9. A bot builds a bot: a plugin with a `bot` entry, made, installed and edited as her tool plugin was.
-  await own(() => stepOf("9. a bot plugin she makes lands behind its OK card naming her; its bot is listed, in the sidebar, its tab answers a turn; her edit of its instructions applies with no card; removed, it leaves bot.list", async () => {
+  const away9 = partElsewhere("workshop", "9");
+  if (away9 !== undefined) done.push(`9 runs elsewhere (${away9.owner === "MOSS" ? "lane MA's moss unit" : away9.owner}): ${away9.why}`);
+  else await own(() => stepOf("9. a bot plugin she makes lands behind its OK card naming her; its bot is listed, in the sidebar, its tab answers a turn; her edit of its instructions applies with no card; removed, it leaves bot.list", async () => {
     const said: string[] = [];
     const from = join(scratch, BOT_ID);
     const made = await ok(ctx, session, "PluginNew", { template: "bot", id: BOT_ID, name: BOT_NAME });
@@ -634,7 +637,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await until("its tab left", 8_000, async () => ((await tabShown()) ? undefined : true), async () => "its tab (its composer) is still the one showing after its bot was removed");
     said.push("removed: out of bot.list and, within seconds and with no reload, out of the sidebar, and its tab (showing at the time) was left");
     // Her tab again, for the rows after this one in the same window.
-    await toAlphasTab(ctx);
+    await toSessionTab(ctx);
     done.push(`9 a bot builds a bot: ${said.join("; ")}`);
   }));
 

@@ -245,6 +245,23 @@ export function ruleKeyOf(tool: string, input: Record<string, unknown>, realPath
  *  command, the one real file, the tool). The inverse of `ruleKeyOf`, kept beside it so the two change together. */
 export type RuleKind = "command" | "file" | "tool" | "plugin-tool" | "other";
 export function ruleShapeOf(ruleKey: string): { kind: RuleKind; target: string } {
+  // A coding agent's (agents/manager.ts `ruleKeyOf`): `Agent(<backend>):` then its command, its file or its server's tool.
+  const agent = /^Agent\(([^)]*)\):([\s\S]*)$/.exec(ruleKey);
+  if (agent !== null) {
+    const rest = agent[2]!;
+    const mcp = /^mcp\((\[[\s\S]*\])\)$/.exec(rest);
+    if (mcp !== null) {
+      try {
+        const [server, tool] = JSON.parse(mcp[1]!) as [unknown, unknown];
+        if (typeof server === "string" && typeof tool === "string") return { kind: "plugin-tool", target: `${tool} (${server})` };
+      } catch { /* not a pair: shown as it is below */ }
+      return { kind: "other", target: ruleKey };
+    }
+    const m = /^([A-Za-z]+)\(([\s\S]*)\)$/.exec(rest);
+    if (m !== null && COMMAND_TOOLS.has(m[1]!)) return { kind: "command", target: m[2]! };
+    if (m !== null && BUILTIN_EFFECTS.get(m[1]!) === "edit") return { kind: "file", target: m[2]! };
+    return { kind: "other", target: ruleKey };
+  }
   if (ruleKey.startsWith(BUILTIN_KEY)) {
     const rest = ruleKey.slice(BUILTIN_KEY.length);
     const m = /^([^(]+)\(([\s\S]*)\)$/.exec(rest);
@@ -507,6 +524,12 @@ export function botApprovalCheck(
     if (known.command !== undefined) req.fields.command = { type: "code", code: plainOf(known.command) };
     if (known.host !== undefined) req.fields.host = { type: "code", code: plainOf(known.host) };
     if (known.cardAlways === true) req.cardAlways = true;
+    // A call to a plugin's tool: the plugin the router binds it to (never a core tool's, never read from the call's name), so
+    // the card is that plugin's own (`ownedBy`): its plain `approvals` hears and places it, in any session or bot's turn.
+    if (!hostTools.has(tool)) {
+      const plugin = opts.toolPlugin?.(ctx, tool);
+      if (plugin !== undefined) req.toolPlugin = plugin;
+    }
     // A bot's agent's call to a plugin tool (agents/plugin-reach.ts): its bot's saved rules answer it as they would the
     // bot's own, but its card offers no "always", which would be saved under the bot's id and answer the bot's own calls.
     if ((ctx as { offersAlways?: boolean }).offersAlways === false) req.options = [{ id: "approve", kind: "approve", label: "Approve" }, { id: "deny", kind: "deny", label: "Deny" }];

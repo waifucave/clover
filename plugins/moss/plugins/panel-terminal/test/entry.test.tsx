@@ -16,7 +16,7 @@ describe("the terminal entry", () => {
     const feeds = new Map<string, (data: string, exited?: { code: number | null }) => void>();
     let n = 0;
     const api = fakeApi({
-      conversation: { get: async () => CODE },
+      sessions: { list: async () => [], watch: () => () => undefined, history: async () => ({ events: [], hasMore: false }), follow: () => () => undefined,  get: async () => CODE },
       terminal: {
         open: async (o) => {
           opens.push(o);

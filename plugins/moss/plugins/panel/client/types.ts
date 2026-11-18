@@ -31,7 +31,8 @@ export interface SessionViewProps {
     branch?: string;
   };
   /** How much of the model's context the session uses, 0 to 1. */
-  context?: { used: number; detail?: string };
+  /** How full its context is; `notReported`: its agent says nothing of it (shown as such, with no meter). */
+  context?: { used: number; detail?: string } | { notReported: true };
   connectors?: { total: number; needSignIn: number; onOpen?: () => void };
   outputs?: {
     /** A page (HTML or Markdown the bot made to be read), a file, or an image. */

@@ -1,81 +1,41 @@
-// The tabs the shell ships: a bot's tab (the `bot.tab` entry with no key, which fills every bot without one of its own)
-// and an agent's live tab (`main` keyed `agent`, and `panel` keyed `agent` for a bot's coding agent opened from its
-// slim column). Each lays out the spots it declares: the conversation over the composer. The column beside the conversation (`bot.side`, the session column) is the shell's frame's.
+// The tab the shell ships: a session's live tab (`main` keyed `agent`, and `panel` keyed `agent` for a coding agent
+// opened in the panel): the conversation over the composer. MOSS Code's window has no bot's tab (spec §9.4, G8).
 import type { BotRef } from "./local";
-import type { BotView, EntryProps, SessionView } from "@waifucave/moss-plugin-sdk";
-import { Spot, useSpotEntries, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
-import { useEffect, useState } from "react";
+import type { EntryProps, SessionView } from "@waifucave/moss-plugin-sdk";
+import { Spot, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 import { useLoad } from "./data";
 import { S } from "./strings";
 import { BotTab } from "./Window";
 
-/** A bot's tab: its main conversation and the composer. */
-export function DefaultBotTab({ props }: EntryProps<{ bot: BotRef; onOpenAgent?: (session: string) => void }>) {
-  const api = usePluginApi();
-  const bot = useLoad(() => api.bots?.get(props.bot.id) ?? Promise.reject(new Error("no bots.read")), [api, props.bot.id]);
-  // The bot's own plugin's header and controls (a bot with no layout of its own): the stock tab shows them when something
-  // other than the shell's own fills the spot, above the conversation and between it and the composer.
-  const own = (spot: string) => useSpotEntries(spot, undefined, { bot: props.bot }).entries.some((e) => e.pluginId !== "moss/shell");
-  const header = own("bot.header");
-  const controls = own("bot.controls");
-  if (!bot) return <div className="cl-shell-empty" role="status">{S.loading}</div>;
-  const at = { bot: props.bot, session: bot.mainSession };
-  return (
-    <BotTab
-      header={header ? <Spot name="bot.header" props={{ bot: props.bot }} /> : undefined}
-      controls={controls ? <Spot name="bot.controls" props={at} /> : undefined}
-      conversation={<Spot name="conversation" props={{ ...at, onOpenAgent: props.onOpenAgent }} />}
-      composer={<Spot name="composer" props={at} />}
-    />
-  );
-}
-
-/** The bot as the daemon holds it now: read once, then followed through `bots.watch` (a model pick). */
-function useLiveBot(bot: BotRef): BotView | undefined {
-  const api = usePluginApi();
-  const [now, setNow] = useState<BotView | undefined>(undefined);
-  useEffect(() => {
-    let live = true;
-    void api.bots?.get(bot.id).then((b) => live && setNow((was) => was ?? b), () => undefined);
-    const stop = api.bots?.watch((b) => { if (live && b.id === bot.id) setNow((was) => (was !== undefined && JSON.stringify(was) === JSON.stringify(b) ? was : b)); });
-    return () => { live = false; stop?.(); };
-  }, [api, bot.id]);
-  return now;
-}
-
-/** The `bot.header` entry: the bot's name and model, then whatever plugins add through `bot.header.action`. */
-export function BotHeader({ props }: EntryProps<{ bot: BotRef }>) {
-  const bot = useLiveBot(props.bot);
-  return (
-    <header className="cl-bot-header">
-      <span className="cl-bot-header__name">{props.bot.name}</span>
-      {bot && <span className="cl-bot-header__model">{bot.model.slice(bot.model.indexOf("/") + 1)}</span>}
-      <Spot name="bot.header.action" props={{ bot: props.bot }} />
-    </header>
-  );
-}
-
 /** Who speaks in an agent's transcript: its backend, or its bot for a side thread. */
 const speaker = (s: SessionView): BotRef => ({ id: s.bot && s.kind === "side-thread" ? s.bot : (s.backend ?? s.id), name: s.backend ?? s.title ?? s.id });
+
+/** A session's state and where it runs (its backend on its computer): over the composer in the panel, in the title bar
+ *  beside the panel toggles in `main` (so it takes none of the conversation's height and a pinned card fits a short
+ *  window). */
+export function AgentStatus({ session }: { session: SessionView }) {
+  return (
+    <div className="cl-agent-tab__status">
+      <span className="cl-agent-tab__dot" data-status={session.status} aria-hidden="true" />
+      <span className="cl-agent-tab__state">{S.agentStatus[session.status] ?? session.status}</span>
+      {session.backend && <span className="cl-agent-tab__where">{S.agentOn(session.backend, session.computer)}</span>}
+    </div>
+  );
+}
 
 /** An agent's live tab: watch it, type to it (spec §9.3). Its interrupt and stop buttons are hidden until the host callbacks cover them (backlog: agent-tab controls). In `main` for an agent or a coding
  *  session; in the panel for a bot's coding agent, without a column or code panels of its own (item 90). */
 export function AgentTab({ props }: EntryProps<{ route?: string; params?: { session?: string }; app?: string; session?: string }>) {
   const id = props.params?.session ?? props.session;
   const api = usePluginApi();
-  const session = useLoad(() => (id && api.conversation?.get ? api.conversation.get(id) : Promise.reject(new Error("no session"))), [api, id]);
+  const session = useLoad(() => (id && api.sessions?.get ? api.sessions.get(id) : Promise.reject(new Error("no session"))), [api, id]);
   if (!id || !session) return <div className="cl-shell-empty" role="status">{S.loading}</div>;
   const at = { bot: speaker(session), session: id, sessionKind: session.kind };
-  const status = (
-      <div className="cl-agent-tab__status">
-        <span className="cl-agent-tab__dot" data-status={session.status} aria-hidden="true" />
-        <span className="cl-agent-tab__state">{S.agentStatus[session.status] ?? session.status}</span>
-        {session.backend && <span className="cl-agent-tab__where">{S.agentOn(session.backend, session.computer)}</span>}
-      </div>
-  );
-  // The status sits over the composer, clear of the title bar the conversation runs under.
+  const inPanel = props.app === "agent";
+  // In the panel the status sits over the composer; in `main` the shell draws it in the title bar.
+  const status = inPanel ? <AgentStatus session={session} /> : null;
   return (
-    <div className="cl-agent-tab" data-place={props.app === "agent" ? "panel" : "main"} data-status={session.status}>
+    <div className="cl-agent-tab" data-place={inPanel ? "panel" : "main"} data-status={session.status}>
       <BotTab
         conversation={<Spot name="conversation" props={at} />}
         composer={

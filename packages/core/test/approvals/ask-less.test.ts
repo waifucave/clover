@@ -522,6 +522,24 @@ describe("addresses the conversation already saw", () => {
     expect(s.take("run1", "https://evil.example/r5")!.within).toBe(false);
   });
 
+  test("an agent session's turn: a bot's brief never resets its conversation's budget nor counts its addresses; the user's own message in a code session does both", () => {
+    const views: Record<string, { kind: string; parent?: string }> = { main: { kind: "bot" }, agent1: { kind: "agent", parent: "main" }, code: { kind: "coding" } };
+    const s = new SeenUrls({ rootOf: (id) => budgetRootOf(id, (x) => views[x]) });
+    s.turnStarted("main", "user");
+    for (let i = 0; i < 5; i++) expect(s.take("main", `https://evil.example/m${i}`)!.within).toBe(true);
+    // The bot's brief to its agent, whatever origin the turn is given: the root's budget stays spent, the address unseen.
+    for (const origin of ["user", "bot", undefined] as const) {
+      s.agentTurn("agent1", { from: "bot", bot: "alpha", session: "main", text: "fetch https://evil.example/given" } as TurnInput, origin);
+    }
+    expect(s.take("agent1", "https://evil.example/next")!.within).toBe(false);
+    expect(s.seen("agent1", "https://evil.example/given")).toBe(false);
+    // The user's own message in their code session: its addresses seen, its own budget fresh.
+    for (let i = 0; i < 5; i++) s.take("code", `https://docs.example/c${i}`);
+    s.agentTurn("code", user("read https://docs.example/guide"), "user");
+    expect(s.seen("code", "https://docs.example/guide")).toBe(true);
+    expect(s.take("code", "https://docs.example/again")!.within).toBe(true);
+  });
+
   test("only http and https, no credentials in the address; text is scanned with a bound", () => {
     expect(normalUrl("ftp://x.example/a")).toBeNull();
     expect(normalUrl("https://u:p@x.example/a")).toBeNull();

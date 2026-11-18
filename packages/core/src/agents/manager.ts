@@ -51,6 +51,7 @@ import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
 import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type AgentSessionFacts, type BridgeToolDef, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
+import { AgentToolDisplays } from "./tool-shows";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
 import { inProcessBridgeServer } from "./bridge/in-process";
@@ -124,6 +125,9 @@ export interface AgentManagerOptions {
   /** Whether a bot's agent's file change to `path` is a run-later place (agents/bot-child.ts `botChildRunsLater`):
    *  refused before any card, as the bot's own. Without it the run-later names alone are refused. */
   childRunsLater?: (child: { bot: string; rootPath: string; level: Level | undefined; fence: SandboxPolicy }, path: string) => boolean;
+  /** A turn of an agent or coding session starts from `input` (what the conversation saw, as a bot's turn reports it:
+   *  the addresses the user's own message gave, a turn of the user's resetting the fetch budget). */
+  turnStarted?: (sessionId: string, input: TurnInput, origin: TurnOrigin | undefined) => void;
   log?: (line: string) => void;
 }
 
@@ -192,6 +196,8 @@ interface Entry {
   token: string;
   serverName: string;
   bridgeTools: string[];
+  /** What its plugin tools' calls show in the conversation (their titles, their results' displays). */
+  shows: AgentToolDisplays;
   /** What the agent holds of the bridge's tools (`toolsSignature`): the list it started with, or was last told of. */
   toolsSig?: string;
   /** The tool names the agent holds, for saying what changed. */
@@ -635,10 +641,14 @@ export class AgentManager {
     if (!view.backend || !view.root) return refuse("the host's view names no backend or root");
     if ((view.kind === "agent") !== (view.bot !== undefined)) return refuse("its kind and its bot disagree");
     const daemon = readAgentRecord(this.#o.home, view.id);
-    if (!daemon?.agentSessionId) return refuse("the daemon's record of it is missing");
+    if (!daemon) return refuse("the daemon's record of it is missing");
     if (daemon.backend !== view.backend || daemon.root !== view.root || daemon.computer !== view.computer || daemon.bot !== view.bot || daemon.parent !== view.parent) {
       return refuse("the daemon's record doesn't match the session");
     }
+    // A session whose agent never launched (a code session the user opened and hasn't typed into yet: the agent starts
+    // in the first turn) has no agent session id to resume: it reattaches all the same, and its next turn starts the
+    // agent new, as that first turn would have.
+    const resume = daemon.agentSessionId === undefined ? undefined : { agentSessionId: daemon.agentSessionId };
     const backend = this.#o.backends().find((b) => b.id === view.backend);
     if (!backend) return refuse(`no backend named ${view.backend}`);
     // Another plugin that took the id since (the bundled one switched off, a third party's on) never gets the session:
@@ -670,11 +680,11 @@ export class AgentManager {
     }
     const transcript = new AgentTranscript(this.#o.home, view.id, view.bot);
     const record: AgentRecordFile = {
-      v: 1, sessionId: view.id, backend: backend.id, computer: view.computer, root: view.root, startedAt: daemon.startedAt, agentSessionId: daemon.agentSessionId,
+      v: 1, sessionId: view.id, backend: backend.id, computer: view.computer, root: view.root, startedAt: daemon.startedAt, ...(resume ?? {}),
       ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
       ...(view.model === undefined ? {} : { model: view.model }), ...(view.effort === undefined ? {} : { effort: view.effort }),
     };
-    const entry = this.#entry(view.id, backend, transcript, record, daemon, rootPath, { agentSessionId: daemon.agentSessionId });
+    const entry = this.#entry(view.id, backend, transcript, record, daemon, rootPath, resume);
     this.#o.host.open({
       id: view.id, kind: view.kind, computer: view.computer, backend: backend.id, root: view.root,
       ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
@@ -719,6 +729,7 @@ export class AgentManager {
     const entry = {
       id, backend, transcript, record, daemon, token, rootPath, computer: daemon.computer, root: daemon.root,
       held: 0, gone: new AbortController(), serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
+      shows: new AgentToolDisplays(),
       ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
       ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
       ...(daemon.level === undefined ? {} : { level: daemon.level }),
@@ -726,6 +737,8 @@ export class AgentManager {
     } as Entry;
     entry.driver = new AgentDriver({
       start: () => this.#startAgent(entry, reattach),
+      turnStarted: (input, origin) => this.#o.turnStarted?.(id, input, origin),
+      toolShows: entry.shows,
       // A turn another computer sent carries the prompt it built there (its images read there).
       promptOf: async (input) => peerPromptOf(input) ?? promptOf(input),
       redact: (v) => transcript.redacted(v),
@@ -1300,11 +1313,14 @@ export class AgentManager {
           return { content: [{ type: "text", text: `Not run: ${why}.` }], isError: true };
         }
         const signal = e.driver.currentSignal();
-        return source.call(id, c, {
+        const r = await source.call(id, c, {
           computer: e.computer, origin: e.driver.currentOrigin() ?? "agent",
           ...(e.bot === undefined ? {} : { bot: e.bot }), ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }), ...(signal ? { signal } : {}),
           session: this.#facts(e),
         });
+        // What its result shows stays in MOSS, for the conversation; the agent gets the content.
+        if (r.display !== undefined && !r.isError) e.shows.put(c.tool, c.input, r.display);
+        return { content: r.content, isError: r.isError };
       },
       sendMessage: async (id, m) => {
         await this.#holdForBridge(id);
@@ -1323,6 +1339,7 @@ export class AgentManager {
     const source = this.#o.pluginTools ?? NO_PLUGIN_TOOLS;
     const facts = e === undefined ? undefined : this.#facts(e);
     const plugin = await source.tools(id, facts).catch(() => []);
+    e?.shows.listed(plugin);
     const own = await source.instructions?.(id, facts).catch(() => "");
     const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
     return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
@@ -1450,6 +1467,9 @@ export function ruleKeyOf(backend: string, ask: AgentPermissionAsk): string | un
   if (ask.mcp) return `Agent(${backend}):mcp(${JSON.stringify([ask.mcp.server, ask.mcp.tool])})`;
   const command = (ask.rawInput as { command?: unknown } | undefined)?.command;
   if (ask.toolKind === "execute" && typeof command === "string" && command.length > 0 && command.length <= 2000) return `Agent(${backend}):Bash(${command})`;
+  // An edit of one file the core resolved: that file, for that agent, as a bot's edit rule is its file (lane MC: a code
+  // session's agent's card offers what a bot's does, "Always allow" included).
+  if (effectOf(ask.toolKind) === "edit" && ask.paths.length === 1) return `Agent(${backend}):${acpHookCall(ask).name}(${ask.paths[0]})`;
   return undefined;
 }
 
@@ -1465,23 +1485,30 @@ function sealedText(s: string, max: number): string {
   return w.length > max ? w.slice(0, max) : w;
 }
 
-/** The card's sealed fields: headings from this table, the agent's own words only as code or row values. */
+/** The card's sealed fields, in the shape a bot's tool card has (approvals/bot-check.ts `botToolRequest`), so it reads like
+ *  any other tool card (the app's card-summary.ts): the tool in MOSS's names (`what`: a built-in's as text, a server's
+ *  tool as code), a command as code, any other input as its JSON in `detail` (the app shows it as text, never as JSON),
+ *  the resolved paths as a list. Headings from this table; the agent's own words only as code or row values. */
 function cardFields(e: Entry, ask: AgentPermissionAsk): ApprovalRequest["fields"] {
   const effect = effectOf(ask.toolKind);
-  const raw = ask.rawInput as { command?: unknown } | undefined;
-  const code = typeof raw?.command === "string" ? raw.command : ask.rawInput === undefined ? ask.title : JSON.stringify(ask.rawInput, null, 2);
+  const call = acpHookCall(ask);
+  const { acpKind: _kind, ...input } = call.input;
+  const command = typeof input.command === "string" ? input.command : undefined;
   const fields: Partial<Record<string, SealedValue>> = {
     title: { type: "text", text: TITLES[effect] },
-    // A bot's agent asks as itself, never as its bot: "<bot>'s agent <title> wants to …".
-    what: { type: "text", text: e.bot === undefined ? "Allow it this once?" : sealedText(`${e.bot}'s agent "${e.title ?? e.backend.id}" (${e.backend.id}) is asking, not ${e.bot} itself. Allow it this once?`, 4000) },
-    command: { type: "code", code: sealedText(code, MAX_CARD_CODE) },
+    what: ask.mcp === undefined ? { type: "text", text: call.name } : { type: "code", code: sealedText(call.name, 4000) },
+    ...(command !== undefined
+      ? { command: { type: "code", code: sealedText(command, MAX_CARD_CODE) } }
+      : { detail: { type: "code", code: sealedText(JSON.stringify(input, null, 2) ?? "", MAX_CARD_CODE), language: "json" } }),
     computer: { type: "text", text: e.computer },
     source: { type: "rows", rows: [
       { label: "Agent", value: sealedText(e.backend.id, 4000) },
       { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
       { label: "Folder", value: sealedText(e.root, 4000) },
+      { label: "The agent's title", value: sealedText(ask.title, 4000) },
     ] },
-    detail: { type: "rows", rows: [{ label: "The agent's title", value: sealedText(ask.title, 4000) }] },
+    // A bot's agent asks as itself, never as its bot: "<bot>'s agent <title> is asking, not <bot> itself".
+    ...(e.bot === undefined ? {} : { reason: { type: "text", text: sealedText(`${e.bot}'s agent "${e.title ?? e.backend.id}" (${e.backend.id}) is asking, not ${e.bot} itself.`, 4000) } }),
   };
   if (ask.paths.length > 0) {
     const shown = ask.paths.slice(0, 200).map((p) => sealedText(p, 4000));

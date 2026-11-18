@@ -13,7 +13,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { readCalls } from "./fake-core/fake-daemon";
 import { IPV6_REACHABILITY_PROBE, offMachine, readNetLog } from "./netlog";
-import { FIXTURES, REPO, alphaView, mossViews, folderView } from "./fake-core/registry";
+import { FIXTURES, mossViews, folderView } from "./fake-core/registry";
+import { FAKE_CODE_SESSION } from "./fake-core/fake-daemon";
 
 const root = join(import.meta.dir, "..");
 const ci = process.env.CI === "true" && process.env.MOSS_UI_TESTS === "1";
@@ -141,7 +142,8 @@ beforeAll(() => {
   fakeCore = join(work, `moss-core${exe}`);
   const compiled = spawnSync("bun", ["build", "--compile", "--no-macros", join(import.meta.dir, "fake-core", "fake-daemon.ts"), "--outfile", fakeCore], { encoding: "utf8" });
   expect(compiled.status, compiled.stderr).toBe(0);
-  const base = [...mossViews(), alphaView()];
+  // MOSS Code's window: the moss tree and no bot (lane MC); it opens on the fake's code session.
+  const base = [...mossViews()];
   registries.default = join(work, "default.json");
   registries.fixture = join(work, "fixture.json");
   writeFileSync(registries.default, JSON.stringify({ plugins: base }));
@@ -268,7 +270,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     const r = smoke(electron(), [root], "default", { MOSS_SMOKE_WAIT_MOUNTS: "root:4,frame:4" });
     const shell = expectShell(r);
     expect(shell.composer).toBe(true);
-    expect(shell.text).toContain("Alpha");
+    // It opens on the newest code session's tab (the fake's one), not a bot's.
+    expect(shell.text).toContain(FAKE_CODE_SESSION.title);
     // MOSS Voice's player, a background part, is a root and a frame of its own.
     expect(r.facts!.mounts).toMatchObject({ root: 4, frame: 4 });
     expectBothStopped(r);
@@ -284,10 +287,8 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expect(part!.text).toContain("Send");
     expect(part!.text).toContain("Picked: second");
     expect(part!.osPid).not.toBe(shell.osPid);
-    // It sits in Alpha's tab, so it wears Alpha's theme; the shell around the tabs wears the base theme.
-    const alpha = JSON.parse(readFileSync(join(REPO, "plugins", "alpha", "tab", "theme.json"), "utf8")) as { tokens: Record<string, string>; dark?: { tokens: Record<string, string> } };
-    const accent = (r.facts!.appearance === "dark" ? alpha.dark?.tokens["color.accent"] : undefined) ?? alpha.tokens["color.accent"];
-    if (typeof accent === "string" && accent !== "system") expect(part!.accent.toUpperCase()).toBe(accent.toUpperCase());
+    // It sits in a code session's tab, which wears the base theme as the shell around it does (no bot's theme).
+    expect(part!.accent).toBe(shell.accent);
     // The themes' CSS reaches another layer's document too.
     expect(part!.sheets).toBeGreaterThanOrEqual(1);
     expect(part!.themed).toBe("optimizelegibility");

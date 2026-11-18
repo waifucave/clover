@@ -150,6 +150,8 @@ interface Turn {
   /** The last permission answer was a refusal, and no text came after it. */
   endedOnRefusal: boolean;
   usage?: { inputTokens: number; outputTokens: number };
+  /** The context the agent last said it uses in this turn (`usage_update`'s `used`). */
+  contextTokens?: number;
 }
 
 export class AcpAgentSession implements AgentSession {
@@ -408,7 +410,7 @@ export class AcpAgentSession implements AgentSession {
       }
       if (stopReason === "end_turn" && this.#quirks.turns.refusal === "ends-turn" && turn.endedOnRefusal) stopReason = "refusal";
       if (stopReason === "cancelled") this.#closeOpenCalls(turn);
-      return { stopReason, text: turn.text || (errorText ?? ""), ...(turn.usage ? { usage: turn.usage } : {}) };
+      return { stopReason, text: turn.text || (errorText ?? ""), ...(turn.usage ? { usage: turn.usage } : {}), ...(turn.contextTokens === undefined ? {} : { contextTokens: turn.contextTokens }) };
     })();
     this.#turnDone = run.catch(() => undefined);
     try {
@@ -730,13 +732,20 @@ export class AcpAgentSession implements AgentSession {
         if (turn) turn.toolIds.add(id);
         const status = readToolStatus(update?.["status"]);
         if (status && status !== before) {
-          const refused = r.decision === "refused" && (status === "completed" || status === "failed");
-          this.#emit({ type: "tool_call_update", id, status, ...(refused ? { refused: true } : {}) });
+          const ended = status === "completed" || status === "failed";
+          const refused = r.decision === "refused" && ended;
+          const output = ended ? toolOutputOf(r.fields["content"]) : undefined;
+          this.#emit({ type: "tool_call_update", id, status, ...(refused ? { refused: true } : {}), ...(output ? { output } : {}) });
         }
         return;
       }
       default:
-        // Plans, commands, modes, titles, config and usage updates: progress, recorded on the wire.
+        // Plans, commands, modes, titles, config and usage updates: progress, recorded on the wire. A usage update's
+        // `used` (the tokens in its context now) is what the session's context reads at the turn's end.
+        if (str(update?.["sessionUpdate"]) === "usage_update" && turn) {
+          const used = Number(update?.["used"]);
+          if (Number.isInteger(used) && used >= 0) turn.contextTokens = used;
+        }
         if (str(update?.["sessionUpdate"]) === "config_option_update") this.#config = readConfigOptions(update?.["configOptions"]) ?? this.#config;
         if (str(update?.["sessionUpdate"]) === "current_mode_update" && this.#modes) {
           const id = str(update?.["currentModeId"]) ?? str(update?.["modeId"]);
@@ -837,4 +846,23 @@ export function onceOnly(answer: AgentPermissionAnswer, options: readonly AgentP
   if (once) return { outcome: "selected", optionId: once.optionId };
   const reject = options.find((o) => o.kind === "reject_once");
   return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+}
+
+/** The most of an agent's tool output kept for the conversation (an outside agent's update is not ours to bound). */
+export const AGENT_TOOL_OUTPUT_MAX = 200_000;
+
+/** A tool call's text output from its ACP `content` (`{type:"content", content:{type:"text", text}}` items; a diff or a
+ *  terminal shows as its kind), cut at `AGENT_TOOL_OUTPUT_MAX`. */
+export function toolOutputOf(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  let out = "";
+  for (const item of content) {
+    if (item === null || typeof item !== "object") continue;
+    const it = item as { type?: unknown; content?: unknown };
+    const inner = it.content as { type?: unknown; text?: unknown } | undefined;
+    if (it.type === "content" && inner !== undefined && inner !== null && inner.type === "text" && typeof inner.text === "string") out += inner.text;
+    else if (typeof it.type === "string" && it.type !== "content") out += `[${it.type}]`;
+    if (out.length > AGENT_TOOL_OUTPUT_MAX) return out.slice(0, AGENT_TOOL_OUTPUT_MAX);
+  }
+  return out === "" ? undefined : out;
 }

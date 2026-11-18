@@ -197,10 +197,10 @@ describe("settings on the runtime", () => {
     }
   });
 
-  test("the account and the bots, each opening in the bot editor", async () => {
-    const { routes } = await mount({ section: "bots" });
-    fireEvent.click(screen.getByRole("button", { name: "Edit Alpha" }));
-    expect(routes).toEqual([{ route: "bot-editor", params: { bot: "alpha" } }]);
+  test("no Bots page: bots are MOSS's to show; a kept card rule names its bot by its id", async () => {
+    await mount({ section: "tools" });
+    expect(screen.queryByRole("button", { name: "Bots" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit Alpha" })).toBeNull();
   });
 
   test("a section a plugin adds shows after MOSS's own and draws its page", async () => {

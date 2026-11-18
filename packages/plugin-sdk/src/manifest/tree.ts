@@ -3,9 +3,7 @@
 // to. Nothing runs. The reader is how the folder is reached: the real file system for the CLI and the registry, or an
 // in-memory folder in tests.
 import { MAX_CHILD_PLUGINS, type ValidationIssue } from "@waifucave/moss-protocol";
-import { BOT_TAB_INSIDE, spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
-import { DEFAULT_TAB_LAYOUT, LayoutContributionSchema, LayoutFileSchema, contributionProblems, isLayoutPatch, layoutPaths, layoutSpots, resolveLayoutFile } from "../formats/layout";
 import { LocaleSchema, localeKeyOwner } from "../formats/locale";
 import { resolveShell, SHELL_NOT_OFFERED, SHELL_NOT_OFFERED_WORDS } from "../formats/shell";
 import { ThemeSchema, setsCardTokens } from "../formats/theme";
@@ -178,9 +176,6 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
   const c = m.contributes ?? {};
   if (c.bot) {
     for (const k of ["instructions", "greeting", "memory"] as const) await must(c.bot[k], ["contributes", "bot", k], "contribution");
-    if (c.bot.layout && (await must(c.bot.layout, ["contributes", "bot", "layout"], "contribution"))) {
-      await checkLayout(reader, base, c.bot.layout, file, isBot, f);
-    }
   }
   for (const [i, theme] of (c.themes ?? []).entries()) {
     if (await must(theme.file, ["contributes", "themes", i, "file"], "entry") && (await checkTheme(reader, base, theme.file, topId, f, cards))) cards.styled = true;
@@ -188,11 +183,6 @@ async function checkFiles(reader: PluginFolderReader, base: string, m: Manifest,
   for (const [i, ui] of (c.ui ?? []).entries()) {
     if (ui.style && (await must(ui.style, ["contributes", "ui", i, "style"], "entry")) && (await checkTheme(reader, base, ui.style, topId, f, cards))) cards.styled = true;
     if (ui.web?.entry) await must(ui.web.entry, ["contributes", "ui", i, "web", "entry"], "entry");
-    if (ui.layout && (await must(ui.layout, ["contributes", "ui", i, "layout"], "entry"))) {
-      const own = new Set((c.ui ?? []).flatMap((u) => Object.keys((u as { declares?: Record<string, unknown> }).declares ?? {})));
-      const css = await checkContribution(reader, base, ui.layout, own, f);
-      if (css !== undefined) await must(css, ["contributes", "ui", i, "layout"], "entry");
-    }
   }
   for (const [i, loc] of (c.locales ?? []).entries()) {
     // A table marked `"app": true` is a part beside the bot (§5.5): it may translate other plugins' keys, as any plugin's.
@@ -266,68 +256,6 @@ async function checkTheme(reader: PluginFolderReader, base: string, path: string
     for (const name of SHELL_NOT_OFFERED) if (named.has(name)) f.warn(full, "shell_not_offered", ["shell", name], SHELL_NOT_OFFERED_WORDS(name));
   }
   return setsCardTokens(t);
-}
-
-async function checkLayout(reader: PluginFolderReader, base: string, path: string, file: string, isBot: boolean, f: TreeFindings): Promise<void> {
-  const full = `${base}${path}`;
-  const value = await readFormat(reader, base, path, full, f);
-  if (value === undefined) return;
-  const parsed = LayoutFileSchema.safeParse(value);
-  if (!parsed.success) {
-    for (const i of flattenZodIssues(parsed.error)) f.error(full, "contribution", "file_format", i.path, i.message);
-    return;
-  }
-  // A patch is checked as what it makes: the stock tab with its changes. A change whose node isn't there is skipped
-  // where the tab is drawn (the stock tab changes over time), never an error here.
-  if (isLayoutPatch(parsed.data) && parsed.data.extends !== "default") {
-    f.error(full, "contribution", "file_format", ["extends"], `a plugin's layout extends "default" (the stock tab); "${parsed.data.extends}" is the user's own layout's base`);
-    return;
-  }
-  const layout = resolveLayoutFile(parsed.data, { default: DEFAULT_TAB_LAYOUT }).layout;
-  if (layout === null) return;
-  for (const p of layoutPaths(layout)) {
-    const problem = manifestPathProblem(p);
-    if (problem) f.error(full, "contribution", "path_escape", [], `"${p}" has ${problem}`);
-  }
-  if (isBot) {
-    for (const spot of layoutSpots(layout.root)) {
-      // The spots inside its tab, of what Bots offers (§5.5): the top bar and the panels are the window's, placed by the
-      // `chrome.*` parts.
-      const info = spotInfo(spot);
-      if (info && !BOT_TAB_INSIDE.has(spot)) f.error(full, "contribution", "layout_foreign_spot", [], `a bot's layout places spots of its tab, and "${spot}" is outside it`);
-    }
-  }
-  void file;
-}
-
-/** A layout patch for bots' tabs (a `ui` entry's `layout`): its own format, none of what only a bot's own layout says
- *  (`contributionProblems`), and the spots its added nodes place are the tab's own or ones the plugin's entries
- *  declare. Its CSS file, for the caller to find. */
-async function checkContribution(reader: PluginFolderReader, base: string, path: string, own: ReadonlySet<string>, f: TreeFindings): Promise<string | undefined> {
-  const full = `${base}${path.startsWith("./") ? path.slice(2) : path}`;
-  const value = await readFormat(reader, base, path, full, f);
-  if (value === undefined) return undefined;
-  const parsed = LayoutContributionSchema.safeParse(value);
-  if (!parsed.success) {
-    for (const i of flattenZodIssues(parsed.error)) f.error(full, "entry", "file_format", i.path, i.message);
-    return undefined;
-  }
-  for (const why of contributionProblems(parsed.data)) f.error(full, "entry", "layout_patch_reach", [], why);
-  for (const c of parsed.data.changes) {
-    if (!("add" in c)) continue;
-    for (const spot of layoutSpots(c.add)) {
-      if (spotInfo(spot)?.declaredBy === "bot-tab" || own.has(spot)) continue;
-      f.error(full, "entry", "layout_foreign_spot", [], `a patch to a bot's tab places the tab's own spots or ones its plugin declares, and "${spot}" is neither`);
-    }
-  }
-  if (parsed.data.css !== undefined) {
-    const problem = manifestPathProblem(parsed.data.css);
-    if (problem) {
-      f.error(full, "entry", "path_escape", ["css"], `"${parsed.data.css}" has ${problem}`);
-      return undefined;
-    }
-  }
-  return parsed.data.css;
 }
 
 async function checkLocale(reader: PluginFolderReader, base: string, path: string, lang: string, topId: string, isBot: boolean, f: TreeFindings): Promise<void> {

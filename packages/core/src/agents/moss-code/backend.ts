@@ -119,7 +119,7 @@ export interface MossCodeDeps {
 
 /** The ACP agent on one end of an in-memory pipe, as the process `AcpAgentSession` drives: lines cross on a microtask,
  *  so neither side re-enters the other. It has no pid: there is no process to bind a bridge token to. */
-function inMemoryAgent(serve: (write: (line: string) => void) => AcpAgentServer): AgentProcess {
+function inMemoryAgent(serve: (write: (line: string) => void) => AcpAgentServer, heard?: (line: string) => void): AgentProcess {
   const encoder = new TextEncoder();
   let onData: ((chunk: Uint8Array) => void) | undefined;
   const early: Uint8Array[] = [];
@@ -133,7 +133,10 @@ function inMemoryAgent(serve: (write: (line: string) => void) => AcpAgentServer)
   return {
     pid: 0,
     exited,
-    write: (line) => queueMicrotask(() => server.feed(line)),
+    write: (line) => queueMicrotask(() => {
+      heard?.(line);
+      server.feed(line);
+    }),
     onData: (fn) => {
       onData = fn;
       for (const b of early.splice(0)) fn(b);
@@ -272,16 +275,19 @@ export class MossCodeBackend implements AgentBackend {
     if (!bridge) throw new ContractError("refused", "MOSS's coding agent needs its in-process bridge");
     // The session's own pause (the manager's, with another computer's forwarded switch for an agent run for it). With
     // no gate at all it fails closed, as lane A's backend does (`CLOSED_GATE`): the core always hands one.
-    const { query, options, abort, bridgeCalls } = await this.#agentParts(spec, bridge, spec.pause ?? deps.pause ?? CLOSED_GATE);
+    // Its context, as a bot's turn reports it: the runtime's own count of the last request's whole prompt, told to MOSS's
+    // ACP client as ACP's `usage_update` (`used`) before the turn's end, as any agent that reports it does.
+    const usage = contextUpdates();
+    const { query, options, abort, bridgeCalls } = await this.#agentParts(spec, bridge, spec.pause ?? deps.pause ?? CLOSED_GATE, usage.report);
     const wire = deps.wire?.(spec.sessionId) ?? {};
     const proc = inMemoryAgent((write) => serveAcpAgent({
       query,
       options: options as unknown as Record<string, unknown>,
       agentInfo: { name: MOSS_CODE_ID, title: "MOSS's coding agent", version: SDK_VERSION },
-      write,
+      write: usage.writer(write),
       newId: () => randomUUID(),
       ...(deps.log ? { log: deps.log } : {}),
-    }));
+    }), usage.heard);
     void proc.exited.then(() => abort.abort());
     const readOnly = spec.readOnly === true;
     return AcpAgentSession.open({
@@ -320,19 +326,23 @@ export class MossCodeBackend implements AgentBackend {
   async serve(spec: CodeAgentServeSpec, out: (line: string) => void): Promise<CodeAgentServed> {
     const deps = this.#deps;
     // The user's own session: the bots' pause doesn't hold it (an open gate, never none: with none a session fails closed).
-    const { query, options, abort } = await this.#agentParts(spec, undefined, { mayAct: () => true });
+    const usage = contextUpdates();
+    const { query, options, abort } = await this.#agentParts(spec, undefined, { mayAct: () => true }, usage.report);
     const server = serveAcpAgent({
       query,
       options: options as unknown as Record<string, unknown>,
       agentInfo: { name: MOSS_CODE_ID, title: "MOSS's coding agent", version: SDK_VERSION },
-      write: (line) => queueMicrotask(() => out(line.endsWith("\n") ? line.slice(0, -1) : line)),
+      write: usage.writer((line) => queueMicrotask(() => out(line.endsWith("\n") ? line.slice(0, -1) : line))),
       newId: () => randomUUID(),
       ...(deps.log ? { log: deps.log } : {}),
     });
     const ended = server.ended.then(() => abort.abort());
     return {
       // The server reads a stream: each line goes with its newline.
-      feed: (line) => queueMicrotask(() => server.feed(`${line}\n`)),
+      feed: (line) => queueMicrotask(() => {
+        usage.heard(line);
+        server.feed(`${line}\n`);
+      }),
       ended,
       close: async () => {
         await server.close();
@@ -343,7 +353,7 @@ export class MossCodeBackend implements AgentBackend {
 
   /** What `start` and `serve` share: the session's query on the embedded runtime and its options (the coding tools,
    *  the fence's sandbox and deny rules, the pause and the fence's hooks), checked and filled. */
-  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence"> & Partial<Pick<AcpStartSpec, "bot" | "level">>, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController; bridgeCalls: Map<string, BridgeCall> }> {
+  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence"> & Partial<Pick<AcpStartSpec, "bot" | "level">>, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate, onContext?: (tokens: number) => void): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController; bridgeCalls: Map<string, BridgeCall> }> {
     const deps = this.#deps;
     // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
     if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
@@ -455,7 +465,8 @@ export class MossCodeBackend implements AgentBackend {
         return answer;
       };
       const q = run({ prompt: args.prompt, options: { ...o, mcpServers: servers as Options["mcpServers"], canUseTool } }) as unknown as AcpQuery;
-      return stoppingTasksWhilePaused(q, gate, abort.signal, deps.log);
+      const watched = stoppingTasksWhilePaused(q, gate, abort.signal, deps.log);
+      return onContext === undefined ? watched : reportingContext(watched, onContext);
     };
     return { query, options, abort, bridgeCalls };
   }
@@ -529,6 +540,61 @@ function stoppingTasksWhilePaused(q: AcpQuery, gate: AgentPauseGate | undefined,
             }
           } finally {
             unwatch();
+          }
+        })();
+      }
+      const v = Reflect.get(target, prop, recv) as unknown;
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
+}
+
+/** The ACP `usage_update` lines of one served agent: `report` (the runtime's context count at a turn's `result`) writes
+ *  one through the server's own writer, so it reaches the client before the prompt's answer (the server's pump answers
+ *  only after the result is handed on); `heard` and the writer learn the ACP session's id from the lines either side
+ *  sends. Nothing is said before the session is known, or for a count that isn't a whole positive number. */
+export function contextUpdates(): { report: (tokens: number) => void; writer: (write: (line: string) => void) => (line: string) => void; heard: (line: string) => void } {
+  let sessionId: string | undefined;
+  let send: ((line: string) => void) | undefined;
+  const learn = (line: string) => {
+    if (sessionId !== undefined || !line.includes('"sessionId"')) return;
+    try {
+      const m = JSON.parse(line) as { params?: { sessionId?: unknown }; result?: { sessionId?: unknown } };
+      const id = m.params?.sessionId ?? m.result?.sessionId;
+      if (typeof id === "string" && id !== "") sessionId = id;
+    } catch {
+      // Not a line to learn from.
+    }
+  };
+  return {
+    report: (tokens) => {
+      if (send === undefined || sessionId === undefined || !Number.isInteger(tokens) || tokens <= 0) return;
+      send(`${JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: { sessionId, update: { sessionUpdate: "usage_update", used: tokens } } })}\n`);
+    },
+    writer: (write) => {
+      send = write;
+      return (line) => {
+        learn(line);
+        write(line);
+      };
+    },
+    heard: learn,
+  };
+}
+
+/** The query, with each `result`'s `context_tokens` (the runtime's count of the last main-loop request's whole prompt,
+ *  cache included: what a bot's turn reports as its context) handed to `report` before the result goes on. */
+export function reportingContext(q: AcpQuery, report: (tokens: number) => void): AcpQuery {
+  return new Proxy(q, {
+    get(target, prop, recv) {
+      if (prop === Symbol.asyncIterator) {
+        return () => (async function* () {
+          for await (const m of target) {
+            const msg = m as { type?: unknown; context_tokens?: unknown };
+            if (msg?.type === "result" && typeof msg.context_tokens === "number") {
+              try { report(msg.context_tokens); } catch { /* a report never stops the agent */ }
+            }
+            yield m;
           }
         })();
       }

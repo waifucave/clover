@@ -2,7 +2,8 @@
 // diff panel, and a bot's slim column, draw. Each serves what the core already knows, read only, nothing new kept:
 // - `session.diff`: the changes in the session's folder (`diff.ts`), when the folder is on this computer.
 // - `session.outputs`: the files the session delivered to its outputs folder (`<home>/outputs/<session>`), names only.
-// - `session.context`: its last turn's measured prompt (`turn_completed.contextTokens`) against its model's window.
+// - `session.context`: its last turn's measured prompt (`turn_completed.contextTokens`) against its model's window; for an
+//   agent, the context its agent reported (an agent that reports none: `{ reported: false }`, said as such, never nothing).
 // - `session.connectors`: how many plugin MCP servers it gets, and how many of their plugins wait for a sign-in.
 // The roles and the capability are the other session reads' (`conversation.read`); the server applies them first. A
 // plugin's own connection (a `layer`) also needs `files` for `session.diff`, since the diff carries the folder's file
@@ -87,8 +88,11 @@ export function sessionPanelMethods(deps: SessionPanelDeps): Record<string, Meth
 
     [M.sessionContext.name]: handler(M.sessionContext, async ({ id }) => {
       const v = viewOf(id);
+      // An agent's context is what its agent reports: one that reports none is said to, whatever its model's window.
+      const agent = v.kind === "coding" || v.kind === "agent";
+      const unknown = agent ? { reported: false as const } : null;
       const window = v.model === undefined ? undefined : deps.contextWindowOf?.(v.model);
-      if (window === undefined || window <= 0) return null;
+      if (window === undefined || window <= 0) return unknown;
       // Back from the end, a page at a time, for the last turn whose prompt was measured.
       const length = deps.length(id);
       for (let end = length; end > 0 && length - end < CONTEXT_SCAN_RECORDS; end -= CONTEXT_SCAN_STEP) {
@@ -101,7 +105,7 @@ export function sessionPanelMethods(deps: SessionPanelDeps): Record<string, Meth
           if (typeof tokens === "number" && Number.isInteger(tokens) && tokens > 0) return { used: Math.min(1, tokens / window), tokens, window };
         }
       }
-      return null;
+      return unknown;
     }),
 
     [M.sessionConnectors.name]: handler(M.sessionConnectors, async ({ id }) => {
