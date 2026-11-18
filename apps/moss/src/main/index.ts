@@ -11,11 +11,11 @@ import { fileURLToPath } from "node:url";
 import { BotFace as ProtocolBotFace, compareReleases, CORE_EVENT_NOTIFICATION, ReleaseChangedEvent, TOOL_AVAILABILITIES, type MossHelloResult, type ToolAvailability } from "@waifucave/moss-protocol";
 import { adoptHomeEngine, cliLauncher, installEngineCopy, startEngineThroughOs } from "@waifucave/moss-app-release/engine-launch";
 import { createRelease, type ReleaseNotice } from "@waifucave/moss-app-release/release";
-import { MOSS_APP_FEED_PREFIX, startUpdater, type Updater } from "@waifucave/moss-app-release/updater";
-import { daemonEndpoint, type DaemonClient } from "./client";
+import { InstallGate, MOSS_APP_FEED_PREFIX, startUpdater, type Updater } from "@waifucave/moss-app-release/updater";
+import { daemonEndpoint, dial, type DaemonClient } from "./client";
 import { bundlePathOf, carriesHost, writeOwnRecord } from "./install-record";
 import { EngineConnection, locateEngine, tokenPath, type ConnectionState } from "./connection";
-import { asksAgain, releaseBanner, releaseChoice } from "./release";
+import { asksAgain, mossInstallGateDeps, releaseBanner, releaseChoice } from "./release";
 import { MossEngine, routineEditOf } from "./engine";
 import { tellQuit, windowsClosedQuits } from "./quit";
 import type { BotEdit } from "../shared/view";
@@ -121,7 +121,31 @@ function readRelease(): string {
 const bundledEngine = locateEngine({ env: devOverrides ? process.env : {}, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
 let installedEngine: string | undefined;
 let updater: Updater | undefined;
-let updateReady: string | undefined;
+/** When MOSS's downloaded update installs: at the engine's first idle moment, the engine (and the host) stopped first
+ *  (release.ts `mossInstallGateDeps`); never at the person's Quit. */
+const installs = new InstallGate(mossInstallGateDeps({
+  client: () => connection.client,
+  stopApp: () => { presence.stop(); connection.stop(); },
+  engineGone: async () => {
+    const until = Date.now() + 15_000;
+    while (Date.now() < until) {
+      const c = await dial(daemonEndpoint(home), 500);
+      if (c === undefined) return;
+      c.close();
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    log("updater: the engine was still answering after 15 s; installing anyway");
+  },
+  install: (relaunch) => updater?.install(relaunch) ?? false,
+  recover: (relaunch, why) => {
+    log(`updater: ${why}; ${relaunch ? "starting again" : "quitting"}`);
+    if (relaunch) app.relaunch();
+    app.exit(relaunch ? 0 : 1);
+  },
+  after: (ms, fn) => { setTimeout(fn, ms); },
+  every: (ms, fn) => { const t = setInterval(fn, ms); return () => clearInterval(t); },
+  log: (line) => log(line),
+}));
 /** Starts the engine through the OS as MOSS Code does (`startEngineThroughOs`): registers the login item only when none is
  *  installed (one the person turned off stays off), then `autostart start`. A test build never does. */
 async function startEngine(): Promise<boolean> {
@@ -935,8 +959,7 @@ if (!app.requestSingleInstanceLock()) {
       void tellQuit({ client: connection.client, engineAsked: connection.engineStopped, log }).finally(() => {
         presence.stop();
         connection.stop();
-        // A downloaded update installs now, without starting MOSS again (the person quit it).
-        if (updateReady !== undefined && updater?.install(false) === true) { log(`updater: installing ${updateReady} at the person's Quit`); return; }
+        installs.stop();
         app.quit();
       });
       return;
@@ -966,14 +989,14 @@ if (!app.requestSingleInstanceLock()) {
       else { installedEngine = placed.binary; log(`release: the engine starts from the home's copy (release ${placed.release}${placed.reregistered ? ", the login item re-registered from it" : ""})`); }
     }
     // MOSS's own updates: its own update files of the same release (`moss-<channel>-mac.yml`), packaged builds only, never a
-    // headless or test run (no network from those). A downloaded update installs at the person's Quit: quitting MOSS stops no
-    // work, and the next MOSS, newer than the engine, brings its engine in when nothing is mid-work.
+    // headless or test run (no network from those). A downloaded update installs through the idle gate (`installs`), which
+    // stops the engine and the host first, since MOSS's bundle may be the one the host runs from.
     if (app.isPackaged && !headless && !(typeof __MOSS_TEST_BUILD__ === "string")) {
       void startUpdater({
         packaged: true, resourcesPath: process.resourcesPath, feedPrefix: MOSS_APP_FEED_PREFIX, log,
         onReady: (version) => {
-          updateReady = version;
-          new Notification({ title: "A MOSS update is ready", body: `MOSS ${version} installs when you quit MOSS.` }).show();
+          new Notification({ title: "A MOSS update is ready", body: `MOSS ${version} installs as soon as your bots are between tasks, and MOSS opens again.` }).show();
+          void installs.downloaded(version);
         },
       }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
     }

@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { BringWatch, createRelease, type ReleaseNotice } from "@waifucave/moss-app-release/release";
 import { EngineConnection, type ConnectionState } from "../src/main/connection";
 import { daemonEndpoint } from "../src/main/client";
-import { asksAgain, releaseBanner, releaseChoice } from "../src/main/release";
+import { InstallGate } from "@waifucave/moss-app-release/updater";
+import { asksAgain, mossInstallGateDeps, releaseBanner, releaseChoice } from "../src/main/release";
 import { startFakeEngine, type FakeEngine } from "./fake-engine/engine";
 
 const homes: string[] = [];
@@ -182,5 +183,56 @@ describe("the words and the choices", () => {
   test("BringWatch is the apps' one class (MOSS and MOSS Code import it from the shared package)", async () => {
     const desktop = await import("../../desktop/src/main/release");
     expect(desktop.BringWatch).toBe(BringWatch);
+  });
+});
+
+describe("MOSS's own update installs through the idle gate (it may be the bundle the host runs from)", () => {
+  test("a downloaded update waits while the engine is busy, then asks the engine, leaves, waits for it to go, and installs with relaunch", async () => {
+    const h = home();
+    let idle = false;
+    const e = await startFakeEngine({ home: h, release: "0.124.0", updateIdle: () => idle });
+    engines.push(e);
+    const m = mossOn(h, "0.124.0");
+    await m.connection.start();
+    expect(m.connection.state.kind).toBe("connected");
+    const steps: string[] = [];
+    const installs = new InstallGate(mossInstallGateDeps({
+      client: () => m.connection.client,
+      stopApp: () => { steps.push("stop"); m.connection.stop(); },
+      engineGone: async () => { steps.push("engine gone"); },
+      install: (relaunch) => { steps.push(`install relaunch=${relaunch}`); return true; },
+      recover: (_r, why) => steps.push(`recover ${why}`),
+      after: () => {},
+      every: () => () => {},
+      log: () => {},
+    }));
+    await installs.downloaded("0.125.0");
+    // Busy: nothing installs, nothing stops; the engine was only asked.
+    expect(steps).toEqual([]);
+    expect(e.calls().map((c) => c.method).filter((x) => x.startsWith("update.") || x === "pair.exiting")).toEqual(["update.status"]);
+    idle = true;
+    await installs.check();
+    expect(e.calls().map((c) => c.method).filter((x) => x.startsWith("update.") || x === "pair.exiting")).toEqual(["update.status", "update.status", "update.apply", "pair.exiting"]);
+    expect(e.calls().find((c) => c.method === "pair.exiting")?.params).toEqual({ reason: "update" });
+    expect(steps).toEqual(["stop", "engine gone", "install relaunch=true"]);
+  });
+
+  test("an engine that refuses the update's exit (busy again) keeps MOSS connected, and nothing installs", async () => {
+    const h = home();
+    let n = 0;
+    // Idle for the status and the apply, busy by the exit.
+    const e = await startFakeEngine({ home: h, release: "0.124.0", updateIdle: () => ++n <= 2 });
+    engines.push(e);
+    const m = mossOn(h, "0.124.0");
+    await m.connection.start();
+    const steps: string[] = [];
+    const installs = new InstallGate(mossInstallGateDeps({
+      client: () => m.connection.client, stopApp: () => steps.push("stop"), engineGone: async () => {}, install: () => { steps.push("install"); return true; },
+      recover: () => {}, after: () => {}, every: () => () => {}, log: () => {},
+    }));
+    await installs.downloaded("0.125.0");
+    expect(steps).toEqual([]);
+    expect(m.connection.state.kind).toBe("connected");
+    m.connection.stop();
   });
 });

@@ -42,6 +42,8 @@ export interface FakeEngineOptions {
   /** The engine's release: a hello naming an older one is refused as behind, a newer one is served the release door only
    *  (`ahead`, as the real engine's hello is). Default: the hello's own. */
   release?: string;
+  /** Whether the engine is idle for an update (`update.status`, `update.apply`, `pair.exiting {update}`); default idle. */
+  updateIdle?: () => boolean;
   /** What `release.bring` answers (default: `waiting`, or `switching` with `now`). */
   bring?: (p: { release: string; bundlePath: string; now?: boolean }) => "waiting" | "switching";
   /** A PNG for the live picture's frames; none: no picture. */
@@ -218,6 +220,15 @@ export async function startFakeEngine(o: FakeEngineOptions): Promise<FakeEngine>
     if (!c.authed) throw new RpcError(-32002, "say hello first");
     // An app ahead of the engine: the release door and nothing else (the real engine's rule, RELEASE_DOOR_METHODS).
     if (c.ahead === true && !(RELEASE_DOOR_METHODS as readonly string[]).includes(method)) throw new RpcError(MOSS_ERR.RELEASE_REFUSED, `${method}: an app ahead of the engine has the release door only`);
+    if (method === "update.status") {
+      const idle = o.updateIdle?.() ?? true;
+      return { idle, busy: idle ? [] : ["a turn"] };
+    }
+    if (method === "update.apply") return { at: (o.updateIdle?.() ?? true) ? "now" : "when-idle" };
+    if (method === "pair.exiting") {
+      if ((params as { reason?: string }).reason === "update" && !(o.updateIdle?.() ?? true)) throw new RpcError(-32010, "not idle for the update", { code: "update_not_ready" });
+      return { ok: true };
+    }
     if (method === "release.bring") {
       const p = params as { release: string; bundlePath: string; now?: boolean };
       return { state: o.bring?.(p) ?? (p.now === true ? "switching" : "waiting") };

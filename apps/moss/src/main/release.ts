@@ -13,6 +13,7 @@
 // MOSS's window (index.ts), since MOSS's window draws no button of the engine's.
 // Pure: the tests drive it under Bun.
 import type { ReleaseNotice } from "@waifucave/moss-app-release/release";
+import type { InstallGateDeps } from "@waifucave/moss-app-release/updater";
 import type { ConnectionKind } from "../shared/view";
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
@@ -56,4 +57,57 @@ export function asksAgain(before: ReleaseNotice | undefined, now: ReleaseNotice 
   if (a === undefined || a.act !== b.act) return true;
   const rel = (n: ReleaseNotice | undefined) => (n !== undefined && "incoming" in n ? n.incoming : undefined);
   return rel(before) !== rel(now);
+}
+
+// ---- When MOSS's own downloaded update installs (lane PK) ----
+// MOSS is often the bundle the background host runs from (the newest record), and §3.1 says an app update that replaces that
+// bundle stops the host first. So MOSS installs only as MOSS Code does, through the shared `InstallGate`: at the engine's
+// first idle moment (`update.status`), once the engine agrees (`update.apply` answers `now`) and takes MOSS's exit for the
+// update (`pair.exiting {update}`), after the engine (and with it the host) has gone; then MOSS relaunches, and the new MOSS
+// starts the engine again through the OS. Never at the person's Quit: quitting MOSS stops no work, so the host would still run.
+export interface MossInstallGateDeps {
+  /** MOSS's live connection to the engine, if any. */
+  client(): { request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T> } | undefined;
+  /** Stops MOSS's side (its connection and presence) before the install. */
+  stopApp(): void;
+  /** Resolves once nothing answers on the engine's endpoint (bounded). */
+  engineGone(): Promise<void>;
+  /** The updater's quit-and-install; false when it couldn't start. */
+  install(relaunch: boolean): boolean;
+  recover(relaunch: boolean, why: string): void;
+  after(ms: number, fn: () => void): void;
+  every(ms: number, fn: () => void): () => void;
+  log(line: string): void;
+}
+
+/** The shared gate's dependencies, from MOSS's connection. */
+export function mossInstallGateDeps(d: MossInstallGateDeps): InstallGateDeps {
+  return {
+    status: async () => {
+      const r = await d.client()?.request<{ idle?: unknown; busy?: unknown }>("update.status", {}, 5_000);
+      return typeof r?.idle === "boolean" ? { idle: r.idle, busy: Array.isArray(r.busy) ? r.busy.map(String) : [] } : undefined;
+    },
+    apply: async () => {
+      const r = await d.client()?.request<{ at?: unknown }>("update.apply", {}, 15_000);
+      return r?.at === "now" || r?.at === "when-idle" ? r.at : undefined;
+    },
+    exiting: async () => {
+      const c = d.client();
+      if (c === undefined) return false;
+      try {
+        await c.request("pair.exiting", { reason: "update" }, 3_000);
+        return true;
+      } catch (err) {
+        d.log(`updater: pair.exiting{update} refused or not answered: ${err instanceof Error ? err.message : String(err)}`);
+        return false;
+      }
+    },
+    stopApp: d.stopApp,
+    daemonGone: d.engineGone,
+    install: d.install,
+    recover: d.recover,
+    after: d.after,
+    every: d.every,
+    log: d.log,
+  };
 }
