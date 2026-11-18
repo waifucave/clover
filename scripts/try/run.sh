@@ -4,11 +4,13 @@
 #   scripts/try/run.sh <commit> <out folder> [--runs N] [--cold-start N] [--work <dir>]
 #
 #   1. the real build: `release/build.ts --sign --no-notarize` (Developer ID signed and hardened, never notarized or
-#      stapled, no update files, BUILD-COMMIT marked sign-only) into apps/desktop/out/sign-only. Its dmg, zip,
-#      BUILD-COMMIT and SHA256SUMS are copied to the out folder.
+#      stapled, no update files, BUILD-COMMIT marked sign-only) into apps/desktop/out/sign-only: BOTH apps of the release
+#      (lane PK), MOSS Code and MOSS. Their dmgs and zips (MOSS-Code-*, MOSS-*), BUILD-COMMIT and SHA256SUMS are copied to
+#      the out folder.
 #   2. its static checks (scripts/try/verify.sh --sign-only, on a copy) into <out>/verify.txt.
-#   3. the test twin: the same commit as `release/build.ts --test-build` (apps/desktop/out/test-build).
-#   4. the packaged acceptance on the twin, N times (default 3), each under the keychain-prompt watchdog
+#   3. the test twin: the same commit as `release/build.ts --test-build` (apps/desktop/out/test-build): both apps.
+#   4. the packaged acceptance on the twin pair (`--app` MOSS Code, `--moss-app` MOSS: the `moss` unit runs the packaged
+#      MOSS), N times (default 3), each under the keychain-prompt watchdog
 #      (scripts/try/watch.sh), and `--cold-start N` (default 5) once, into <out>/acceptance-test-twin/.
 #   5. with --upgrade-from <commit> (the previous try's): the owner's real path, an UPGRADE. That commit's test twin is
 #      built in a temporary worktree; it runs the full acceptance with --keep-state (its home, user home and test
@@ -128,6 +130,7 @@ fi
 # ── 3. the test twin ─────────────────────────────────────────────────────────────────────────────────────────────
 timed "twin build (test-marked, same commit)" build "$OUT/build-test-twin.log" --test-build || die "the test twin's build failed (build-test-twin.log)"
 mkdir -p "$WORK/twin" && ditto "$DESKTOP/out/test-build/mac-arm64/MOSS Code.app" "$WORK/twin/MOSS Code.app"
+ditto "$DESKTOP/out/test-build/mac-arm64/MOSS.app" "$WORK/twin/MOSS.app" || die "the test twin has no MOSS.app (one release builds both apps)"
 unregister_under "$DESKTOP/out/test-build"; rm -rf "$DESKTOP/out/test-build"
 
 # ── 4. the packaged acceptance ───────────────────────────────────────────────────────────────────────────────────
@@ -151,7 +154,7 @@ accept() {
 if [ -n "$RENDERS" ]; then mkdir -p "$RENDERS" && RENDERS="$(cd "$RENDERS" && pwd -P)" || die "--renders $RENDERS can't be made"; fi
 for ((k = 1; k <= RUNS; k++)); do
   [ "$PROMPT" = false ] || continue
-  if [ -n "$RENDERS" ]; then MOSS_ACCEPT_RENDERS="$RENDERS" accept "run$k"; else accept "run$k"; fi
+  if [ -n "$RENDERS" ]; then MOSS_ACCEPT_RENDERS="$RENDERS" accept "run$k" --moss-app "$WORK/twin/MOSS.app"; else accept "run$k" --moss-app "$WORK/twin/MOSS.app"; fi
 done
 [ "$COLD" -gt 0 ] && [ "$PROMPT" = false ] && accept "cold-start-x$COLD" --cold-start "$COLD"
 [ "$PROMPT" = false ] || echo "try: A KEYCHAIN PROMPT APPEARED: the run was killed and no further run started"
@@ -199,7 +202,7 @@ LEFT=$(( $(registered_under "$DESKTOP/out") + $(registered_under "$WORK") ))
 {
   if [ "$TWINONLY" = false ]; then
     echo "try $COMMIT; BUILD-COMMIT: $(head -1 "$OUT/BUILD-COMMIT-mac.txt") ($(sed -n 2p "$OUT/BUILD-COMMIT-mac.txt" | cut -d: -f1))"
-    (cd "$OUT" && for f in MOSS-*.dmg MOSS-*-mac.zip; do echo "  $f $(shasum -a 256 "$f" | cut -d' ' -f1)"; done)
+    (cd "$OUT" && for f in MOSS-Code-*.dmg MOSS-Code-*-mac.zip MOSS-[0-9]*.dmg MOSS-[0-9]*-mac.zip; do echo "  $f $(shasum -a 256 "$f" | cut -d' ' -f1)"; done)
     tail -1 "$OUT/verify.txt"
   else
     echo "try $COMMIT, --twin-only: no real build, no verify"

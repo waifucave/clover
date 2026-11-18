@@ -5,6 +5,8 @@
 //                                                                     desktop app built here, headless
 //   scripts/pinned-bun scripts/acceptance/run.ts --app <MOSS Code.app>   a packaged app (a try build): its own daemon
 //                                                                     and its own app, headless
+//   --moss-app <MOSS.app>  with --app: the same build's MOSS (lane PK; one release, two apps), which the `moss` unit runs
+//                       packaged; it must be the release --app is, or the run stops before it starts
 //   --keep-logs <dir>   copy the run's logs there before the temp folder goes (the logs hold no key)
 //   --verbose           print each step's progress
 //   --keep-state <dir>  leave the run's home, user home and throwaway keychain file in <dir> (new or empty; short, as
@@ -154,6 +156,8 @@ const flag = (name: string): string | undefined => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 const appBundle = flag("--app");
+/** The packaged MOSS of the same build (`--moss-app`, lane PK). */
+const mossBundle = flag("--moss-app");
 const keepLogs = flag("--keep-logs");
 const verbose = argv.includes("--verbose");
 // --cold-start N: only the cold-start step, N times (the app opens first, the daemon after). --cold-home <dir>: starts it on a copy
@@ -280,6 +284,18 @@ if (appBundle !== undefined && !existsSync(join(appBundle, "Contents", "Info.pli
   process.exit(2);
 }
 const target = appBundle === undefined ? "source" : "packaged";
+// The packaged pair is one release (R4): MOSS is the bots app, of the release MOSS Code is.
+if (mossBundle !== undefined) {
+  const plistOf = (b: string) => { try { return readFileSync(join(b, "Contents", "Info.plist"), "utf8"); } catch { return undefined; } };
+  const str = (xml: string | undefined, key: string) => (xml === undefined ? undefined : new RegExp(`<key>${key}</key>\\s*<string>([^<]+)</string>`).exec(xml)?.[1]);
+  const m = plistOf(mossBundle), c = appBundle === undefined ? undefined : plistOf(appBundle);
+  const problem = appBundle === undefined ? "--moss-app goes with --app (a packaged run of the same build)"
+    : m === undefined ? `${mossBundle} isn't an app bundle`
+    : !/^com\.waifucave\.moss(\.dev)?$/.test(str(m, "CFBundleIdentifier") ?? "") ? `${mossBundle} isn't MOSS (its identifier is ${str(m, "CFBundleIdentifier") ?? "none"})`
+    : str(m, "CFBundleShortVersionString") !== str(c, "CFBundleShortVersionString") ? `MOSS is ${str(m, "CFBundleShortVersionString") ?? "?"} and MOSS Code ${str(c, "CFBundleShortVersionString") ?? "?"}: one release ships both apps, so a packaged run takes a pair of one build`
+    : undefined;
+  if (problem !== undefined) { console.error(`acceptance: ${problem}`); process.exit(2); }
+}
 const bundleId = appBundle === undefined ? undefined : /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(readFileSync(join(appBundle, "Contents", "Info.plist"), "utf8"))?.[1];
 const profile: "dev" | "dist" = target === "source" || (bundleId ?? "").endsWith(".dev") ? "dev" : "dist";
 /** The state an earlier --keep-state run left (an upgrade). */
@@ -3432,9 +3448,13 @@ async function main(): Promise<void> {
 }
 
 /** MOSS built from this checkout as a test build (apps/moss/scripts/build.ts --test-build: its acceptance seams compiled
- *  in), once a run; and its Electron. Never from a packaged bundle: MOSS has none yet. */
+ *  in), once a run; and its Electron. A packaged run takes the build's own test-marked MOSS (`--moss-app`, lane PK). */
 let mossBuilt = false;
 function mossApp(): { exe: string; args: string[] } {
+  if (target === "packaged") {
+    if (mossBundle === undefined) throw new Error("a packaged run takes MOSS with --moss-app <MOSS.app> (the try passes its build's)");
+    return packagedApp(mossBundle);
+  }
   if (!noBuild && !mossBuilt) {
     console.error("acceptance: building apps/moss from this checkout (a test build)");
     const heavy = join(REPO, "scripts", "heavy");
@@ -3460,15 +3480,22 @@ async function helloApp(name: string, extra: Record<string, unknown>): Promise<{
   clients.push(d.client);
   return d;
 }
-/** The moss unit's own connection: MOSS's surface, so nothing of MOSS Code's says hello on its home. */
-const mossDriver = () => helloApp("moss-acceptance", { surface: "moss" });
+/** The moss unit's own connection: MOSS's surface, so nothing of MOSS Code's says hello on its home. A packaged core takes no
+ *  `app` hello from the run (its caller check wants the signed program): there the run drives as the CLI, as the packaged
+ *  chain does (`appDriver`). */
+const mossDriver = async () => {
+  if (target === "source") return await helloApp("moss-acceptance", { surface: "moss" });
+  const d = await hello(join(home, "run", "core.sock"), "cli", harnessToken(), "moss-acceptance", MOSS_PROTOCOL_VERSION);
+  clients.push(d.client);
+  return d;
+};
 
 /** The `moss` unit: a daemon with the records as the bots' source (`fresh`: the home is new, so this is its first
  *  daemon; otherwise the one before is ended first and the home's bots move), the dummy key, then MOSS over it and its
  *  rows (moss-step.ts). Source target only. */
 async function mossRun(fresh: boolean): Promise<void> {
-  if (target !== "source") {
-    for (const name of MOSS_STEPS) record(stepNumber(FULL_STEPS, name), "BLOCKED", "the moss unit runs MOSS from source: a packaged run has no MOSS bundle yet");
+  if (target !== "source" && mossBundle === undefined) {
+    for (const name of MOSS_STEPS) record(stepNumber(FULL_STEPS, name), "BLOCKED", "a packaged run takes the build's MOSS with --moss-app <MOSS.app> (scripts/try/run.sh passes it)");
     return;
   }
   let daemon: { proc: ChildProcess; log: string } | undefined;
@@ -3564,7 +3591,7 @@ async function orchestrate(): Promise<void> {
     try { sourceApp(); if (plan.some((ids) => ids.includes("moss"))) mossApp(); } catch (err) { for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed"); return; }
   }
   const builtAt = Date.now();
-  const base = [import.meta.path, ...(appBundle !== undefined ? ["--app", appBundle] : []), "--no-build", ...(verbose ? ["--verbose"] : []), ...(skipWebTurns ? ["--skip-web-turns"] : []), ...(pressing ? [] : ["--no-press"])];
+  const base = [import.meta.path, ...(appBundle !== undefined ? ["--app", appBundle] : []), ...(mossBundle !== undefined ? ["--moss-app", mossBundle] : []), "--no-build", ...(verbose ? ["--verbose"] : []), ...(skipWebTurns ? ["--skip-web-turns"] : []), ...(pressing ? [] : ["--no-press"])];
   const loads: number[] = [];
   const sampler = setInterval(() => loads.push(loadavg()[0]!), 5_000);
   const shard = (label: string, ids: readonly UnitId[]): Promise<{ shard: string; rows: TimedRow[]; code: number; seconds: number }> => new Promise((done) => {
@@ -3723,7 +3750,7 @@ async function ownHomeRun(id: UnitId): Promise<void> {
   const out = join(root, `rows-own-${id}.json`);
   const log = join(logs, `own-home-${id}.log`);
   const fd = openSync(log, "a");
-  const args = [import.meta.path, ...(appBundle !== undefined ? ["--app", appBundle] : []), "--no-build", ...(verbose ? ["--verbose"] : []), ...(skipWebTurns ? ["--skip-web-turns"] : []), ...(pressing ? [] : ["--no-press"]), "--units", id, "--rows-out", out, ...(keepLogs !== undefined ? ["--keep-logs", join(keepLogs, `own-${id}`)] : [])];
+  const args = [import.meta.path, ...(appBundle !== undefined ? ["--app", appBundle] : []), ...(mossBundle !== undefined ? ["--moss-app", mossBundle] : []), "--no-build", ...(verbose ? ["--verbose"] : []), ...(skipWebTurns ? ["--skip-web-turns"] : []), ...(pressing ? [] : ["--no-press"]), "--units", id, "--rows-out", out, ...(keepLogs !== undefined ? ["--keep-logs", join(keepLogs, `own-${id}`)] : [])];
   const child = spawn(process.execPath, args, { cwd: REPO, env: process.env, stdio: ["ignore", fd, fd], detached: true });
   children.push({ name: `own-home-${id}`, proc: child });
   const code = await new Promise<number>((done) => child.on("exit", (c, s) => done(c ?? (s === null ? 1 : 128))));
