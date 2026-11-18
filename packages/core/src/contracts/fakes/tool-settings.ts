@@ -46,11 +46,13 @@ export class FakeToolSettings implements ToolSettings {
     }
   }
 
-  exposure(server: string, tool: string, to: { agent?: { toolSearch: boolean } }): ToolExposure {
+  exposure(server: string, tool: string, to: { agent?: { toolSearch: boolean; holdsBack?: boolean } }): ToolExposure {
     const r = this.row(server, tool);
     if (!r || r.availability === "off") return "hidden";
     if (r.availability === "always") return "preloaded";
-    return to.agent?.toolSearch === true ? "agent-search" : "glossary";
+    if (to.agent?.toolSearch === true) return "agent-search";
+    // An agent that can neither search nor take a changed list has nothing to hold the tool back with: it is offered from the start.
+    return to.agent?.holdsBack === false ? "preloaded" : "glossary";
   }
 
   watch(fn: (row: ToolSettingRow) => void): Unsubscribe {

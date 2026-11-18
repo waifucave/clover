@@ -99,7 +99,7 @@ export const S = {
   toolAsk: "Ask",
   toolDeny: "Always block",
   toolsAll: "All tools",
-  toolsOfferedDetail: "Off hides a tool from every bot and agent and refuses any call to it. On demand lets them find it when they need it. Always on gives it to them from the start. This is separate from what a tool may do: a tool set to Always block is still offered, and is refused when it is called.",
+  toolsOfferedDetail: "Off hides a tool from every bot and agent and refuses any call to it. On demand holds it back until they look for it: MOSS Code's own agent loads it through Glossary. An agent with a tool search of its own, such as Claude Code, decides with that search. An agent with neither is given it from the start. Always on gives it to them from the start. This is separate from what a tool may do: a tool set to Always block is still offered, and is refused when it is called.",
   toolOffered: "Offered to bots and agents",
   toolOff: "Off",
   toolOnDemand: "On demand",

@@ -31,10 +31,13 @@ import { partsServe } from "../../runtime-sdk/turn-loop/only-backends";
 import { PluginMcp, localMcpRunner } from "../../runtime-sdk/turn-loop/plugin-mcp";
 import { CLAUDE_PLUGIN_FOLDER, placeInClaudeCode } from "../claude-code/placement";
 import { toolOffMessage } from "../../approvals/tool-settings";
-import { agentBackendOf, agentGlossary, agentPluginParts, agentPluginTools, agentToolJudge, BRIDGE_TOOL_NAME_MAX, bridgeShortName, bridgeToolsOf, type AgentPluginReachDeps } from "../plugin-reach";
+import { exposureOf } from "../exposure";
+import { MOSS_CODE_QUIRKS } from "../moss-code/backend";
+import { agentBackendOf, agentGlossary, bridgeNamesOf, agentPluginParts, agentPluginTools, agentToolJudge, BRIDGE_TOOL_NAME_MAX, bridgeShortName, bridgeToolsOf, type AgentPluginReachDeps } from "../plugin-reach";
 import type { BotMcpServer } from "../../runtime-sdk/turn-loop/servers";
 import type { AgentSessionFacts, BridgeToolSource } from "../bridge/tools";
 import type { PluginPartsSource } from "../placement";
+import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { waitFor, World, type WorldOptions } from "./world";
 
 setDefaultTimeout(60_000);
@@ -176,6 +179,7 @@ async function setup(o: WorldOptions & { parts?: boolean; long?: boolean; toolSe
   const w = (world = new World({
     ...o,
     watchTools: (fn) => { watchers.add(fn); return () => void watchers.delete(fn); },
+    glossary: (id, q, s) => agentGlossary(p.deps)(id, q, s),
     pluginTools: { ...(o.settle ? { settled: () => o.settle!() } : {}), tools: (id, s) => tools!.tools(id, s), instructions: (id, s) => tools!.instructions!(id, s), call: (id, c, ctx) => tools!.call(id, c, ctx) },
     ...(o.parts ? {
       pluginParts: { parts: (id, s) => parts!.parts(id, s) },
@@ -551,9 +555,46 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     expect(kinds(r.sessionId)).toEqual(["tool"]);
   });
 
+  test("on demand in a moss-code session: the tool is refused by name before a load, and a Glossary load makes the next call run, under the name the request lists", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "automatic", availability: () => "on-demand" });
+    const send = (id: string, text: string, n: number) => w.host.sendUser(id, { text, device: "d".repeat(16), clientMessageId: `m-od-${n}`, sentAt: w.clock.now() });
+    const ends = (id: string) => w.host.history(id).filter((x) => x.type === "turn_ended").length;
+    // Before any load: called by its exact name, it does not run.
+    const r = await code(w, `mcp__${CODE_BRIDGE}__${short} {"n":1}`);
+    await waitFor(() => ends(r.sessionId) >= 1, "the first turn's end", 60_000);
+    expect(wire(w, r.transcript)).not.toContain(`${tool} ran with`);
+    expect(wire(w, r.transcript)).toContain("has not been loaded");
+    // The load: Glossary names the tool by its bridge name.
+    await send(r.sessionId, `CALL mcp__${CODE_BRIDGE}__Glossary {"load":${JSON.stringify(short)}}`, 2);
+    await waitFor(() => ends(r.sessionId) >= 2, "the load turn's end", 60_000);
+    // After it, the same name runs.
+    await send(r.sessionId, `CALL mcp__${CODE_BRIDGE}__${short} {"n":3}`, 3);
+    await waitFor(() => ends(r.sessionId) >= 3, "the call turn's end", 60_000);
+    const text = wire(w, r.transcript);
+    expect([text.includes(`${tool} ran with`), text.slice(text.lastIndexOf("has not been loaded") - 200, text.lastIndexOf("has not been loaded") + 80)]).toEqual([true, expect.anything()]);
+  });
+
+  test("on demand in a moss-code session, ONE turn: a Glossary load, then in the same turn the call by name runs the plugin", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "automatic", availability: () => "on-demand" });
+    // Two rounds of one turn: the model loads, then (its next step) calls what it loaded.
+    const r = await code(w, `mcp__${CODE_BRIDGE}__Glossary {"load":${JSON.stringify(short)}}\nCALL mcp__${CODE_BRIDGE}__${short} {"n":2}`);
+    await waitFor(() => w.host.history(r.sessionId).some((x) => x.type === "turn_ended"), "the turn's end", 60_000);
+    const text = wire(w, r.transcript);
+    expect([text.includes("has not been loaded"), text.includes(`${tool} ran with`)]).toEqual([false, true]);
+  });
+
+  test("a model loads a tool by the name its own list shows (mcp__<server>__<name>) as by the bridge's name, in one turn", async () => {
+    const { w } = await setup({ ...codeBackend(spawn), long: true, level: "automatic", availability: () => "on-demand" });
+    const r = await code(w, `mcp__${CODE_BRIDGE}__Glossary {"load":${JSON.stringify(`mcp__${CODE_BRIDGE}__${short}`)}}\nCALL mcp__${CODE_BRIDGE}__${short} {"n":2}`);
+    await waitFor(() => w.host.history(r.sessionId).some((x) => x.type === "turn_ended"), "the turn's end", 60_000);
+    const text = wire(w, r.transcript);
+    expect([text.includes("has not been loaded"), text.includes(`${tool} ran with`)]).toEqual([false, true]);
+  });
+
   test("a plugin enabled while the session runs: its tool is called in the next turn of the same session, and set off, the call after is not run", async () => {
     const off = new Set<string>();
-    const { w, p, changed } = await setup({ ...codeBackend(spawn), level: "automatic", availability: (_s, t) => (off.has(t) ? "off" : undefined) });
+    const { w, p, changed } = await setup({ ...codeBackend(spawn), level: "automatic", availability: (_s, t) => (off.has(t) ? "off" : "always") });
+    // (Always on: MOSS's own agent holds an on-demand tool back until it loads it, which the tests of the Glossary below cover.)
     // The plugin is not there when the session starts.
     await p.registry.setEnabled("toolbox", false);
     await p.mcp.refresh();
@@ -883,5 +924,186 @@ describe("Alpha's persona stays hers", () => {
       expect(g.results.filter((x) => String((x as { name: string }).name).startsWith("alpha"))).toEqual([]);
       expect(g.loaded).toEqual([{ name: "alpha:study-buddy", found: false }]);
     }
+  });
+});
+
+describe("on demand in an agent's session: how each kind of agent is given a tool the user set so", () => {
+  const quirksOf = (file: string): Parameters<typeof exposureOf>[0] => JSON.parse(readFileSync(join(import.meta.dir, "..", "..", "..", "..", "..", "plugins", "moss", "plugins", file, "quirks.json"), "utf8")).quirks;
+  const coding = (o: Partial<AgentSessionFacts> = {}) => facts({ backend: "agent-x", ...o });
+  const avail = (m: Map<string, "off" | "on-demand" | "always">) => (_s: string, t: string) => m.get(t);
+
+  test("each shipped agent gets one exposure, read from what its quirks say, never from its name", () => {
+    expect(exposureOf(MOSS_CODE_QUIRKS)).toBe("host-search");
+    expect(exposureOf(quirksOf("agent-claude-code"))).toBe("agent-search");
+    // No agent we ship besides those two declares a search of its own or a list that changes in a session.
+    for (const a of ["agent-codex", "agent-gemini", "agent-cursor", "agent-antigravity", "agent-grok", "agent-deepseek", "agent-devin", "agent-devin-cloud"]) expect([a, exposureOf(quirksOf(a))]).toEqual([a, "up-front"]);
+    // A search of its own wins over a list that changes; a list that changes (live, or next turn where it can be opened again) is `list`; next-turn with no honest resume is not.
+    const base = quirksOf("agent-codex");
+    const withMcp = (mcp: object, sessions?: object) => ({ ...base, mcp: { ...base.mcp, ...mcp }, sessions: { ...base.sessions, ...(sessions ?? {}) } }) as Parameters<typeof exposureOf>[0];
+    expect(exposureOf(withMcp({ toolListChanges: "live" }))).toBe("list");
+    expect(exposureOf(withMcp({ toolListChanges: "next-turn" }, { resume: { supported: true, replays: false } }))).toBe("list");
+    expect(exposureOf(withMcp({ toolListChanges: "next-turn" }, { load: { supported: false, replays: false }, resume: { supported: true, replays: true } }))).toBe("up-front");
+    expect(exposureOf(withMcp({ toolListChanges: "live", toolSearch: "own" }))).toBe("agent-search");
+  });
+
+  test("at the session's start each exposure lists the right thing: up front, the agent's own search and the host's all list the on-demand tool (flagged only when always on); a list that changes does not", async () => {
+    const { p } = await setup();
+    const tools = agentPluginTools(p.deps);
+    for (const exposure of ["up-front", "agent-search", "host-search"] as const) {
+      const listed = await tools.tools("s", coding({ exposure }));
+      expect([exposure, listed.map((t) => t.name).includes(TOOL), listed.find((t) => t.name === TOOL)?.preload === true]).toEqual([exposure, true, false]);
+    }
+    expect((await tools.tools("s", coding({ exposure: "list", loaded: new Set() }))).map((t) => t.name)).not.toContain(TOOL);
+    // Always on: listed and flagged up front for every kind, the list that changes included.
+    const on = await setup({ availability: avail(new Map([["toolbox", "always"]])) });
+    for (const exposure of ["up-front", "agent-search", "host-search", "list"] as const) {
+      const listed = await agentPluginTools(on.p.deps).tools("s", coding({ exposure, loaded: new Set() }));
+      expect([exposure, listed.find((t) => t.name === TOOL)?.preload === true]).toEqual([exposure, true]);
+    }
+  });
+
+  test("the bridge's Glossary is a bot's: it finds plugins and points as well as tools, skills and agents, and a load answers what a bot's does", async () => {
+    const { p } = await setup();
+    const glossary = agentGlossary(p.deps);
+    const found = await glossary("s", { query: ["toolbox", "kit"] }, coding({ exposure: "host-search" }));
+    const kinds = (found.results as { name: string; kind: string }[]).map((r) => `${r.kind}:${r.name}`);
+    expect(kinds).toEqual(expect.arrayContaining([`tool:${TOOL}`, "plugin:toolbox", "skill:kit:haiku"]));
+    // The same index as a bot's: the points the registry knows are searchable here too.
+    const points = p.registry.points().filter((pt) => pt.active);
+    if (points.length > 0) expect(((await glossary("s", { query: points[0]!.name }, coding())).results as { kind: string }[]).some((r) => r.kind === "point")).toBe(true);
+    // A tool: its schema, and it is the tool to load (by its bridge name).
+    const tool = await glossary("s", { load: TOOL }, coding());
+    expect(tool.load).toEqual([TOOL]);
+    expect((tool.loaded[0] as { kind: string; text: string }).kind).toBe("tool");
+    expect((tool.loaded[0] as { text: string }).text).toContain("Input schema:");
+    // A plugin by id: what it offers by the bridge's names, and its tools to load.
+    const plugin = await glossary("s", { load: "toolbox" }, coding());
+    expect(plugin.load).toEqual([TOOL]);
+    const text = (plugin.loaded[0] as { text: string }).text;
+    expect(text).toContain(TOOL);
+    expect(text).not.toContain("mcp__toolbox-tools__toolbox");
+    // A skill as before.
+    expect(((await glossary("s", { load: "kit:haiku" }, coding())).loaded[0] as { text: string }).text).toContain("five, seven, five");
+  });
+
+  test("a load reaches only what the session may use: an off tool, a plugin of another scope or backend, or an unknown name loads nothing", async () => {
+    const m = new Map<string, "off" | "on-demand" | "always">([["toolbox", "off"]]);
+    const { p } = await setup({ availability: avail(m) });
+    const glossary = agentGlossary(p.deps);
+    const g = await glossary("s", { load: [TOOL, "toolbox", "botsonly", "botsonly-tools__botsonly", "cconly", "mcp__toolbox-tools__toolbox", "nothing"] }, coding({ backend: "moss-code" }));
+    expect(g.load).toBeUndefined();
+    // The plugin itself is there to read about (it is running); none of its tools is, and nothing of the others.
+    expect(g.loaded).toEqual([TOOL, "toolbox", "botsonly", "botsonly-tools__botsonly", "cconly", "mcp__toolbox-tools__toolbox", "nothing"].map((name) => name === "toolbox" ? expect.objectContaining({ name, kind: "plugin" }) : expect.objectContaining({ name, found: false })));
+    expect(String((g.loaded[1] as { text: string }).text)).not.toContain("toolbox-tools__toolbox");
+    // The engine's own name for a tool a session may use loads nothing of another server either.
+    m.set("toolbox", "on-demand");
+    await p.mcp.refresh();
+    const ok = await glossary("s", { load: ["mcp__toolbox-tools__toolbox"] }, coding({ backend: "moss-code" }));
+    expect(ok.load).toBeUndefined();
+  });
+
+  test("a list that changes: a tool is held back until loaded, a call to it before is refused, after it runs, and it is judged as any tool (its card, deny)", async () => {
+    const { w, p } = await setup({ level: "ask" });
+    const tools = agentPluginTools(p.deps);
+    const loaded = new Set<string>();
+    const f = coding({ exposure: "list", loaded });
+    const ctx = { computer: "Studio", origin: "user" as const, session: f };
+    expect((await tools.tools("s", f)).map((t) => t.name)).not.toContain(TOOL);
+    const before = await tools.call("s", { callId: "c0", tool: TOOL, input: {} }, ctx);
+    expect(before).toMatchObject({ isError: true });
+    expect(JSON.stringify(before.content)).toContain("No tool named");
+    expect(w.approvals.cards()).toEqual([]);
+    // The load names it; the manager puts it in the set; now it is listed and the call is judged as a preloaded tool's is: a card at ask.
+    const g = await agentGlossary(p.deps)("s", { load: TOOL }, f);
+    for (const n of g.load ?? []) loaded.add(n);
+    expect((await tools.tools("s", f)).map((t) => t.name)).toContain(TOOL);
+    const running = tools.call("s", { callId: "c1", tool: TOOL, input: { n: 3 } }, ctx);
+    const card = await waitFor(() => w.approvals.cards().find((c) => c.kind === "tool"), "the tool's card");
+    expect(card.fields["what"]).toEqual({ type: "code", code: `mcp__${TOOL}` });
+    await approve(w, card.id, "approve");
+    expect(await running).toMatchObject({ isError: false });
+  });
+
+  test("through the manager: an agent whose list changes live holds the tool back at its start, and a Glossary load puts it on the list and tells the agent", async () => {
+    const live = { ...WELL_BEHAVED_QUIRKS, mcp: { ...WELL_BEHAVED_QUIRKS.mcp, toolListChanges: "live" as const } };
+    const { w } = await setup({ quirks: live, level: "automatic", script: [[{ say: "Ready." }]] });
+    const r = await asUser(w);
+    await waitFor(() => w.host.history(r.sessionId).some((x) => x.type === "turn_ended"), "the first turn", 30_000);
+    const bridge = w.manager.bridgeHandlers();
+    expect((await bridge.tools(r.sessionId)).tools.map((t) => t.name)).not.toContain(TOOL);
+    const g = await bridge.glossary(r.sessionId, { load: TOOL });
+    expect(g.load).toEqual([TOOL]);
+    expect(g.note).toContain("on your tool list now");
+    expect((await bridge.tools(r.sessionId)).tools.map((t) => t.name)).toContain(TOOL);
+    // The call is the plugins' own (judged as ever); and a tool no load named stays out for an agent with no list of changes.
+    const called = await bridge.call(r.sessionId, { callId: "c9", tool: TOOL, input: { n: 5 } });
+    expect(called.isError).toBe(false);
+  });
+
+  /** The sequence the checklist asks for, over a long session: the bridge's list is always the always-on tools and the loaded ones still allowed. */
+  test("a long session's sequence: on demand → loaded → off → on demand again → loaded again → plugin updated mid-conversation; the list equals always-on ∪ loaded-and-still-allowed at every step", async () => {
+    const m = new Map<string, "off" | "on-demand" | "always">();
+    const { p } = await setup({ availability: avail(m) });
+    const tools = agentPluginTools(p.deps);
+    const glossary = agentGlossary(p.deps);
+    const loaded = new Set<string>();
+    const f = coding({ exposure: "list", loaded });
+    const NEW = "toolbox-tools__extra";
+    const names = async () => (await tools.tools("s", f)).map((t) => t.name).filter((n) => n.startsWith("toolbox-tools__")).sort();
+    const load = async (n: string) => { for (const x of (await glossary("s", { load: n }, f)).load ?? []) loaded.add(x); };
+    const refresh = async () => { await p.mcp.refresh(); await p.mcp.settled(5_000); };
+    expect(await names()).toEqual([]);                       // on demand at start: held back
+    await load(TOOL);
+    expect(await names()).toEqual([TOOL]);                   // loaded
+    m.set("toolbox", "off"); await refresh();
+    expect(await names()).toEqual([]);                       // set off: gone, and no longer loaded
+    m.set("toolbox", "on-demand"); await refresh();
+    expect(await names()).toEqual([]);                       // on demand again: held back until loaded again
+    await load(TOOL);
+    expect(await names()).toEqual([TOOL]);                   // loaded again
+    hostTools.set("toolbox", ["toolbox", "extra"]);          // the plugin is updated (and approved again): a new tool, on demand
+    await refresh();
+    expect(await names()).toEqual([TOOL]);                   // the new one is held back; the loaded one stays
+    m.set("extra", "always"); await refresh();
+    expect(await names()).toEqual([NEW, TOOL].sort());       // always on: listed with no load
+    hostTools.set("toolbox", ["extra"]);                      // updated again: the tool it dropped leaves the list and is no longer loaded
+    await refresh();
+    expect(await names()).toEqual([NEW]);
+    expect(loaded.has(TOOL)).toBe(false);
+    hostTools.delete("toolbox"); m.delete("extra");
+    await refresh();
+    expect(await names()).toEqual([]);                       // back: held back again, needing its load
+  });
+});
+
+describe("one mapping between the engine's tool names and the bridge's", () => {
+  const rnd = (seed: number) => () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+  const pick = (r: () => number, from: string[]) => from[Math.floor(r() * from.length)]!;
+  const server = (name: string, tools: string[]): BotMcpServer => ({ server: name, plugin: name, tools: tools.map((t) => ({ name: t, inputSchema: { type: "object" }, load: "on-demand" as const })) }) as unknown as BotMcpServer;
+
+  test("property: a round trip returns the name, no two tools share a bridge name, and a hostile name never aliases another server's tool", () => {
+    const r = rnd(7);
+    const part = ["a", "b", "__", "_", "-", "c1", "long-plugin-name-here", "tool", "x__y", "mcp", "Z", "é", "a b"];
+    for (let round = 0; round < 300; round++) {
+      const servers = Array.from({ length: 1 + Math.floor(r() * 4) }, () => server(Array.from({ length: 1 + Math.floor(r() * 3) }, () => pick(r, part)).join(""), Array.from({ length: 1 + Math.floor(r() * 4) }, () => Array.from({ length: 1 + Math.floor(r() * 4) }, () => pick(r, part)).join(""))));
+      const listing = bridgeToolsOf(servers);
+      const map = bridgeNamesOf(listing);
+      const seen = new Set<string>();
+      for (const t of listing.values()) {
+        const engine = `mcp__${t.server.server}__${t.tool.name}`;
+        expect(map.toBridge(engine)).toBe(t.name);
+        expect(map.toEngine(t.name)).toBe(engine);
+        expect(seen.has(t.name)).toBe(false);
+        seen.add(t.name);
+        expect(t.name.length).toBeLessThanOrEqual(BRIDGE_TOOL_NAME_MAX);
+        expect(t.name).toMatch(/^[A-Za-z0-9_-]+$/);
+      }
+      // Every pair of (server, tool) that could be one name: neither is on the bridge.
+      const all = servers.flatMap((s) => s.tools.map((t) => ({ s: s.server, t: t.name })));
+      for (const x of all) for (const y of all) if ((x.s !== y.s || x.t !== y.t) && `${x.s}__${x.t}` === `${y.s}__${y.t}`) expect([map.toBridge(`mcp__${x.s}__${x.t}`), map.toBridge(`mcp__${y.s}__${y.t}`)]).toEqual([undefined, undefined]);
+    }
+    // The case named: `a` + `b__c` against `a__b` + `c`.
+    const both = bridgeNamesOf(bridgeToolsOf([server("a", ["b__c"]), server("a__b", ["c"])]));
+    expect(both.toBridge("mcp__a__b__c")).toBeUndefined();
   });
 });

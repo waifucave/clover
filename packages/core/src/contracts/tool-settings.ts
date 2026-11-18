@@ -12,7 +12,8 @@
 // * The two values are independent: `deny` still lists the tool (a call is refused with no card), `off` hides it.
 // * `exposure` is what a session gets: `off` is `hidden`; `always` is `preloaded`; `on-demand` is `glossary` (bots and
 //   MOSS's own agent, and an ACP agent with no tool search of its own, through the bridge's Glossary) or `agent-search`
-//   (an ACP agent's own tool search, when it has one).
+//   (an ACP agent's own tool search, when it has one). An agent with neither (`holdsBack: false`: no search, and a tool list
+//   that cannot change in a session) is given the tool `preloaded`: nothing can hold it back (agents/exposure.ts).
 import type { ToolAvailability } from "@waifucave/moss-protocol";
 import type { Unsubscribe } from "./common";
 
@@ -35,6 +36,6 @@ export interface ToolSettings {
   row(server: string, tool: string): ToolSettingRow | undefined;
   setAvailability(server: string, tool: string | undefined, availability: ToolAvailability): void;
   setPermission(server: string, tool: string | undefined, permission: ToolPermission): void;
-  exposure(server: string, tool: string, to: { agent?: { toolSearch: boolean } }): ToolExposure;
+  exposure(server: string, tool: string, to: { agent?: { toolSearch: boolean; holdsBack?: boolean } }): ToolExposure;
   watch(fn: (row: ToolSettingRow) => void): Unsubscribe;
 }

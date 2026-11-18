@@ -11,7 +11,7 @@
 import { MOSS_ERR } from "@waifucave/moss-protocol";
 import { bridgeMethodHandlers, MossRpcError, type BridgeGate, type MossConn, type MossHandler } from "../../ipc/moss";
 import type { BridgeTokens } from "./tokens";
-import type { BridgeToolDef } from "./tools";
+import type { BridgeToolDef, GlossaryAnswer } from "./tools";
 
 /** What the bridge's methods do, for one session; the agent manager provides it. */
 export interface BridgeHandlers {
@@ -20,7 +20,7 @@ export interface BridgeHandlers {
   tools(sessionId: string): Promise<{ tools: BridgeToolDef[]; instructions: string }>;
   call(sessionId: string, call: { callId: string; tool: string; input: unknown }): Promise<{ content: unknown[]; isError: boolean }>;
   sendMessage(sessionId: string, m: { text: string; to?: string }): Promise<void>;
-  glossary(sessionId: string, q: { query?: string | string[]; load?: string | string[] }): Promise<{ results: unknown[]; loaded: unknown[] }>;
+  glossary(sessionId: string, q: { query?: string | string[]; load?: string | string[] }): Promise<GlossaryAnswer>;
   /** The session's live bridge connection, given on each request it makes (the first is its `bridge.tools`): where the
    *  manager sends `bridge.toolsChanged`. Only a connection that passed the live-token check is ever given. */
   linked?(sessionId: string, link: { connId: number; notify(method: string, params: unknown): void }): void;

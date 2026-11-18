@@ -52,6 +52,21 @@ export interface AgentSessionFacts {
   computer: string;
   /** The agent's working folder, its real path. */
   root: string;
+  /** How this agent is given an on-demand tool (`agents/exposure.ts`); absent: up front, as every tool was. */
+  exposure?: import("../exposure").AgentExposure;
+  /** The bridge names of the on-demand tools this session has loaded (`exposure: "list"`): the manager's own set, so a load
+   *  made after the facts were read is in it. */
+  loaded?: Set<string>;
+}
+
+/** What the bridge's `Glossary` answers: its findings and what each load gave, and the tools it loaded by their bridge names
+ *  (`load`: put on the list of an agent whose list can change; named to MOSS's own agent's runtime, which loads them). */
+export interface GlossaryAnswer {
+  results: unknown[];
+  loaded: unknown[];
+  load?: string[];
+  /** One plain line for the agent after the findings (what a load did on its list). */
+  note?: string;
 }
 
 export interface BridgeToolSource {
@@ -73,6 +88,7 @@ export const NO_PLUGIN_TOOLS: BridgeToolSource = {
 
 export const SEND_MESSAGE: BridgeToolDef = {
   name: "SendMessage",
+  preload: true,
   description: [
     "Send a message to the bot that started you (or, with `to`, to another of its sessions) while you keep working.",
     "Use it for progress the bot should know now, or a question it must answer before you can go on; the message",
@@ -92,10 +108,11 @@ export const SEND_MESSAGE: BridgeToolDef = {
 
 export const GLOSSARY: BridgeToolDef = {
   name: "Glossary",
+  preload: true,
   description: [
-    "Look up the skills, tools and agents MOSS's plugins offer you, and load one by name.",
-    "`query` searches by words and returns names with one-line descriptions; `load` returns a skill's full",
-    "instructions or a tool's input schema. Use it before a task a skill may cover.",
+    "Find and load what MOSS's plugins offer you: tools (some aren't loaded until you load them), skills, agent definitions, plugins and extension points.",
+    "`query` searches by words and returns names with one-line descriptions; `load` loads by exact name: a tool becomes callable and answers its input schema,",
+    "a plugin answers what it offers and makes its tools callable, a skill returns its full instructions. Use it before a task a skill may cover.",
   ].join(" "),
   inputSchema: {
     type: "object",
@@ -110,7 +127,7 @@ export const GLOSSARY: BridgeToolDef = {
 /** What `Glossary` answers on the bridge: its findings as JSON, and each loaded skill's words after it as they are, in
  *  the skill's `<skill name="…">` tag (as a bot's Glossary gives them), never escaped inside a JSON string. With no
  *  skill loaded, the JSON alone, as before. */
-export function glossaryResultText(r: { results: unknown[]; loaded: unknown[] }): string {
+export function glossaryResultText(r: { results: unknown[]; loaded: unknown[]; note?: string }): string {
   const skills: string[] = [];
   const loaded = r.loaded.map((item) => {
     const it = item as { kind?: unknown; text?: unknown };
@@ -121,8 +138,10 @@ export function glossaryResultText(r: { results: unknown[]; loaded: unknown[] })
     }
     return item;
   });
-  const json = JSON.stringify({ ...r, loaded }, null, 2);
-  return skills.length === 0 ? json : [json, ...skills].join("\n\n");
+  const { note, ...rest } = r;
+  const json = JSON.stringify({ ...rest, loaded }, null, 2);
+  const out = skills.length === 0 ? json : [json, ...skills].join("\n\n");
+  return note === undefined ? out : `${out}\n\n${note}`;
 }
 
 /** The bridge's own tools for a bot's agent. */

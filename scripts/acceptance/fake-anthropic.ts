@@ -361,6 +361,8 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         tool: callLine[1]!,
         input: (() => { try { return JSON.parse(callLine[2]!) as Record<string, unknown>; } catch { return undefined; } })(),
       });
+      const forceLine = /ACCEPTANCE-FORCE (\S+) (\{.*\})\s*$/s.exec(said);
+      const forceLoadLine = /ACCEPTANCE-FORCE-LOADED (\S+) (\S+) (\{.*\})\s*$/s.exec(said);
       const callTool = callWant === undefined ? undefined : record.tools.find((t) => toolNamed(t, callWant.tool));
       const callInput = callWant?.input;
       const callDeferred = callTool !== undefined && (body.tools ?? []).some((t) => t.name === callTool && (t as { defer_loading?: unknown }).defer_loading === true);
@@ -376,6 +378,20 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
         content = shell;
         stop = shell[0]!.type === "tool_use" ? "tool_use" : "end_turn";
         if (shell[0]!.type === "tool_use") record.toolUse = String(shell[0]!.name);
+      } else if (forceLoadLine !== null && glossary !== undefined && !usedSince(glossary)) {
+        // `ACCEPTANCE-FORCE-LOADED <full name> <bridge name> <json>`: the model loads the tool through Glossary (the bridge's name), and in ITS NEXT STEP OF THE SAME TURN calls it by its full name.
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: glossary, input: { load: forceLoadLine[2]! } }];
+        stop = "tool_use";
+        record.toolUse = glossary;
+      } else if (forceLoadLine !== null && !usedSince(forceLoadLine[1]!)) {
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: forceLoadLine[1]!, input: (() => { try { return JSON.parse(forceLoadLine[3]!) as Record<string, unknown>; } catch { return {}; } })() }];
+        stop = "tool_use";
+        record.toolUse = forceLoadLine[1]!;
+      } else if (forceLine !== null && result === undefined) {
+        // A call by an exact name the request does not offer (`ACCEPTANCE-FORCE <full name> <json>`): what a model that guessed the name would send.
+        content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: forceLine[1]!, input: (() => { try { return JSON.parse(forceLine[2]!) as Record<string, unknown>; } catch { return {}; } })() }];
+        stop = "tool_use";
+        record.toolUse = forceLine[1]!;
       } else if (callWant !== undefined && (callTool === undefined || callInput === undefined) && result === undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-NO-CALL-TOOL ${callWant.tool}${callInput === undefined ? " (its input isn't JSON)" : ""}` }];
         stop = "end_turn";
