@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ACCEPTANCE_BUILD_LABEL, RELEASE_BUILD_BANNER, RELEASE_BUILD_DEFINE_NAME, RELEASE_BUILD_LABEL, releaseBuildDefine, releaseMarkerProblems, TEST_ONLY_APP_STRINGS, TEST_ONLY_CORE_STRINGS, asarFiles, asarMarkerProblems, carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
+import { ACCEPTANCE_BUILD_LABEL, RELEASE_BUILD_BANNER, RELEASE_BUILD_DEFINE_NAME, RELEASE_BUILD_LABEL, releaseBuildDefine, releaseMarkerProblems, TEST_ONLY_APP_STRINGS, TEST_ONLY_MOSS_APP_STRINGS, TEST_ONLY_CORE_STRINGS, asarFiles, asarMarkerProblems, carriesTestBuild, TEST_BUILD_LABEL, TEST_BUILD_SENTINEL, testBuildDefine, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
 import { verifySealedCore } from "./verify-sealed-core";
 
 const utf8 = (s: string) => new TextEncoder().encode(s);
@@ -81,7 +81,7 @@ describe("the test-marked build's marker (scripts/test-build.ts)", () => {
     expect(asarMarkerProblems("app.asar", test, true)).toEqual([]);
     expect(asarMarkerProblems("app.asar", real, true)).toHaveLength(2);
     // The test-only app paths: a real build's code reads neither variable, nor carries the acceptance build's label.
-    for (const t of TEST_ONLY_APP_STRINGS) {
+    for (const t of [...TEST_ONLY_APP_STRINGS, ...TEST_ONLY_MOSS_APP_STRINGS]) {
       // Each name is found.
       expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js": `process.env.${t}` }), false)).toContain(`app.asar's code reads ${t}: a real build's test-only path must be compiled out`);
       expect(asarMarkerProblems("app.asar", packAsar({ "out/main/index.js.map": `process.env.${t}` }), false)).toEqual([]);
