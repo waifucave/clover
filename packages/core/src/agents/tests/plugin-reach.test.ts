@@ -699,7 +699,7 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     expect(shown).toEqual([bashCard, bashCard, bashCard]);
   });
 
-  test("the bridge's own tools (Glossary; SendMessage for a bot's agent) still ask on agent-permission", async () => {
+  test("the bridge's own tools (Glossary; SendMessage for a bot's agent) raise no card, in a user's coding session or a bot's agent, at the ask level; a tool that needs one still does", async () => {
     let finished = 0;
     const answers: string[] = [];
     const query = askingQuery(async (call) => {
@@ -713,9 +713,9 @@ describeWithEmbeddedRuntime("a plugin's tool from a coding session on MOSS's cod
     let agentId: string | undefined;
     void w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: MOSS_CODE_ID, root: "home/Studio/project1", title: "Report", model: CODE_MODEL, prompt: "anything" }).then((r) => { agentId = r.sessionId; });
     const agent = await denyUntil(w, () => agentId, () => finished === 2);
-    expect(answers).toEqual(["plugin: deny", "plugin: deny"]);
-    expect([user.length, agent.length]).toEqual([1, 1]);
-    expect([user[0]!.startsWith("agent-permission: "), agent[0]!.startsWith("agent-permission: ")]).toEqual([true, true]);
+    // Rule 2 lets them through (the engine's own tools for the session, as for a bot): allowed, and no card for either.
+    expect(answers).toEqual(["plugin: allow", "plugin: allow"]);
+    expect([user.length, agent.length]).toEqual([0, 0]);
   });
 
   test("a tool that isn't a plugin's on the bridge still asks on the agent-permission card", async () => {

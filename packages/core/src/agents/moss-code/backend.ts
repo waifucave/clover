@@ -34,7 +34,6 @@ import { UserSelections } from "../acp/selections";
 import { AcpAgentSession, type AgentProcess } from "../acp/session";
 import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
-import { bridgeOwnTools } from "../bridge/tools";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 import { runtimeDenyForms } from "../../fence/runtime-deny-forms";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
@@ -434,10 +433,9 @@ export class MossCodeBackend implements AgentBackend {
     await fillProvider(deps.fillProvider ? { provider: (m, o) => deps.fillProvider!(m, o) } : {}, options);
     const run = deps.query ?? sdkQuery;
     // The calls being asked about now that are a plugin's tool on the session's bridge (tool call id → its bridge name and
-    // the runtime's tool name), for the ACP request's server and tool: never one of the bridge's own tools, which ask as before.
+    // the runtime's tool name), for the ACP request's server and tool: a plugin's tool, and the bridge's own.
     const bridgeCalls = new Map<string, BridgeCall>();
     const bridgePrefix = bridge === undefined ? undefined : `mcp__${bridge.name}__`;
-    const ownTools = new Set(bridgeOwnTools(spec.bot).map((t) => t.name));
     // The ACP agent's query, with the session's in-process bridge in place of the stdio entry it was handed (served to
     // an outside client, no MCP server at all), and an allow that came while the pause came on waiting for the resume.
     const query: AcpQueryFn = (args) => {
@@ -451,8 +449,11 @@ export class MossCodeBackend implements AgentBackend {
         const runLater = botChildWriteRefusal(spec as AcpStartSpec, deps.botChild, name, input as Record<string, unknown>);
         if (runLater !== undefined) return { behavior: "deny", message: runLater };
         const onBridge = bridgePrefix !== undefined && name.startsWith(bridgePrefix) ? name.slice(bridgePrefix.length) : undefined;
-        const pluginTool = onBridge !== undefined && onBridge !== "" && !ownTools.has(onBridge) && opts.toolUseID ? onBridge : undefined;
-        const call: BridgeCall | undefined = pluginTool === undefined ? undefined : { tool: pluginTool, name };
+        // Every tool of the session's bridge names its server and tool in the ACP request: a plugin's (judged where the
+        // bridge runs it) and the bridge's own (Glossary, SendMessage), which the broker lets through (rule 2) as the
+        // engine's cardless tools are for a bot.
+        const bridgeTool = onBridge !== undefined && onBridge !== "" && opts.toolUseID ? onBridge : undefined;
+        const call: BridgeCall | undefined = bridgeTool === undefined ? undefined : { tool: bridgeTool, name };
         if (call !== undefined) bridgeCalls.set(opts.toolUseID, call);
         let answer: Awaited<ReturnType<CanUseTool>>;
         try {
