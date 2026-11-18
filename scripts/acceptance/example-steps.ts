@@ -177,32 +177,22 @@ export async function installFromPage(ctx: ExampleCtx, folder: string, id: strin
   const { cdp, rpc } = ctx;
   const name = folder.split("/").pop()!;
   // The window's document can load again (a layer just installed) between the page opening and the picker's answer, which drops the
-  // Add tab: the whole of it is done again, up to three times, until the chosen folder's name stands. The same load can take the Install
-  // press itself (`cards` row 57, three times: the core held no record, no folder and no card for the plugin when the wait ended, and the
-  // page was back on an idle Add tab): a press that brings no install within 20 s is made again, from the pick, up to three times in all.
-  for (let press = 0; ; press++) {
-    for (let attempt = 0; ; attempt++) {
-      ctx.pick(folder);
-      await pluginsPage(cdp, "Add");
-      await clickTree(cdp, "Choose a folder…", "button", "Choose a folder");
-      const chosen = await until(`the chosen folder's name (${name})`, 15_000, async () => {
-        for (const d of await treeDocs(cdp)) if (String(await cdp.evaluate(d.session, "document.body.innerText").catch(() => "")).includes(`Chosen: ${name}`)) return true;
-        return undefined;
-      }).then(() => true, (err) => { if (attempt >= 2) throw err; return false; });
-      if (chosen) break;
-    }
-    await clickTree(cdp, `Install ${name}`, "button", `Install ${name}`);
-    const began = await until(`the install of ${id} to begin`, 20_000, async () => {
-      if ((await stateOf(rpc, id)) !== undefined) return true;
-      return (await rpc.request<{ cards: Card[] }>("card.list")).cards.some((c) => c.kind === "plugin-ok" && c.pluginId === id) ? true : undefined;
-    }).then(() => true, () => false);
-    if (began) break;
-    if (press >= 2) break; // the wait for the card below says what the core held
-    console.log(`acceptance: installFromPage: the Install press for ${id} brought no install in 20 s; pressing it again from the pick (press ${press + 2} of 3)`);
+  // Add tab: the whole of it is done again, up to three times, until the chosen folder's name stands.
+  for (let attempt = 0; ; attempt++) {
+    ctx.pick(folder);
+    await pluginsPage(cdp, "Add");
+    await clickTree(cdp, "Choose a folder…", "button", "Choose a folder");
+    const chosen = await until(`the chosen folder's name (${name})`, 15_000, async () => {
+      for (const d of await treeDocs(cdp)) if (String(await cdp.evaluate(d.session, "document.body.innerText").catch(() => "")).includes(`Chosen: ${name}`)) return true;
+      return undefined;
+    }).then(() => true, (err) => { if (attempt >= 2) throw err; return false; });
+    if (chosen) break;
   }
+  await clickTree(cdp, `Install ${name}`, "button", `Install ${name}`);
   const card = await until(`${id}'s OK card`, 60_000, async () => (await rpc.request<{ cards: Card[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === id)).catch(async (err: unknown) => {
-    // A card that never came (run 44210338753, `cards` row 57, twice: the second plugin's OK card arrived only after the wait had ended): say what the
-    // core held at the end of the wait, so the next one names its cause: the plugin's record, whether its folder is in the plugins folder, the cards.
+    // A card that never came (`cards` row 57: run 44210338753 twice, run 44219354846 once): say what the core held at the end of the wait, which names
+    // the cause: the plugin's record, whether its folder is in the plugins folder, the pending cards. In run 44219354846 it held none of the three: the
+    // press on Install never reached the core, a lost press on the Plugins page (not a slow install), which is not retried here.
     const said = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).then((r) => `plugin.get says ${r.plugin.state}`, (e: unknown) => `plugin.get: ${String((e as Error).message).slice(0, 120)}`);
     const cards = await rpc.request<{ cards: Card[] }>("card.list").then((r) => r.cards.map((c) => `${c.kind}${c.pluginId ? `:${c.pluginId}` : ""}`).join(", ") || "none", () => "card.list failed");
     throw new Error(`${(err as Error).message} (at the end of the wait: ${said}; its folder ${existsSync(join(ctx.home, "plugins", id)) ? "is" : "is not"} in the plugins folder; pending cards: ${cards})`);
