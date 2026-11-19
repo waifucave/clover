@@ -59,13 +59,16 @@ export interface ReleaseServiceDeps {
   log?(line: string): void;
 }
 
+/** What the wait names to the person: the turns (the sessions' `turns` and the bots' `bot-turns`, as `host/engine.ts`'s midWorkOf
+ *  counts them) and the agents (`agents` and `workflows`), each source's count added up. */
 function waitingFor(busy: readonly string[]): { turns: number; agents: number } {
-  const n = (name: string): number => {
-    const e = busy.find((b) => b.startsWith(`${name}:`));
-    const v = e === undefined ? 0 : Number(e.slice(name.length + 1));
-    return Number.isFinite(v) ? v : 1;
-  };
-  return { turns: n("turns"), agents: n("agents") };
+  const sum = (names: readonly string[]): number => busy.reduce((total, b) => {
+    const at = b.lastIndexOf(":");
+    if (at < 0 || !names.includes(b.slice(0, at))) return total;
+    const v = Number(b.slice(at + 1));
+    return total + (Number.isFinite(v) ? v : 1);
+  }, 0);
+  return { turns: sum(["turns", "bot-turns"]), agents: sum(["agents", "workflows"]) };
 }
 
 export class ReleaseService {

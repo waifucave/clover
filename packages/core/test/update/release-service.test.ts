@@ -48,6 +48,9 @@ function setup(o: { engine?: string; platform?: NodeJS.Platform; check?: (p: str
   let turns = 0, agents = 0;
   gate.register({ name: "turns", count: () => turns });
   gate.register({ name: "agents", count: () => agents });
+  // The bots' own turns are a source of their own (bots/wiring.ts `bot-turns`).
+  let botTurns = 0;
+  gate.register({ name: "bot-turns", count: () => botTurns });
   const events: ReleaseEventBody[] = [];
   const calls: string[] = [];
   const host = { stop: (r: string) => calls.push(`host.stop:${r}`), boot: async () => { calls.push("host.boot"); } };
@@ -60,7 +63,7 @@ function setup(o: { engine?: string; platform?: NodeJS.Platform; check?: (p: str
     home_.record({ program, bundlePath: dir, release, build: "9", carries: { engine: true, host: true } });
     return dir;
   };
-  return { home, home_, gate, service, events, calls, app, setBusy: (t: number, a = 0) => { turns = t; agents = a; } };
+  return { home, home_, gate, service, events, calls, app, setBusy: (t: number, a = 0, b = 0) => { turns = t; agents = a; botTurns = b; } };
 }
 const until = async (f: () => boolean) => { for (let i = 0; i < 400 && !f(); i++) await new Promise((r) => setTimeout(r, 5)); expect(f()).toBe(true); };
 
@@ -81,6 +84,15 @@ describe("release.bring", () => {
     expect(readFileSync(engineBinaryPath(t.home), "utf8")).toContain("moss 1.1.0");
     expect(readFileSync(join(t.home, "bin", "plugins", "x", "a.txt"), "utf8")).toBe("tree");
     expect(t.gate.committed).toBe(true);
+  });
+
+  test("a bot's turn is a running turn to the wait's words (the `bot-turns` source), added to the sessions'", async () => {
+    const t = setup();
+    const dir = t.app("1.1.0");
+    t.setBusy(1, 0, 2);
+    await t.service.bring("code", { release: "1.1.0", bundlePath: dir });
+    await until(() => t.events.some((e) => e.waitingFor?.turns === 3));
+    expect(t.calls).toEqual([]);
   });
 
   test("an agent running holds it too; \"switch now\" doesn't wait", async () => {

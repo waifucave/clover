@@ -3609,7 +3609,13 @@ async function botRecordsStep(fresh: boolean): Promise<void> {
     await c.request("session.attach", { id: made.mainSession });
     const hello = await turn(c, made.mainSession, "hello Nova");
     if (!hello.events.some((e) => e.type === "assistant_message")) fail(`Nova's turn got no reply (stop ${stopOf(hello.events)}; ${errorsOf(hello.events).join("; ") || "no error"})`);
-    const summary = await until("Nova's last line in bot.summaries", 30_000, async () => (await c!.request<{ summaries: { id: string; last?: { from: string }; unread: boolean }[] }>("bot.summaries", {})).summaries.find((x) => x.id === made.id && x.last?.from === "bot"), 500).catch(() => undefined);
+    const summary = await until("Nova's last line in bot.summaries", 30_000, async () => (await c!.request<{ summaries: { id: string; last?: { from: string }; unread: boolean }[] }>("bot.summaries", {})).summaries.find((x) => x.id === made.id && x.last?.from === "bot"), 500).catch(async () => {
+      // What the list said instead and what Nova's conversation ends with, for the row's failure to name its own cause.
+      const listed = (await c!.request<{ summaries: { id: string; last?: { from: string; text?: string; at?: number } }[] }>("bot.summaries", {}).catch(() => ({ summaries: [] }))).summaries;
+      const tail = (await c!.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: made.id, limit: 12 }).catch(() => ({ events: [] }))).events.map((e) => `${e.type}${typeof e.text === "string" ? `:${JSON.stringify(e.text.slice(0, 40))}` : ""}`).join(" ");
+      say(`bot.summaries for ${made.id}: ${JSON.stringify(listed.find((x) => x.id === made.id) ?? "not listed").slice(0, 300)} (${listed.length} bots listed); its conversation ends: ${tail}`);
+      return undefined;
+    });
     const making = await turn(c, made.mainSession, callText("MakeBot", { name: "Scout", instructions: "You are Scout, made by Nova." }), 150_000);
     const after = (await c.request<{ bots: View[] }>("bot.records", {})).bots;
     const child = after.find((b) => b.id === "scout");
@@ -5807,7 +5813,12 @@ async function releaseSteps(app: { exe: string; args: string[] }): Promise<void>
       await until("the turn to be running (the fake asked)", 60_000, () => (fake!.requests.slice(asked).some((r) => r.lastUserText.includes(tag)) ? true : undefined), 200);
       const logFrom = readLog(appLog).length;
       a = await openApp("release-ahead", { MOSS_TEST_APP_RELEASE: APP_NEWER, MOSS_TEST_APP_BUNDLE: standIn });
-      const text = await until(`the window to say it waits for work to finish`, 90_000, async () => { const t = await windowText(a!.cdp); return t.includes(RELEASE_WORDS.waiting) && t.includes(RELEASE_WORDS.switchNow) ? t : undefined; }, 500);
+      const text = await until(`the window to say it waits for work to finish`, 90_000, async () => { const t = await windowText(a!.cdp); return t.includes(RELEASE_WORDS.waiting) && t.includes(RELEASE_WORDS.switchNow) ? t : undefined; }, 500).catch(async (err: unknown) => {
+        // What the window said and what the engine counted, for a failure to name its own cause.
+        const read = (await windowText(a!.cdp)).replace(/\s+/g, " ").slice(0, 300);
+        const busy = JSON.stringify(await c.request("update.status", {}).catch((e: unknown) => String(e))).slice(0, 200);
+        return fail(`${why(err)} (the window read "${read}"; the app's log: ${readLog(appLog).slice(logFrom).split("\n").filter((l) => /release:|pair:/.test(l)).slice(-6).join(" | ").slice(0, 400)}; update.status: ${busy})`);
+      });
       if (!/1 running/.test(text)) fail(`the window doesn't say one turn is running: ${text.slice(0, 200)}`);
       // The person's "Switch now", pressed in the window.
       const doc = (await a.cdp.documents()).find((d) => d.url.startsWith("moss-core://app/") && !d.url.includes("?"))!;

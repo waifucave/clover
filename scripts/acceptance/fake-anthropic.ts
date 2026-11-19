@@ -238,6 +238,9 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
+    // No idle timeout: a held turn (ACCEPTANCE-SLOW) sends nothing for up to two minutes, and Bun's default of 10 s cuts such a request
+    // (the turn ends in an error the release row, which opens an app after the turn started, never sees as running).
+    idleTimeout: 0,
     async fetch(req) {
       const path = new URL(req.url).pathname;
       const key = req.headers.get("x-api-key");
