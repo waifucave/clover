@@ -3609,13 +3609,28 @@ async function botRecordsStep(fresh: boolean): Promise<void> {
     await c.request("session.attach", { id: made.mainSession });
     const hello = await turn(c, made.mainSession, "hello Nova");
     if (!hello.events.some((e) => e.type === "assistant_message")) fail(`Nova's turn got no reply (stop ${stopOf(hello.events)}; ${errorsOf(hello.events).join("; ") || "no error"})`);
-    const summary = await until("Nova's last line in bot.summaries", 30_000, async () => (await c!.request<{ summaries: { id: string; last?: { from: string }; unread: boolean }[] }>("bot.summaries", {})).summaries.find((x) => x.id === made.id && x.last?.from === "bot"), 500).catch(async () => {
-      // What the list said instead and what Nova's conversation ends with, for the row's failure to name its own cause.
-      const listed = (await c!.request<{ summaries: { id: string; last?: { from: string; text?: string; at?: number } }[] }>("bot.summaries", {}).catch(() => ({ summaries: [] }))).summaries;
-      const tail = (await c!.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: made.id, limit: 12 }).catch(() => ({ events: [] }))).events.map((e) => `${e.type}${typeof e.text === "string" ? `:${JSON.stringify(e.text.slice(0, 40))}` : ""}`).join(" ");
-      say(`bot.summaries for ${made.id}: ${JSON.stringify(listed.find((x) => x.id === made.id) ?? "not listed").slice(0, 300)} (${listed.length} bots listed); its conversation ends: ${tail}`);
-      return undefined;
-    });
+    // `bot.summaries` is the app's, a remote's and a layer's (protocol/src/bots.ts); a packaged core takes this run as the CLI only (its
+    // caller check wants the signed app), which may not call it. There the row reads what the list is made of, the conversation's last
+    // line with text, over `bot.conversation` (the CLI may); the MOSS rows draw the list itself, over the signed MOSS.
+    let summaryNote = "";
+    let summary: { id: string; last?: { from: string }; unread: boolean } | undefined;
+    const refused = await c.request("bot.summaries", {}).then(() => false, (err: unknown) => /may not call/.test(why(err)));
+    if (refused) {
+      summary = await until("Nova's last line in her conversation", 30_000, async () => {
+        const events = (await c!.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: made.id, limit: 50 })).events;
+        const lastWithText = [...events].reverse().find((e) => typeof e.text === "string" && e.text.trim() !== "" && ["user_message", "assistant_message", "bot_message", "agent_message", "agent_finished", "routine_result", "note", "plugin_message"].includes(e.type));
+        return lastWithText?.type === "assistant_message" ? { id: made.id, last: { from: "bot" }, unread: false } : undefined;
+      }, 500).catch(() => undefined);
+      summaryNote = " (read from the conversation: this run is the CLI on a packaged core, which may not call bot.summaries)";
+    } else {
+      summary = await until("Nova's last line in bot.summaries", 30_000, async () => (await c!.request<{ summaries: { id: string; last?: { from: string }; unread: boolean }[] }>("bot.summaries", {})).summaries.find((x) => x.id === made.id && x.last?.from === "bot"), 500).catch(async () => {
+        // What the list said instead and what Nova's conversation ends with, for the row's failure to name its own cause.
+        const listed = (await c!.request<{ summaries: { id: string; last?: { from: string; text?: string; at?: number } }[] }>("bot.summaries", {}).catch(() => ({ summaries: [] }))).summaries;
+        const tail = (await c!.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: made.id, limit: 12 }).catch(() => ({ events: [] }))).events.map((e) => `${e.type}${typeof e.text === "string" ? `:${JSON.stringify(e.text.slice(0, 40))}` : ""}`).join(" ");
+        say(`bot.summaries for ${made.id}: ${JSON.stringify(listed.find((x) => x.id === made.id) ?? "not listed").slice(0, 300)} (${listed.length} bots listed); its conversation ends: ${tail}`);
+        return undefined;
+      });
+    }
     const making = await turn(c, made.mainSession, callText("MakeBot", { name: "Scout", instructions: "You are Scout, made by Nova." }), 150_000);
     const after = (await c.request<{ bots: View[] }>("bot.records", {})).bots;
     const child = after.find((b) => b.id === "scout");
@@ -3630,7 +3645,7 @@ async function botRecordsStep(fresh: boolean): Promise<void> {
     await c.request("bot.restore", { id: made.id });
     const page = await c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: made.id, limit: 200 });
     if (!page.events.some((e) => e.type === "user_message" && e.text === "hello Nova")) fail(`${made.id}'s conversation came back without its first message`);
-    record(n, "PASS", `the move: ${journal.bots.map((b) => `${b.id} ${b.outcome}`).join(", ")}; ${made.id} made by bot.create answered its turn and is listed (last line from the bot, ${summary?.unread === true ? "unread" : "read"}); MakeBot raised ${making.cards.join("; ")} and made scout (madeBy ${made.id}); ${made.id} archived by bot.remove and back by bot.restore with its conversation (${page.events.length} events)`);
+    record(n, "PASS", `the move: ${journal.bots.map((b) => `${b.id} ${b.outcome}`).join(", ")}; ${made.id} made by bot.create answered its turn and is listed (last line from the bot, ${summary?.unread === true ? "unread" : "read"}${summaryNote}); MakeBot raised ${making.cards.join("; ")} and made scout (madeBy ${made.id}); ${made.id} archived by bot.remove and back by bot.restore with its conversation (${page.events.length} events)`);
   } catch (err) {
     record(n, statusOf(err), why(err));
   } finally {
