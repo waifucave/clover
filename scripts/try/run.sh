@@ -23,6 +23,10 @@
 #   --twin-only skips 1 and 2 (no Developer ID release-shaped build, no verify): the twins and their runs only, for an
 #   upgrade pair or a re-run of the acceptance. `--runs 0 --cold-start 0 --upgrade-from <commit> --twin-only` is the
 #   upgrade pair alone.
+#   --keep-twin <dir> copies this commit's test twin pair (MOSS Code.app, MOSS.app) into <dir> before the try's own
+#   copies go: for re-running packaged units against it (scripts/try/watch.sh "<dir>/MOSS Code.app" <checkout> <run
+#   folder> --units <ids> --moss-app "<dir>/MOSS.app") without building again. Whoever keeps it unregisters and
+#   deletes it when done: a test-marked app must not stay on a Mac that gets the real one installed.
 #   6. the per-step table (each run's status per step; a step the script can't drive on a packaged app is shown NOT
 #      RUN ON PACKAGED with its reason), the upgrade pair's two tables, and how long each stage took, printed and kept
 #      in <out>/SUMMARY.txt.
@@ -36,9 +40,9 @@
 # carry the time, so a try's minutes can be read off its log. The out folder must be new or empty.
 set -u
 ARGV=("$@")
-usage() { echo "usage: scripts/try/run.sh <commit> <out folder> [--runs N] [--cold-start N] [--upgrade-from <previous try's commit>] [--twin-only] [--renders <dir>] [--work <dir>]" >&2; exit 2; }
+usage() { echo "usage: scripts/try/run.sh <commit> <out folder> [--runs N] [--cold-start N] [--upgrade-from <previous try's commit>] [--twin-only] [--keep-twin <dir>] [--renders <dir>] [--work <dir>]" >&2; exit 2; }
 [ $# -ge 2 ] || usage
-COMMIT="$1"; OUT="$2"; shift 2; RUNS=3; COLD=5; WORK=""; UPFROM=""; TWINONLY=false; RENDERS=""
+COMMIT="$1"; OUT="$2"; shift 2; RUNS=3; COLD=5; WORK=""; UPFROM=""; TWINONLY=false; RENDERS=""; KEEPTWIN=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --runs) RUNS="${2:-}"; shift 2 ;;
@@ -47,6 +51,7 @@ while [ $# -gt 0 ]; do
     --work) WORK="${2:-}"; shift 2 ;;
     --renders) RENDERS="${2:-}"; [ -n "$RENDERS" ] || usage; shift 2 ;;
     --twin-only) TWINONLY=true; shift ;;
+    --keep-twin) KEEPTWIN="${2:-}"; [ -n "$KEEPTWIN" ] || usage; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -132,6 +137,10 @@ timed "twin build (test-marked, same commit)" build "$OUT/build-test-twin.log" -
 mkdir -p "$WORK/twin" && ditto "$DESKTOP/out/test-build/mac-arm64/MOSS Code.app" "$WORK/twin/MOSS Code.app"
 ditto "$DESKTOP/out/test-build/mac-arm64/MOSS.app" "$WORK/twin/MOSS.app" || die "the test twin has no MOSS.app (one release builds both apps)"
 unregister_under "$DESKTOP/out/test-build"; rm -rf "$DESKTOP/out/test-build"
+if [ -n "$KEEPTWIN" ]; then
+  mkdir -p "$KEEPTWIN" && ditto "$WORK/twin/MOSS Code.app" "$KEEPTWIN/MOSS Code.app" && ditto "$WORK/twin/MOSS.app" "$KEEPTWIN/MOSS.app" || die "the twin pair couldn't be kept in $KEEPTWIN"
+  echo "try: the test twin pair kept in $KEEPTWIN (unregister and delete it when done)"
+fi
 
 # ── 4. the packaged acceptance ───────────────────────────────────────────────────────────────────────────────────
 ACC="$OUT/acceptance-test-twin"; mkdir -p "$ACC"; COLS=(); PROMPT=false

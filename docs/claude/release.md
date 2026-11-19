@@ -59,6 +59,7 @@ From a clean checkout of the try's commit:
 df -g /                                  # each app is several hundred MB; the twin pair doubles it
 scripts/try/run.sh <commit> <out> --runs 0 --cold-start 0 --upgrade-from 3a3e247e3 --twin-only   # the upgrade pair alone
 scripts/try/run.sh <commit> <out> --runs 1 --cold-start 0 --upgrade-from 3a3e247e3              # the full try
+scripts/try/run.sh <commit> <out> --runs 0 --cold-start 0 --twin-only --keep-twin <dir>           # only build the test twin pair and keep it, to re-run packaged units against it
 ```
 
 What each step proves:
