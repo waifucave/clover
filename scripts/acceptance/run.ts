@@ -3519,7 +3519,10 @@ function mossApp(): { exe: string; args: string[] } {
 /** A connection in the `app` role (from source, the daemon's test seam lets the run in), with these hello fields; the
  *  run closes it at its end. */
 async function helloApp(name: string, extra: Record<string, unknown>): Promise<{ client: MossClient; result: Record<string, unknown> }> {
-  const d = await hello(join(home, "run", "core.sock"), "app", readFileSync(join(home, "run", "app.token"), "utf8").trim(), name, MOSS_PROTOCOL_VERSION, extra);
+  // A packaged engine judges an app hello's release (the source daemon's is unjudged): the run speaks for the pair, so it
+  // names the release of the build it was given (MOSS's and MOSS Code's are one, checked at the start).
+  const release = target === "packaged" && mossBundle !== undefined ? /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/.exec(readFileSync(join(mossBundle, "Contents", "Info.plist"), "utf8"))?.[1] : undefined;
+  const d = await hello(join(home, "run", "core.sock"), "app", readFileSync(join(home, "run", "app.token"), "utf8").trim(), name, MOSS_PROTOCOL_VERSION, { ...(release === undefined ? {} : { release }), ...extra });
   clients.push(d.client);
   return d;
 }
