@@ -3552,7 +3552,7 @@ const mossCtx = (): MossUnitCtx => ({
 
 /** The `moss` unit: a daemon with the records as the bots' source (`fresh`: the home is new, so this is its first
  *  daemon; otherwise the one before is ended first and the home's bots move), the dummy key, then MOSS over it and its
- *  rows (moss-step.ts). Source target only. */
+ *  rows (moss-step.ts). From source, or on a packaged pair (`--moss-app`). */
 async function mossRun(fresh: boolean): Promise<void> {
   if (target !== "source" && mossBundle === undefined) {
     for (const name of MOSS_STEPS) record(stepNumber(FULL_STEPS, name), "BLOCKED", "a packaged run takes the build's MOSS with --moss-app <MOSS.app> (scripts/try/run.sh passes it)");
