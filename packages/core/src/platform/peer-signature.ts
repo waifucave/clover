@@ -39,6 +39,9 @@ import type { MossProfile } from "../profile";
 import type { PeerFacts } from "./caller-probe";
 import type { DaemonPlatform } from "./transport";
 
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __MOSS_TEST_BUILD__: string | false | undefined;
+
 /** Whether the peer of an `app` hello is one of the product's programs: the program its signature names, `false` when it
  *  is none, or `true` for a check that passes without naming one (a test's). Injected in tests. */
 export type AppPeerCheck = (peer: PeerFacts) => boolean | MossProgramName;
@@ -261,5 +264,20 @@ function appRequirementSelf(): string {
  *  (`appPeerProgram`); Linux and Windows have none to make (`"none"`; see the head of this file), so the hello's
  *  `surface` and the caller check stand in for the program there. */
 export function defaultAppPeerCheck(os: DaemonPlatform, profile: MossProfile): AppPeerPolicy {
-  return os === "darwin" ? appPeerProgram(profile) : "none";
+  const base: AppPeerPolicy = os === "darwin" ? appPeerProgram(profile) : "none";
+  // A test-marked build (compiled out of a real one: the define folds this branch and `withTestHarnessPeer` goes with it).
+  return typeof __MOSS_TEST_BUILD__ === "string" ? withTestHarnessPeer(base) : base;
+}
+
+/** The test-marked build's seam for the acceptance run on a packaged pair (scripts/acceptance/run.ts `harnessIsApp`): the
+ *  one process whose pid the run named when it started this core (`MOSS_TEST_APP_PEER_PID`) may say hello in the `app`
+ *  role, as the source daemon's own `appPeer` lets the run in. The run is not the signed app, so without it the hello is
+ *  refused and the `moss` unit could not draw MOSS Code's connection beside MOSS's. Nothing else changes: the floor and
+ *  the lineage checks (`resolveMossCaller`) still come first, the pid must be the peer's own (never an ancestor, so the
+ *  real signed app the run started stays judged by its signature), and no other process, unset or malformed variable
+ *  falls through to the real check. */
+function withTestHarnessPeer(base: AppPeerPolicy): AppPeerPolicy {
+  const pid = Number(process.env.MOSS_TEST_APP_PEER_PID);
+  if (base === "none" || !Number.isInteger(pid) || pid <= 0) return base;
+  return (peer) => (peer.pid === pid ? true : base(peer));
 }

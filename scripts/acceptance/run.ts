@@ -3523,11 +3523,17 @@ async function helloApp(name: string, extra: Record<string, unknown>): Promise<{
   clients.push(d.client);
   return d;
 }
-/** The moss unit's own connection: MOSS's surface, so nothing of MOSS Code's says hello on its home. A packaged core takes no
- *  `app` hello from the run (its caller check wants the signed program): there the run drives as the CLI, as the packaged
- *  chain does (`appDriver`). */
+/** Whether the run may say hello as the `app` role to the packaged core: a test-marked core that carries the harness's
+ *  own app-peer seam (`MOSS_TEST_APP_PEER_PID`, packages/core/src/platform/peer-signature.ts `withTestHarnessPeer`: the
+ *  one pid the run started the core with) takes the run's `app` hello as the source daemon's `appPeer` does. An earlier
+ *  build has none, and the moss unit there drives as the CLI. Only the moss unit asks for it (`mossRun`). */
+const harnessIsApp = () => target === "packaged" && packagedCoreSays("MOSS_TEST_APP_PEER_PID");
+
+/** The moss unit's own connection: MOSS's surface, so nothing of MOSS Code's says hello on its home. A packaged core takes an
+ *  `app` hello from the run only through its test seam (`harnessIsApp`): otherwise its caller check wants the signed
+ *  program, and the run drives as the CLI, as the packaged chain does (`appDriver`). */
 const mossDriver = async () => {
-  if (target === "source") return await helloApp("moss-acceptance", { surface: "moss" });
+  if (target === "source" || harnessIsApp()) return await helloApp("moss-acceptance", { surface: "moss" });
   const d = await hello(join(home, "run", "core.sock"), "cli", harnessToken(), "moss-acceptance", MOSS_PROTOCOL_VERSION);
   clients.push(d.client);
   return d;
@@ -3558,7 +3564,7 @@ async function mossRun(fresh: boolean): Promise<void> {
     stoppingDaemon = false;
     // The owner's real bot as the upgrade's copy brings it: a long conversation already in the home.
     await seedLongConversation(home);
-    daemon = await startDaemonProc({ ...MOSS_ENV });
+    daemon = await startDaemonProc({ ...MOSS_ENV, ...(harnessIsApp() ? { MOSS_TEST_APP_PEER_PID: String(process.pid) } : {}) });
     // The run's own connections say MOSS's surface: no MOSS Code hello reaches a home where only MOSS runs.
     const c = (await mossDriver()).client;
     await signInKey(c);

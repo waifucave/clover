@@ -106,7 +106,7 @@ export function testBuildMarkerProblems(what: string, bytes: Uint8Array, test: b
 /** What only the core's test-only code reads: the acceptance's hold on a stopping daemon and its cut stop bound
  *  (packages/cli/src/main.ts), and its outside world on loopback (packages/core/src/daemon.ts, the plugins' pinned
  *  fetch). A real build's core carries none of them. */
-export const TEST_ONLY_CORE_STRINGS = ["MOSS_TEST_STOP_HOLD_FILE", "MOSS_TEST_STOP_BUDGET_MS", "MOSS_TEST_OUTSIDE_WORLD", "MOSS_TEST_ENGINE_RELEASE", "MOSS_TEST_ENGINE_COPY_CHECK"] as const;
+export const TEST_ONLY_CORE_STRINGS = ["MOSS_TEST_STOP_HOLD_FILE", "MOSS_TEST_STOP_BUDGET_MS", "MOSS_TEST_OUTSIDE_WORLD", "MOSS_TEST_ENGINE_RELEASE", "MOSS_TEST_ENGINE_COPY_CHECK", "MOSS_TEST_APP_PEER_PID"] as const;
 
 interface AsarNode { files?: Record<string, AsarNode>; size?: number; offset?: string; unpacked?: boolean }
 
