@@ -77,8 +77,9 @@ export async function conversationCopyStep(ctx: ExampleCtx, _session: string): P
   try {
     // The code session its turns run in (the newest), and the window put on THAT one: the sidebar's first row can be another session's
     // (a long home has many), and the copy draws the session the window shows.
-    const coding = (await rpc.request<{ sessions: { id: string; title?: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["coding"] })).sessions
-      .filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0));
+    const coding = (await rpc.request<{ sessions: { id: string; title?: string; kind?: string; startedAt?: number; backend?: string }[] }>("session.list", { kinds: ["coding"] })).sessions
+      // MOSS's own agent's: an earlier row's session on another backend (the ACP row's, whose fake agent is gone by now) answers nothing.
+      .filter((x) => x.kind === "coding" && (x.backend === undefined || x.backend === "moss-code")).sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0));
     // The newest that has been answered: a coding session started with no prompt on a model the run holds no key for (the diff
     // panel's `diff-work`, the newest of a long run) answers its first message with the provider's refusal, not a reply; with none
     // answered, the run's own session is the one.

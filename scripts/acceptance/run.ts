@@ -3733,12 +3733,6 @@ async function keyedCodeSession(c: MossClient, folder = "acceptance-work"): Prom
   return (await c.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/${folder}`, model: KEYED_MODEL }, 60_000)).session;
 }
 
-/** The newest code session (`session.list`, kind coding), the one MOSS Code's window opens on. */
-async function newestCodeSession(c: MossClient): Promise<string | undefined> {
-  const list = await c.request<{ sessions: { id: string; kind?: string; startedAt?: number }[] }>("session.list", { kinds: ["coding"] }).catch(() => ({ sessions: [] }));
-  return list.sessions.filter((x) => x.kind === "coding").sort((x, y) => (y.startedAt ?? 0) - (x.startedAt ?? 0))[0]?.id;
-}
-
 /** This computer's name in the tree (`computer.list`'s `self`). */
 async function selfComputer(c: MossClient): Promise<string> {
   const name = (await c.request<{ computers: { name: string }[] }>("computer.list", {})).computers[0]?.name;
@@ -5479,6 +5473,7 @@ async function stageLevelsStep(app: { exe: string; args: string[] }): Promise<vo
 }
 
 async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> {
+  let reopenSession: string | undefined;
   const first = FULL_STEPS.indexOf(REOPEN_STEPS[0].name) + 1;
   const stand = launchStandIn();
   const waitGone = async (d: { proc: ChildProcess } | undefined, ms: number): Promise<void> => {
@@ -5527,8 +5522,9 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
         } else {
           // A turn that keeps running, then the app quits as the owner's does (the tray's Quit stops both halves).
           const c = (await appDriver()).client;
-          // The code session the window opens on (the newest; the unit's setup started it on MOSS's own agent).
-          const session = await newestCodeSession(c);
+          // A code session of MOSS's own agent that this step makes sure of (the first step makes it, the later ones reuse it, as the
+          // unit's own setup did): never "the newest", which in a home an earlier unit used is that unit's (the ACP row's agent, gone by now).
+          const session = (reopenSession ??= await keyedCodeSession(c, "reopen-work").catch(() => undefined));
           if (session === undefined) block("no code session to run a turn in");
           // Mid text (a held model stream), or mid tool call (the fixture's Echo given `acceptance-hold`, never answered).
           const toolCall = "toolCall" in step;
@@ -5802,7 +5798,9 @@ async function releaseSteps(app: { exe: string; args: string[] }): Promise<void>
     let a: { proc: { proc: ChildProcess; log: string }; cdp: Cdp } | undefined;
     try {
       await signInKey(c);
-      const session = await keyedSession(c);
+      // The held turn runs in a code session of MOSS's own agent, not in Alpha's conversation: a routine of the chain's home fires in hers
+      // when this daemon starts, and its result is folded into a running turn there, which the fake then answers at once.
+      const session = await keyedCodeSession(c, "release-work");
       const tag = `ACCEPTANCE-SLOW-${randomBytes(3).toString("hex").toUpperCase()}`;
       const asked = fake!.requests.length;
       await c.request("session.send", { id: session, message: { text: `${tag} keep going`, clientMessageId: randomUUID() } }, 30_000);

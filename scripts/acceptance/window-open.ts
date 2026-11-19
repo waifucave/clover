@@ -61,12 +61,19 @@ export async function settingsDiagnosis(ctx: ExampleCtx, label: string): Promise
  *  or an accessible name exactly that) AND is on the screen: a size, and its centre inside the document's own viewport. A bot's
  *  own layout holds a button off its frame's edge: a click there lands nowhere. (The stock sidebar is drawn beside every tab,
  *  Alpha's too, so its entries always have a size.) */
-export async function clickShown(ctx: ExampleCtx, what: string, selector: string, text?: string, ms = 20_000): Promise<void> {
+export async function clickShown(ctx: ExampleCtx, what: string, selector: string, text?: string, ms = 20_000, scroll = false): Promise<void> {
   const { cdp } = ctx;
   const at = await until(what, ms, async () => {
     for (const d of await treeDocs(cdp)) {
       const c = await cdp.evaluate(d.session, `(() => {
         const want = ${JSON.stringify(text ?? null)};
+        const named = (e) => want === null || (e.innerText || '').split('\\n').some((l) => l.trim() === want) || e.getAttribute('aria-label') === want;
+        // A list that scrolls (the sidebar's, long in a home many sessions have run in) holds the entry below its fold: a person
+        // scrolls to it, so the run does (only where asked, and only to an element that has a size).
+        if (${scroll}) {
+          const first = [...document.querySelectorAll(${JSON.stringify(selector)})].find((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && named(e); });
+          if (first) first.scrollIntoView({ block: 'center', inline: 'nearest' });
+        }
         const els = [...document.querySelectorAll(${JSON.stringify(selector)})].filter((e) => {
           const r = e.getBoundingClientRect();
           const x = r.left + r.width / 2, y = r.top + r.height / 2;
@@ -132,7 +139,7 @@ export async function drawnInSettings(ctx: ExampleCtx, title: string, id: string
 /** Chooses the sidebar entry `title` (a page's app button, or a bot's row), leaving any dialog first. */
 export async function openSidebarEntry(ctx: ExampleCtx, title: string): Promise<void> {
   await escape(ctx.cdp);
-  await clickShown(ctx, `the sidebar's ${title} entry`, SIDEBAR_ITEMS, title);
+  await clickShown(ctx, `the sidebar's ${title} entry`, SIDEBAR_ITEMS, title, 20_000, true);
   await sleep(500);
 }
 
