@@ -192,6 +192,18 @@ export function chainOwnRuns(asked: readonly UnitId[] | undefined, all: readonly
   return own.filter((id) => asked.includes(id));
 }
 
+/** The units whose rows need the engine's source seam (the host units start their host through MOSS_HOST_COMMAND, which a
+ *  packaged core ignores, and a test-marked core never starts a host through the OS): they stay source-only. */
+export const SOURCE_ONLY_UNITS: readonly UnitId[] = ["host", "browser-host", "surface-copy-host"];
+
+/** What a packaged run (a try's test twin, scripts/try/run.sh) names with `--units`: every unit there is but the
+ *  source-only ones, with `main` for the chain and the window's three. A run with no `--units` is the table from before
+ *  the split (it runs the rows that now run elsewhere, elsewhere.ts, and never the release rows), so the try never uses it. */
+export function packagedUnitIds(all: readonly Unit[] = units()): UnitId[] {
+  const rest = all.map((u) => u.id).filter((id) => !MAIN_PARTS.includes(id) && !SOURCE_ONLY_UNITS.includes(id));
+  return ["main", ...rest];
+}
+
 export function serialUnits(all: readonly Unit[] = units()): UnitId[] {
   return all.filter((u) => u.phase === "serial").map((u) => u.id);
 }

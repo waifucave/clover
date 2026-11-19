@@ -152,9 +152,17 @@ accept() {
 # Counted in bash, not with seq: BSD seq counts down (`seq 1 0` is 1 0), so --runs 0 would still run two.
 # The full runs take their window pictures into --renders' folder (only theirs: the cold start and the upgrade pair don't).
 if [ -n "$RENDERS" ]; then mkdir -p "$RENDERS" && RENDERS="$(cd "$RENDERS" && pwd -P)" || die "--renders $RENDERS can't be made"; fi
+# The units a packaged run runs (scripts/acceptance/shards.ts packagedUnitIds: all but the source-only host units), by
+# name: a run with no --units is the table from before the split, which runs the rows that now run elsewhere and no
+# release row.
+UNITS=""
+if [ "$RUNS" -gt 0 ]; then
+  UNITS="$(scripts/pinned-bun -e 'import { packagedUnitIds } from "./scripts/acceptance/shards"; console.log(packagedUnitIds().join(","))')" && [ -n "$UNITS" ] || die "the packaged run's units couldn't be listed (scripts/acceptance/shards.ts)"
+  echo "try: the packaged run's units: $UNITS"
+fi
 for ((k = 1; k <= RUNS; k++)); do
   [ "$PROMPT" = false ] || continue
-  if [ -n "$RENDERS" ]; then MOSS_ACCEPT_RENDERS="$RENDERS" accept "run$k" --moss-app "$WORK/twin/MOSS.app"; else accept "run$k" --moss-app "$WORK/twin/MOSS.app"; fi
+  if [ -n "$RENDERS" ]; then MOSS_ACCEPT_RENDERS="$RENDERS" accept "run$k" --units "$UNITS" --moss-app "$WORK/twin/MOSS.app"; else accept "run$k" --units "$UNITS" --moss-app "$WORK/twin/MOSS.app"; fi
 done
 [ "$COLD" -gt 0 ] && [ "$PROMPT" = false ] && accept "cold-start-x$COLD" --cold-start "$COLD"
 [ "$PROMPT" = false ] || echo "try: A KEYCHAIN PROMPT APPEARED: the run was killed and no further run started"
@@ -189,7 +197,7 @@ upgrade_pair() {
   git worktree remove --force "$WORK/old" 2>/dev/null; git worktree prune 2>/dev/null
   [ "$PROMPT" = false ] || return 1
   [ -f "$UPSTATE/state.json" ] || { echo "try: the previous try's run left no state (upgrade-old/run.out says why)"; return 1; }
-  RUNAPP="$WORK/twin/MOSS Code.app"; accept "upgrade-new" --upgrade-from "$UPSTATE"; UPCOLS+=("upgrade-new")
+  RUNAPP="$WORK/twin/MOSS Code.app"; accept "upgrade-new" --upgrade-from "$UPSTATE" --moss-app "$WORK/twin/MOSS.app"; UPCOLS+=("upgrade-new")
 }
 UPGRADE="not run (no --upgrade-from)"
 if [ -n "$UPFROM" ] && [ "$PROMPT" = false ]; then

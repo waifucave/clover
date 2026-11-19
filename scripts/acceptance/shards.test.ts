@@ -11,7 +11,7 @@ import { TAB_FLASH_STEP } from "./tab-flash-step";
 import { WORKSHOP_STEP } from "./workshop-step";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { MOSS_STEPS } from "./moss-step";
-import { MAIN_PARTS, chainOwnRuns, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units, windowIndexes, type TimedRow } from "./shards";
+import { MAIN_PARTS, SOURCE_ONLY_UNITS, chainOwnRuns, expandUnitIds, homePlan, mergeShards, packagedUnitIds, planShards, serialUnits, slowest, unitOf, units, windowIndexes, type TimedRow } from "./shards";
 
 const row = (name: string, status: TimedRow["status"] = "PASS", seconds = 1): TimedRow => ({ n: stepNumber(FULL_STEPS, name), name, status, detail: status === "PASS" ? "ok" : "red", seconds });
 
@@ -130,8 +130,9 @@ describe("the split", () => {
     expect(run).toContain('"--units", id, "--rows-out", out');
     const calls = [...run.matchAll(/mossRun\((true|false)\)/g)].map((m) => m[0]);
     expect(calls).toEqual(["mossRun(true)", "mossRun(false)"]);
-    // The one `mossRun(false)` left is a target with no MOSS bundle, where it only records the rows BLOCKED.
-    expect(run).toContain('if (id === "moss" && target !== "source") return mossRun(false);');
+    // The one `mossRun(false)` left is a packaged target with no MOSS bundle, where it only records the rows BLOCKED;
+    // with the build's MOSS the unit is a run of its own there too (try 16: on the shared home MOSS never had a fresh one).
+    expect(run).toContain('if (id === "moss" && target !== "source" && mossBundle === undefined) return mossRun(false);');
   });
 
   test("run.ts runs a unit's rows only where the unit is its own, and every unit has a runner", () => {
@@ -150,6 +151,27 @@ describe("the split", () => {
     expect(models).toContain("appless = wasAppless;");
     expect(run).toContain('if (runs("models"))');
     expect(run).toContain("if (!runs(unitOf(name))) continue;");
+  });
+});
+
+describe("a packaged run's units (the try's test twin)", () => {
+  test("every unit there is but the source-only host units, with main for the chain and the window", () => {
+    const ids = packagedUnitIds();
+    expect(ids).toEqual(["main", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss", "cold", "idle"]);
+    // Nothing is left out by accident: a unit a lane adds is in the packaged run unless it is named source-only.
+    expect([...expandUnitIds(ids), ...SOURCE_ONLY_UNITS].sort()).toEqual(units().map((u) => u.id).sort());
+    // The packaged MOSS runs in a home of its own after the chain, as from source.
+    expect(chainOwnRuns(expandUnitIds(ids))).toEqual(["moss"]);
+  });
+
+  test("the try names them: its packaged run is never the table from before the split (try 16 ran the rows that run elsewhere, and no release row)", () => {
+    const run = readFileSync(join(import.meta.dir, "..", "try", "run.sh"), "utf8");
+    expect(run).toContain("packagedUnitIds().join");
+    expect(run).toContain('--units "$UNITS" --moss-app "$WORK/twin/MOSS.app"');
+    // The upgrade's new half draws the old conversation in the build's MOSS.
+    expect(run).toContain('accept "upgrade-new" --upgrade-from "$UPSTATE" --moss-app "$WORK/twin/MOSS.app"');
+    // The chain's own run reaches the release rows when their unit is named.
+    expect(readFileSync(join(import.meta.dir, "run.ts"), "utf8")).toContain('if (shardUnits?.includes("release")) await releaseSteps(app);');
   });
 });
 

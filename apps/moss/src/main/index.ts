@@ -49,7 +49,8 @@ const home = engineHome(process.env);
 app.setName(identity.productName);
 if (process.platform === "win32") app.setAppUserModelId(identity.appId);
 // Its own user data: never MOSS Code's, never a real one from a test (MOSS_USER_DATA, a dev or test run's temp folder).
-const userDataOverride = devOverrides ? process.env.MOSS_USER_DATA : undefined;
+// A test-marked build takes it packaged too (the try's test twin): it refuses to start without one, below.
+const userDataOverride = devOverrides || (typeof __MOSS_TEST_BUILD__ === "string") ? process.env.MOSS_USER_DATA : undefined;
 if (userDataOverride !== undefined && userDataOverride !== "") app.setPath("userData", userDataOverride);
 if ((typeof __MOSS_TEST_BUILD__ === "string")) {
   // The label itself, as MOSS Code's main prints it: the test twin's marker gate looks for it in the built app

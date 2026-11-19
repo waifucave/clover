@@ -3466,6 +3466,9 @@ async function main(): Promise<void> {
   if (STEPS.includes(CODE_ADAPTER_STEP) && runs("models")) record(STEPS.indexOf(CODE_ADAPTER_STEP) + 1, codeAdapterOutcome?.status ?? "BLOCKED", codeAdapterOutcome?.detail ?? "the code-adapter turn didn't run");
   if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
   if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
+  // The release rows when the run names their unit (a full run with no --units never ran them): in the order a run
+  // without the chain gives them (otherUnitsRun), before the cold start.
+  if (shardUnits?.includes("release")) await releaseSteps(app);
   if (runs("cold")) await coldStartStep(app, 1);
   if (runs("reopen")) await reopenSteps(app);
   if (shardUnits === undefined) await stageLevelsStep(app);
@@ -3783,7 +3786,9 @@ async function unitsRun(app: { exe: string; args: string[] }, allIds: readonly U
  *  run's shards are; its rows go into this run's table. */
 async function ownHomeRun(id: UnitId): Promise<void> {
   const names = allUnits().find((u) => u.id === id)!.rows;
-  if (id === "moss" && target !== "source") return mossRun(false);
+  // A packaged run given no MOSS only records the rows BLOCKED; given the build's MOSS (--moss-app) the unit is a run of
+  // its own in a fresh home, as from source (its rows are about a home where only MOSS has run).
+  if (id === "moss" && target !== "source" && mossBundle === undefined) return mossRun(false);
   try {
     if (id === "moss" && target === "source") mossApp();
   } catch (err) {
