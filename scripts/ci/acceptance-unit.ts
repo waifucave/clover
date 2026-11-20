@@ -9,13 +9,8 @@
 // measured.ts, and is listed as such); the run said "sealed presses refused as covered or unchecked: 0"; and no line anywhere
 // says "shown while headless" (the app's own line for a window that would have reached a screen).
 //
-// A unit that fails is run once more, in the same job, in a home of its own: the files of the two attempts stay apart
-// (<out>/attempt-1, <out>/attempt-2). If the second passes the job passes and its summary says "passed on retry" with the
-// rows the first one failed on, so a flake stays visible; if it fails too, the job fails. `--no-retry` runs once.
-// The two attempts differ in patience: attempt 1 runs with MOSS_ACCEPT_TIME_SCALE_ATTEMPT_1 as the time scale (ci.yml: 1.5),
-// attempt 2 with MOSS_ACCEPT_TIME_SCALE_ATTEMPT_2 (3), so a first attempt that is going to fail fails fast and a slow runner
-// still gets a patient second chance; either variable unset, the run's own MOSS_ACCEPT_TIME_SCALE is used. A unit that passed on
-// retry writes `retry.json` (the rows, what each failed on): the lane gate's summary lists every one of a run in one table.
+// A unit runs ONCE (the owner's ruling, 2026-11-20): a unit that fails fails its job, so a row that fails now and then is
+// seen and fixed, not passed on a second try. The run's patience is MOSS_ACCEPT_TIME_SCALE (ci.yml).
 // The verdict goes to the job's summary ($GITHUB_STEP_SUMMARY) and to the log.
 import { spawn } from "node:child_process";
 import { appendFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -31,7 +26,7 @@ export interface Verdict {
   passed: number;
   /** The rows left to the Mac (their names), each with the reason its detail gave. */
   macOnly: { n: number; name: string; reason: string }[];
-  /** The rows that were not PASS: where a retry says what the first attempt failed on. */
+  /** The rows that were not PASS. */
   failed: { n: number; name: string; detail: string }[];
 }
 
@@ -142,14 +137,6 @@ function judgeAttempt(unit: string, out: string, exit: number, expected: readonl
   return { v, text };
 }
 
-/** What the job says when its second attempt decided it: which rows (or problems) the first failed on, honestly. */
-export function retryNote(first: Verdict, second: Verdict): string {
-  const what = first.failed.length > 0 ? first.failed.map((f) => `row ${f.n} ${f.name.slice(0, 100)}: ${f.detail.slice(0, 160)}`) : first.problems.map((p) => p.slice(0, 200));
-  return second.ok
-    ? `### passed on retry: ${what.join("; ")}\n\nThe first attempt failed and the second (a fresh home) passed; both attempts' tables and logs are in the artifact (attempt-1, attempt-2).\n`
-    : `### failed twice\n\nFirst attempt: ${what.join("; ")}\nSecond attempt: ${(second.failed.length > 0 ? second.failed.map((f) => `row ${f.n} ${f.name.slice(0, 100)}`) : second.problems.map((p) => p.slice(0, 200))).join("; ")}\n`;
-}
-
 function finish(text: string, ok: boolean, out: string): never {
   console.log(`\n${text}`);
   writeFileSync(join(out, "verdict.md"), text);
@@ -157,18 +144,8 @@ function finish(text: string, ok: boolean, out: string): never {
   process.exit(ok ? 0 : 1);
 }
 
-/** The record a unit that passed on retry leaves for the lane gate's summary. */
-export function retryRecord(unit: string, first: Verdict, scales: { first?: string; second?: string }): { unit: string; scales: { first?: string; second?: string }; rows: { n: number; name: string; detail: string }[]; problems: string[] } {
-  return { unit, scales, rows: first.failed.map((f) => ({ n: f.n, name: f.name, detail: f.detail })), problems: first.failed.length === 0 ? first.problems.map((p) => p.slice(0, 300)) : [] };
-}
-
-/** The time scale an attempt runs with: its own variable, else the run's. */
-export function scaleFor(attempt: 1 | 2, env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return env[`MOSS_ACCEPT_TIME_SCALE_ATTEMPT_${attempt}`] ?? env.MOSS_ACCEPT_TIME_SCALE;
-}
-
 /** run.ts for one unit into `out`: its table, its progress, its kept logs and renders; the exit code. */
-async function runAttempt(unit: string, out: string, attempt: 1 | 2): Promise<number> {
+async function runUnit(unit: string, out: string): Promise<number> {
   mkdirSync(join(out, "logs"), { recursive: true });
   mkdirSync(join(out, "renders"), { recursive: true });
   const repo = resolve(import.meta.dir, "..", "..");
@@ -176,7 +153,7 @@ async function runAttempt(unit: string, out: string, attempt: 1 | 2): Promise<nu
   const progress = createWriteStream(join(out, "progress.txt"));
   const child = spawn(process.execPath, [join(repo, "scripts", "acceptance", "run.ts"), "--verbose", "--keep-logs", join(out, "logs"), "--units", unit], {
     cwd: repo,
-    env: { ...process.env, MOSS_ACCEPT_RENDERS: join(out, "renders"), ...(scaleFor(attempt) !== undefined ? { MOSS_ACCEPT_TIME_SCALE: scaleFor(attempt)! } : {}) },
+    env: { ...process.env, MOSS_ACCEPT_RENDERS: join(out, "renders") },
     stdio: ["ignore", "pipe", "pipe"],
   });
   // The table and the progress go to the job's log as they come, and to their own files for the verdict and the artifact.
@@ -198,23 +175,15 @@ if (import.meta.main) {
     const { v, text } = judgeAttempt("(judged)", dir, Number(readFileSync(join(dir, "exit.txt"), "utf8").trim()), undefined, "");
     finish(text, v.ok, dir);
   }
-  const retry = !args.includes("--no-retry");
   const [unit, outArg] = args.filter((a) => !a.startsWith("--"));
-  if (unit === undefined || outArg === undefined) { console.error("usage: acceptance-unit.ts <unit> [--no-retry] <out dir>"); process.exit(2); }
+  if (unit === undefined || outArg === undefined) { console.error("usage: acceptance-unit.ts <unit> <out dir>"); process.exit(2); }
   const known = units();
   const parts = expandUnitIds([unit as UnitId]);
   if (parts.some((id) => !known.some((u) => u.id === id))) { console.error(`acceptance-unit: no unit "${unit}" in scripts/acceptance/shards.ts (${known.map((u) => u.id).join(", ")}, main)`); process.exit(2); }
   const expected = known.filter((u) => parts.includes(u.id)).flatMap((u) => u.rows);
   const out = resolve(outArg);
   mkdirSync(out, { recursive: true });
-  const dir1 = join(out, "attempt-1");
-  const exit1 = await runAttempt(unit, dir1, 1);
-  const first = judgeAttempt(unit, dir1, exit1, expected, " (attempt 1)");
-  if (first.v.ok || !retry) finish(first.text, first.v.ok, out);
-  console.log(`\nacceptance-unit: attempt 1 failed; running ${unit} once more in a fresh home\n${first.text}`);
-  const dir2 = join(out, "attempt-2");
-  const exit2 = await runAttempt(unit, dir2, 2);
-  const second = judgeAttempt(unit, dir2, exit2, expected, " (attempt 2)");
-  if (second.v.ok) writeFileSync(join(out, "retry.json"), JSON.stringify(retryRecord(unit, first.v, { ...(scaleFor(1) !== undefined ? { first: scaleFor(1)! } : {}), ...(scaleFor(2) !== undefined ? { second: scaleFor(2)! } : {}) }), null, 2));
-  finish(`${retryNote(first.v, second.v)}\n${first.text}\n${second.text}`, second.v.ok, out);
+  const exit = await runUnit(unit, out);
+  const { v, text } = judgeAttempt(unit, out, exit, expected, "");
+  finish(text, v.ok, out);
 }
