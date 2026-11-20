@@ -29,7 +29,7 @@ describe("the binaries beside the core", () => {
     // `engineSidecars` (bundled-identities.ts) is what `placeEngine` copies and checks on macOS; `RESOURCE_BINARIES` is what the
     // release build signs into the app's daemon/ folder. A file in one and not the other is a file that is shipped and not placed
     // (the engine would run from the home without it) or placed and not shipped (the copy would refuse every bundle).
-    const signed = RESOURCE_BINARIES.filter((b) => b.file !== "moss-core");
+    const signed = RESOURCE_BINARIES.filter((b) => b.identifier !== CORE_IDENTIFIERS[0]);
     expect(engineSidecars("darwin").map((s) => s.file).sort()).toEqual(signed.map((b) => b.file).sort());
     for (const s of engineSidecars("darwin")) expect(signed.find((b) => b.file === s.file)?.identifier as string | undefined).toBe(s.identifier.dist);
     // The dev identifiers are the dist ones with `.dev`, which the dev daemon signs its own copies under.

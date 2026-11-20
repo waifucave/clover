@@ -137,7 +137,7 @@ import { listProcesses, nameLeftovers, reap, runProcesses, type ReapResult } fro
 import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
-import { APP_NEWER, APP_OLDER, ENGINE_NEWER, ENGINE_OLDER, MISSING_BESIDE, RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, RELEASE_INSTALL_STEP, WORDS as RELEASE_WORDS } from "./release-step";
+import { APP_NEWER, APP_OLDER, ENGINE_NEWER, ENGINE_OLDER, RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, RELEASE_INSTALL_STEP, WORDS as RELEASE_WORDS } from "./release-step";
 import { chainOwnRuns, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
@@ -872,6 +872,9 @@ async function modelPluginsUp(): Promise<string> {
     return /\[model-plugins\] up: [^\n]*/.exec(log)?.[0];
   }, 300);
 }
+
+/** The engine's own words when a file beside it is missing (daemon.ts's process holder line, device-links.ts's link line): the release row's INSTALL has none of them in its log. */
+const MISSING_BESIDE = [/is missing beside this moss-core/, /no link sidecar \(moss-link\) beside the daemon/] as const;
 
 /** `binary`: the engine to start instead of the bundle copy `packagedCore()` makes: the one an app's install placed in the home (the release row's INSTALL). Packaged target only. */
 async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised = false, binary?: string): Promise<{ proc: ChildProcess; log: string }> {

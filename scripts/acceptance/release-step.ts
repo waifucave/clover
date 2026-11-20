@@ -20,9 +20,6 @@ export const RELEASE_INSTALL_STEP = "release: the engine an app's install places
 export const RELEASE_BEHIND_STEP = "release: an app older than the engine updates itself before it connects: its window says it is installing the update, and offline says plainly it can't reach the update server and doesn't connect";
 export const RELEASE_AHEAD_STEP = "release: a newer app waits for the engine's work to finish and says so in its window, and Switch now asks the engine to switch at once";
 
-/** The engine's own words when a file beside it is missing (daemon.ts's process holder line, device-links.ts's link line): none of them may be in the log. */
-export const MISSING_BESIDE = [/is missing beside this moss-core/, /no link sidecar \(moss-link\) beside the daemon/] as const;
-
 /** The stamps: the engine is ahead of the older app, and behind the newer one. */
 export const ENGINE_NEWER = "9.0.0";
 export const APP_OLDER = "1.0.0";
