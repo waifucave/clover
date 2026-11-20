@@ -13,7 +13,7 @@
 // With MOSS_ACCEPT_RENDERS set, each step of the guide is pictured: MOSS in light and dark, MOSS Code in its theme. A
 // picture, never a check.
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { Cdp } from "./cdp";
@@ -114,6 +114,10 @@ class Doc {
     for (const scheme of schemes) {
       await before?.(scheme);
       for (const d of await this.cdp.documents()) await this.cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme }] }, d.session).catch(() => undefined);
+      // The scheme taken (the page's own media query says so), then a frame drawn after it: an offscreen window that has
+      // nothing new to paint can hand back its last frame, which was the other scheme's.
+      await this.x.until(`${this.name} in the ${scheme} scheme`, 10_000, async () => ((await this.eval<boolean>(`matchMedia('(prefers-color-scheme: dark)').matches === ${scheme === "dark"}`).catch(() => false)) ? true : undefined), 100).catch(() => undefined);
+      await this.eval("(() => { const b = document.body; b.style.outline = '1px solid transparent'; return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => { b.style.outline = ''; r(true); }))); })()").catch(() => undefined);
       await sleep(1_200);
       const shot = await this.cdp.send<{ data: string }>("Page.captureScreenshot", { format: "png" }, s);
       const file = join(dir, `${name}-${scheme}.png`);
@@ -122,6 +126,8 @@ class Doc {
     }
     for (const d of await this.cdp.documents()) await this.cdp.send("Emulation.setEmulatedMedia", { features: [] }, d.session).catch(() => undefined);
     await this.cdp.send("Emulation.clearDeviceMetricsOverride", {}, s).catch(() => undefined);
+    // Two schemes that came out byte for byte the same are one scheme drawn twice: said, so the pictures aren't trusted.
+    if (out.length === 2 && readFileSync(out[0]!).equals(readFileSync(out[1]!))) console.error(`acceptance: setup pictures: ${name}'s light and dark pictures are the same bytes`);
     return out;
   }
 }
@@ -256,6 +262,11 @@ async function oneRow(s: Ctx): Promise<string> {
   // MOSS Code's guide is still open (opened before MOSS's skip). Anthropic's key, typed in the guide's own field.
   const plugin = "moss/model-anthropic";
   await s.code.waitFor("Anthropic in MOSS Code's guide", `!!document.querySelector('[data-moss-provider="${plugin}"]')`, 60_000);
+  // The provider order: the ones people have come first (added, sign-ins, the big API-key providers), not the alphabet.
+  const firsts = await s.code.eval<string[]>("[...document.querySelectorAll('[data-moss-provider]')].slice(0, 6).map((e) => e.getAttribute('data-moss-provider'))");
+  if (firsts.findIndex((id) => id === plugin) < 0 || firsts.findIndex((id) => id === plugin) > 5) s.x.fail(`Anthropic isn't among the guide's first providers: ${firsts.join(", ")}`);
+  // Each provider is a closed row: Anthropic's opened by a click.
+  await s.code.click(`[data-moss-open="${plugin}"]`);
   const field = `[data-moss-key="${plugin}#0"]`;
   const accept = `[data-moss-terms="${plugin}"]`;
   if (await s.code.eval<boolean>(`!!document.querySelector('${accept}')`)) await s.code.click(accept);

@@ -3,7 +3,7 @@
 // (the root's CSP), and the daemon only through the main process's checked calls (`mossRoot.call`). A key the user
 // pastes goes from its field to that call and nowhere else: never stored here, never shown again, never logged.
 
-import { orderProviders, SEARCH_FROM } from "./provider-order";
+import { orderProviders, SEARCH_FROM } from "@waifucave/moss-protocol/provider-order";
 
 export type Translate = (key: string, params?: Record<string, string | number>) => string;
 export type Call = (name: string, params?: unknown) => Promise<unknown>;
@@ -105,9 +105,11 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
     const list = el("div", { class: "moss-page__list" }, el("p", {}, t("welcome.loading")));
     page.body.append(search, list);
     let all: ProviderView[] = [];
+    // Each provider is a closed row that opens to its terms and its ways in when clicked (the one shown alone is open).
+    const opened = new Set<string>();
     const show = () => {
       const shown = orderProviders(all, search.value);
-      list.replaceChildren(...(shown.length > 0 ? shown.map((p) => provider(p)) : [el("p", {}, t("welcome.no-match"))]));
+      list.replaceChildren(...(shown.length > 0 ? shown.map((p) => provider(p, shown.length === 1)) : [el("p", {}, t("welcome.no-match"))]));
     };
     search.addEventListener("input", show);
     const next = button(t("welcome.next"), () => modelStep(), { class: "moss-page__primary", "data-moss-welcome": "next" });
@@ -132,8 +134,19 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
       search.hidden = providers.length < SEARCH_FROM;
       show();
     };
-    const provider = (p: ProviderView): HTMLElement => {
-      const box = el("article", { class: "moss-page__item", "data-moss-provider": p.id }, el("h2", {}, p.name));
+    const provider = (p: ProviderView, alone: boolean): HTMLElement => {
+      const isReady = p.auth.some((a) => a.state === "signed-in" || a.state === "refreshing");
+      const open = alone || opened.has(p.id);
+      const head = el("button", { type: "button", class: "moss-page__item-head", "aria-expanded": String(open), "data-moss-open": p.id }, el("span", {}, p.name), isReady ? el("span", { class: "moss-page__ok" }, t("welcome.signed-in")) : null);
+      head.addEventListener("click", () => {
+        if (opened.has(p.id)) opened.delete(p.id);
+        else opened.add(p.id);
+        show();
+      });
+      const row = el("article", { class: `moss-page__item moss-page__item--row${open ? " is-open" : ""}`, "data-moss-provider": p.id }, head);
+      if (!open) return row;
+      const box = el("div", { class: "moss-page__item-body" });
+      row.append(box);
       // The terms come first (§5.7): each sign-in waits until they are accepted.
       let accepted = p.terms === undefined;
       const signIns: HTMLElement[] = [];
@@ -188,7 +201,7 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
         }
         box.append(row);
       }
-      return box;
+      return row;
     };
     await draw();
   };

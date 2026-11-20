@@ -18,6 +18,10 @@ describe("recommendedModel (from the catalog only)", () => {
       expect(at).toBeGreaterThanOrEqual(0);
     }
   });
+  test("the sol tier where the family has one (GPT), else the family's first slot (Claude)", () => {
+    expect(catalog.models.find((m) => m.key === rec("codex-oauth"))?.canonicalModelId).toBe(catalog.families!.find((f) => f.id === "gpt")!.slots.find((s) => s.name === "sol")!.canonicalModelId);
+    expect(catalog.models.find((m) => m.key === rec("anthropic"))?.canonicalModelId).toBe(catalog.families!.find((f) => f.id === "claude")!.slots[0]!.canonicalModelId);
+  });
   test("an aggregator that is no family's vendor recommends nothing", () => {
     const vendors = new Set(catalog.families!.flatMap((f) => f.vendorProviders ?? []));
     const aggregator = catalog.providers.find((p) => !vendors.has(p.id) && catalog.models.some((m) => m.providerId === p.id));

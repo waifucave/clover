@@ -8,6 +8,7 @@
 // engine piece by piece as each lane merges, with no change on MOSS's side.
 //
 // Pure apart from the client it is given: the tests drive it under Bun.
+import { orderProviders } from "@waifucave/moss-protocol/provider-order";
 import {
   ACTIVITY_STATES, CardPlacement, CORE_EVENT_NOTIFICATION, PICTURE_FRAME_NOTIFICATION,
   type ActivityState, type ActivityView, type BotRecordView, type BotSummary, type PictureView, type RoutineView,
@@ -849,8 +850,9 @@ export class MossEngine {
         auth: (auth?.auth ?? []).map((a) => ({ index: a.index, method: a.method, state: a.state, ...(a.account !== undefined ? { account: a.account } : {}), ...(helps[a.index] !== undefined ? { help: helps[a.index]! } : {}) })),
       };
     }));
-    const ready = (p: ProviderRow) => p.auth.some((a) => a.state === "signed-in" || a.state === "refreshing");
-    return rows.filter((r): r is ProviderRow => r !== undefined).sort((a, b) => Number(ready(b)) - Number(ready(a)) || a.name.localeCompare(b.name) || a.pluginId.localeCompare(b.pluginId));
+    // The order both apps' guides share: added first, then the sign-ins and the big API-key providers, then by name.
+    const kept = rows.filter((r): r is ProviderRow => r !== undefined);
+    return orderProviders(kept.map((r) => ({ ...r, id: r.pluginId })), "").map(({ id: _id, ...r }) => r);
   }
 
   /** The terms links the guide listed, by plugin: main opens one in the person's browser; the window never has it. */

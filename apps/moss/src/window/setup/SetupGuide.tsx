@@ -5,6 +5,7 @@
 // set up and whether the guide was skipped (`setup.state`), so finishing or skipping it here holds for MOSS Code too.
 // MOSS's plain look: neutral greys, the primary action black (light) or near-white (dark), no tint.
 import { useEffect, useMemo, useState } from "react";
+import { orderProviders, SEARCH_FROM } from "@waifucave/moss-protocol/provider-order";
 import { bridge } from "../bridge";
 import { SignInRow } from "../settings/SettingsPage";
 import type { ModelRow, ProviderRow, SetupRow } from "../../shared/view";
@@ -87,11 +88,8 @@ function Providers(props: { setup: SetupRow | undefined; onNext: () => void; onS
   useEffect(load, []);
   // A key or a sign-in finished elsewhere (the browser, MOSS Code): read the rows again.
   useEffect(load, [props.setup?.providers.join(",")]);
-  const shown = useMemo(() => {
-    if (rows === undefined || rows === "waiting") return [];
-    const q = query.trim().toLowerCase();
-    return q === "" ? rows : rows.filter((p) => p.name.toLowerCase().includes(q) || p.pluginId.toLowerCase().includes(q));
-  }, [rows, query]);
+  // The order both apps' guides share (added, sign-ins, the big API-key providers, then by name); search over all.
+  const shown = useMemo(() => (rows === undefined || rows === "waiting" ? [] : orderProviders(rows.map((r) => ({ ...r, id: r.pluginId })), query)), [rows, query]);
   const count = rows === undefined || rows === "waiting" ? 0 : rows.filter(added).length;
   return (
     <>
@@ -100,7 +98,7 @@ function Providers(props: { setup: SetupRow | undefined; onNext: () => void; onS
       <p className="muted small">{WORDS.noClaude}</p>
       {rows === undefined ? <p className="muted">{WORDS.loading}</p> : rows === "waiting" || rows.length === 0 ? <p className="muted">{WORDS.none}</p> : (
         <>
-          {rows.length >= 6 ? (
+          {rows.length >= SEARCH_FROM ? (
             <label className="search setup__search">
               <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" /><path d="m10.5 10.5 3 3" /></svg>
               <input type="search" placeholder={WORDS.search} aria-label={WORDS.search} value={query} onChange={(e) => setQuery(e.target.value)} data-setup-search />

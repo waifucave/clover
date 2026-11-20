@@ -349,7 +349,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
       { fill: '[data-moss-key="fixture-model#0"]', value: key },
       { click: '[data-moss-save="fixture-model#0"]' },
     ];
-    const r = smoke(electron(), [root], "welcome", { MOSS_SMOKE_ROOT_STEPS: JSON.stringify(steps), MOSS_SMOKE_WAIT_TEXT: "Saved. MOSS keeps the key" });
+    const r = smoke(electron(), [root], "welcome", { MOSS_SMOKE_ROOT_STEPS: JSON.stringify(steps), MOSS_SMOKE_WAIT_TEXT: "Saved. MOSS Code keeps the key" });
     expectShell(r);
     expect(r.all).toContain("welcome: this home isn't set up for a first reply; the setup guide opens");
     const rootFrame = r.facts!.frames.find((x) => x.origin === "moss-core://app")!;

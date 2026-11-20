@@ -15,8 +15,9 @@
 // computed one over it only when exactly one provider is there.
 //
 // The recommended model comes from the catalog alone, never from a table here: the provider's own family (a family whose
-// `vendorProviders` names it), in catalog order, and in it the first slot (the catalog's own ranking, best first) the
-// provider serves with a row a session can run. A provider that is no family's vendor (an aggregator, a local server)
+// `vendorProviders` names it), in catalog order, and in it the `sol` tier where the family has one (the owner's previous
+// default's tier, `RECOMMENDED_SLOT`), else the first slot (the catalog's own ranking, best first) the provider serves
+// with a row a session can run. A provider that is no family's vendor (an aggregator, a local server)
 // recommends nothing, and the person picks.
 import type { WinterCatalog } from "@waifucave/clover-provider-catalog";
 import { toolsRefusedFor } from "./runtime-sdk/provider-selection";
@@ -36,11 +37,21 @@ export function hasProviderOf(tag: string, present: ReadonlySet<string>): boolea
   return p !== undefined && present.has(p);
 }
 
+/** The tier a provider's recommended model comes from: the owner's previous default was the GPT family's `sol` (the
+ *  balanced one), so a family with a slot of that name recommends it; one with none, its first slot. The one line to
+ *  change if he answers otherwise. */
+export const RECOMMENDED_SLOT = "sol";
+
+/** A family's slots in the order the recommendation tries them: the recommended tier first, then the catalog's order. */
+function slotsToTry<S extends { name: string }>(slots: readonly S[]): S[] {
+  return [...slots.filter((s) => s.name === RECOMMENDED_SLOT), ...slots.filter((s) => s.name !== RECOMMENDED_SLOT)];
+}
+
 /** A provider's recommended model from the catalog (see the header), or none. */
 export function recommendedModel(catalog: Pick<WinterCatalog, "families" | "models">, providerId: string): string | undefined {
   for (const family of catalog.families ?? []) {
     if (!(family.vendorProviders ?? []).includes(providerId)) continue;
-    for (const slot of family.slots) {
+    for (const slot of slotsToTry(family.slots)) {
       const row = catalog.models.find((m) => m.providerId === providerId && m.canonicalModelId === slot.canonicalModelId
         && m.status !== "blocked" && m.status !== "deprecated" && !toolsRefusedFor(m));
       if (row !== undefined) return row.key;
