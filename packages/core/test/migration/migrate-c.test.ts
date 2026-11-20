@@ -485,7 +485,7 @@ describe("both phases", () => {
     expect(new RuntimeSessionRecords(rs).get("s_1")!.modelRef).toBe("deepseek/deepseek-flash");
     expect((new RuntimeSessionRecords(rs).get("s_1")!.selection as { modelRef: string }).modelRef).toBe("deepseek/deepseek-flash");
     const view = liveSettingsView(loadSettings(join(home, "settings.json")));
-    expect(view.provider.model as string).toBe("deepseek/deepseek-flash");
+    expect(view.provider?.model as string).toBe("deepseek/deepseek-flash");
     expect(view.pins?.dream as string).toBe("deepseek/deepseek-flash");
     expect(canonicalModelTag(OLD_TAG)).toBe("deepseek/deepseek-flash");
     rs.close();

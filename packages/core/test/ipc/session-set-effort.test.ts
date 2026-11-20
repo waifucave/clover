@@ -201,7 +201,8 @@ describe("session.setEffort round-trip RPC (provider-correctness T4)", () => {
     expect(res.error).toBeTruthy();
     expect(res.error.code).toBe(ERR.INVALID_PARAMS);
     expect(res.error.message).toContain("dispatch runs a fixed model");
-    expect(res.error.message).toContain("gpt-6.1-terra");
+    // 2026-11-20: this server has no settings, so no default model and no derived pin: the message names the unstated pin.
+    expect(res.error.message).toContain("unstated");
     expect(res.error.message).toContain("medium");
     expect(store.meta(sessionId).effort).toBeUndefined();
     c.close();

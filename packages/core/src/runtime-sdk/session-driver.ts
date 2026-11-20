@@ -56,7 +56,8 @@ import type { SessionHub } from "../sessions/hub";
 import type { SessionStore } from "../sessions/store";
 import { mainTurnOpenInLog } from "../sessions/turn-origins";
 import { turnOriginIndexFor } from "../sessions/turn-origin-index";
-import { CLAUDE_FIRST_PARTY_PROVIDER_IDS, DEFAULT_PROVIDER, effortRefusalFor, effortToSpendForRole, ownProviderFor, permittedProviders, pinsFor, providerBaseUrlFor, sdkAllowRules, sdkDenyRules, mossOptionsFromSettings, type Settings } from "../settings";
+import { NO_DEFAULT_MODEL_CODE, NO_DEFAULT_MODEL_REASON } from "../default-model";
+import { CLAUDE_FIRST_PARTY_PROVIDER_IDS, effortRefusalFor, effortToSpendForRole, ownProviderFor, permittedProviders, pinsFor, providerBaseUrlFor, sdkAllowRules, sdkDenyRules, mossOptionsFromSettings, type Settings } from "../settings";
 import { d30DefaultModel } from "./advisor-reviewer";
 import { canUseToolFor, type BridgedApprovalRequest } from "./approval-bridge";
 import { elicitationHandlerFor, elicitationTurnTracker, type ElicitationBroker } from "./url-elicitation";
@@ -1010,11 +1011,9 @@ export function createMossSessionDrivers(deps: MossLegDeps): MossSessionDrivers 
       // else `DISPATCH_EFFORT`); `session.setModel`/`setEffort` refuse a dispatch target, so a stored
       // override can only come from a harness that wrote the store directly — a test's door to
       // the `winter-test/*` doubles); every other mode is the per-session override, else the
-      // daemon's configured provider model, else (no settings loaded at all — no agent provider
-      // configured) `DEFAULT_PROVIDER.model`, the same ultimate fallback `pinsFor` itself falls
-      // back through for a null `settings`. `buildMossOptions` below requires a real `ModelTag`,
-      // never `undefined` — there is always a real spawn boundary to cross even on a freshly
-      // installed, unconfigured daemon.
+      // person's default model; with none (a fresh home before a provider is added, 2026-11-20) the turn is refused
+      // with the plain sentence that leads to adding a provider or picking a model — never a provider the person
+      // doesn't have. `beforeTurn` refuses first; this is the spawn's own guard.
       //
       // `live.model` (`SessionStore`'s raw `model` column) is deliberately UNBRANDED at the store
       // layer — `session.list` reports it verbatim, legacy/pre-pin rows may still hold one, and the
@@ -1024,7 +1023,9 @@ export function createMossSessionDrivers(deps: MossLegDeps): MossSessionDrivers 
       // column (`session.setModel`, `session.create`, `sync.push`) validates through
       // `ModelTagSchema`/`resolveModelSelection` before the write, so a value that reaches here
       // already satisfies the shape this cast asserts.
-      const model = mode === "dispatch" ? (live.model as ModelTag | undefined ?? pinsFor(settings).dispatch) : (live.model as ModelTag | undefined ?? settings?.provider?.model ?? DEFAULT_PROVIDER.model);
+      const chosen = mode === "dispatch" ? (live.model as ModelTag | undefined ?? pinsFor(settings).dispatch) : (live.model as ModelTag | undefined ?? settings?.provider?.model);
+      if (chosen === undefined) throw new MossLegRefusal("runtime_selection_refused", NO_DEFAULT_MODEL_REASON, NO_DEFAULT_MODEL_CODE);
+      const model: ModelTag = chosen;
       // 2026-09-17: the dispatch pin's fixed tier is IMPLICIT — mapped onto the pin row's vocabulary
       // (`implicitEffortFor`), never sent to a row that does not declare it. A per-session effort stays explicit.
       //
@@ -1429,7 +1430,8 @@ export function createMossSessionDrivers(deps: MossLegDeps): MossSessionDrivers 
       const live = deps.store.meta(sessionId);
       const settings = deps.settings();
       const model = mode === "dispatch" ? (live.model ?? pinsFor(settings).dispatch) : (live.model ?? settings?.provider?.model);
-      if (model === undefined) return;
+      // No model for this session and no default (2026-11-20): refused, typed, with the sentence that leads on.
+      if (model === undefined) throw new MossLegRefusal("runtime_selection_refused", NO_DEFAULT_MODEL_REASON, NO_DEFAULT_MODEL_CODE);
       // R.1 ruling 1: a model the catalog RETIRED with no rename (a tag stored before the upgrade) is a
       // typed refusal here, before any child — never a silent fallback to another model, and never the
       // child's own mid-turn "not in provider's catalog" error. No key makes it runnable, so it is judged
@@ -1464,6 +1466,9 @@ export function createMossSessionDrivers(deps: MossLegDeps): MossSessionDrivers 
       if (selection === undefined) return;
       const credentials = await credentialPresenceFrom(deps.secrets);
       if (apiKeyProviderIsUnauthenticated(selection.providerId, credentials.byProvider[selection.providerId] !== undefined)) {
+        // The default model's provider isn't one the person has (an older build's written default, or a provider
+        // removed): that is no default, said as such.
+        if (live.model === undefined && mode !== "dispatch") throw new MossLegRefusal("runtime_selection_refused", NO_DEFAULT_MODEL_REASON, NO_DEFAULT_MODEL_CODE);
         throw new MossLegRefusal("runtime_selection_refused", missingCredentialDetail(selection.providerId), "no-credential");
       }
     };
@@ -1664,7 +1669,7 @@ export function createMossSessionDrivers(deps: MossLegDeps): MossSessionDrivers 
     // SAME precedence `optionsFor`'s own `model` derivation uses just above: dispatch runs its own
     // pin, everything else falls back to the daemon's configured provider.
     const settings = deps.settings();
-    const effectiveTag = meta.model ?? (mode === "dispatch" ? pinsFor(settings).dispatch : settings?.provider?.model ?? DEFAULT_PROVIDER.model);
+    const effectiveTag = meta.model ?? (mode === "dispatch" ? pinsFor(settings).dispatch : settings?.provider?.model) ?? UNSTATED_TAG;
     // WS-20 (review round 2, M6): `pinsFor` dropped its old cross-provider "openai" fallback rung —
     // a provider that does not itself serve the terra/luna slot now yields `UNSTATED_TAG`, never a
     // silent guess at a different provider. `meta.model` can never BE the sentinel here (rejected at
@@ -1673,6 +1678,8 @@ export function createMossSessionDrivers(deps: MossLegDeps): MossSessionDrivers 
     // a record naming the "unstated" pseudo-provider and BEFORE the child would ever be handed the
     // literal string "unstated" as its model.
     if (effectiveTag === UNSTATED_TAG) {
+      // No model named and no default model (2026-11-20): the plain sentence, before a record names no provider.
+      if (mode !== "dispatch") throw new MossLegRefusal("runtime_selection_refused", NO_DEFAULT_MODEL_REASON, NO_DEFAULT_MODEL_CODE);
       throw new MossLegRefusal(
         "runtime_selection_refused",
         `dispatch has no runnable model: pins.dispatch resolves to no known slot for this daemon's own provider (${ownProviderFor(settings)}) — set settings.pins.dispatch explicitly to a tag naming a provider this daemon can serve, or configure settings.provider.model to a provider whose catalog serves the terra slot`,

@@ -67,7 +67,7 @@ describe("addUserMcpServer / removeUserMcpServer", () => {
     const withRunTimes = baseSettings({ runtimes: { advisorModel: "codex-oauth/gpt-5.6-luna" } });
     const next = addUserMcpServer(withRunTimes, "my-server", { type: "stdio", command: "x" });
     expect(next.runtimes?.advisorModel).toBe("codex-oauth/gpt-5.6-luna");
-    expect(next.provider.model).toBe(tag("codex-oauth/gpt-5.6-sol"));
+    expect(next.provider?.model).toBe(tag("codex-oauth/gpt-5.6-sol"));
   });
 
   test("preserves every OTHER configured mcpServers entry", () => {

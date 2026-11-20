@@ -189,7 +189,7 @@ export {
 export { CODEX } from "./providers/codex-config";
 // WS-20 L4: `CODEX_MODELS`/`DEFAULT_CODEX_MODEL` are deleted — `packages/cli/src/model-cli.ts`
 // imports them today and needs the L4 cross-lane update to `catalogRowsFor`/`isModelTag`/tags.
-export { DEFAULT_PROVIDER, INTERNAL_PROVIDER_IDS, pinsFor, internalEligibleProviderIds, CLAUDE_FIRST_PARTY_PROVIDER_IDS } from "./settings";
+export { INTERNAL_PROVIDER_IDS, pinsFor, internalEligibleProviderIds, CLAUDE_FIRST_PARTY_PROVIDER_IDS } from "./settings";
 // Winter Phase 10a (O7, P10a-2/6): `moss login/logout --anthropic-console` and `moss doctor`'s
 // console-profile row all run IN-PROCESS against MOSS_HOME (the CLI door inherits stdio and
 // drives the SDK's login directly — see console-profile-broker.ts's own header — never an RPC), so

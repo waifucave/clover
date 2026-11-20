@@ -22,6 +22,7 @@
 // * **The hooks** join the base options' with lane A's `mergedHooks`: the pause and the fence's check first, the
 //   base's (never allowing), then the pause and the fence's check again, last. The provider fill is lane A's
 //   `fillProvider`, which may set only the model's own keys.
+import { NO_DEFAULT_MODEL_REASON } from "../../default-model";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -360,6 +361,8 @@ export class MossCodeBackend implements AgentBackend {
     // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
     if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
     const model = spec.model ?? deps.defaultModel();
+    // No model asked for and no default model (a fresh home before a provider is added): refused with the plain sentence.
+    if (model === "") throw new ContractError("refused", NO_DEFAULT_MODEL_REASON);
     const abort = new AbortController();
     // Never a bot's own memory (`ownMemory`): an agent's policy denies all of `<home>/bots`.
     const fence = agentPolicyOf(spec.fence);

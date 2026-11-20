@@ -77,7 +77,7 @@ describe("layer 1 — the live settings view (never the file)", () => {
     const before = readFileSync(path, "utf8");
     setCatalogKeysForTests(REFRESHED);
     const view = liveSettingsView(loadSettings(path));
-    expect(view.provider.model as string).toBe(NEW);
+    expect(view.provider?.model as string).toBe(NEW);
     expect(view.pins as Record<string, string>).toEqual({ dream: NEW, cleaner: "codex-oauth/gpt-5.6-sol" });
     expect(view.reviewer?.model as string).toBe(NEW);
     expect(view.titles?.model as string).toBe(NEW);

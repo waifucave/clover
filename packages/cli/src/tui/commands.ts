@@ -115,7 +115,7 @@ async function runModel(ctx: CommandCtx, argText: string): Promise<void> {
     // (the picker has no section headers); the provider rides `hint` since the label is the
     // facing name / modelId.
     if (ctx.openChoice && models.length > 0) {
-      const currentMarked = models.some((m) => m.id === settings.provider.model);
+      const currentMarked = models.some((m) => m.id === (settings.provider?.model ?? ""));
       // WS-24 (pickers lane, fix round 1): the CURRENT model named in the title, but ONLY when no
       // option is marked `current` — the session-picker listing (`models`, off `sync.config`) now
       // excludes a row `toolsRefusedFor` refuses tools on, so an already-stored model that got hidden
@@ -126,14 +126,14 @@ async function runModel(ctx: CommandCtx, argText: string): Promise<void> {
       // width budget (the key-grammar hint at its tail truncates first) and must not grow on the hot
       // path for the rare case's sake. `modelDisplayWithHint` is the same "modelId (providerId)" form
       // the bare-tag show path already prints.
-      const modelPrefix = currentMarked ? "" : `model: ${modelDisplayWithHint(settings.provider.model)} — `;
+      const modelPrefix = currentMarked ? "" : `model: ${modelDisplayWithHint((settings.provider?.model ?? ""))} — `;
       ctx.openChoice({
-        title: `${modelPrefix}effort: ${settings.provider.reasoningEffort ?? "default"} (/model --effort)`,
+        title: `${modelPrefix}effort: ${settings.provider?.reasoningEffort ?? "default"} (/model --effort)`,
         options: models.map((m) => ({
           value: m.id,
           label: m.facingName ?? m.id.slice(m.id.indexOf("/") + 1),
           hint: m.providerId,
-          current: m.id === settings.provider.model,
+          current: m.id === (settings.provider?.model ?? ""),
         })),
         onPick: (slug) => { void applyModelPick(ctx, slug); },
       });
@@ -141,10 +141,10 @@ async function runModel(ctx: CommandCtx, argText: string): Promise<void> {
     }
     // Headless fallback (no picker surface), and no live catalogue: the historical bare-tag note,
     // extended with the grouped listing when a catalogue WAS available (openChoice absent).
-    const effortSuffix = settings.provider.reasoningEffort ? `  effort: ${settings.provider.reasoningEffort}` : "";
+    const effortSuffix = settings.provider?.reasoningEffort ? `  effort: ${settings.provider?.reasoningEffort}` : "";
     // Review fix (Nit 1): the modelId, the provider trailing as a hint — never the raw tag.
-    const lines = [`${modelDisplayWithHint(settings.provider.model)}${effortSuffix}`];
-    if (models.length > 0) lines.push(renderModelListing(models, settings.provider.model).trimEnd());
+    const lines = [`${modelDisplayWithHint((settings.provider?.model ?? ""))}${effortSuffix}`];
+    if (models.length > 0) lines.push(renderModelListing(models, (settings.provider?.model ?? "")).trimEnd());
     // Winter Phase 8d (P8d-8, Task 4.3): mirrors main.ts's `case "model"` show branch verbatim.
     lines.push(`advisor: ${settings.runtimes?.advisorModel ? modelDisplayWithHint(settings.runtimes.advisorModel) : "auto"}`);
     ctx.appendNote(lines.join("\n"));
@@ -187,7 +187,7 @@ async function runModel(ctx: CommandCtx, argText: string): Promise<void> {
   if (action.kind === "setModel" || action.kind === "setModelAndEffort") {
     // Review fix (item 4): PER-SESSION /model accepts any pinned provider — catalog-membership
     // only (`validateModelTag`), never the internal-provider gate `moss model <tag>` (the CLI
-    // verb, main.ts) applies to its own GLOBAL settings.provider.model write.
+    // verb, main.ts) applies to its own GLOBAL (settings.provider?.model ?? "") write.
     const err = validateModelTag(action.slug, settings);
     if (err) { ctx.appendNote(err); return; }
     // `validateModelTag` just proved this is a real tag (and refused the sentinel/test-double
@@ -195,20 +195,20 @@ async function runModel(ctx: CommandCtx, argText: string): Promise<void> {
     next = setProviderModel(next, parseModelTag(action.slug));
   }
   if (action.kind === "setEffort" || action.kind === "setModelAndEffort") {
-    const err = validateEffort(action.effort, next.provider.model);
+    const err = next.provider === undefined ? "there is no default model yet: pick one first (moss model <provider>/<model>)" : validateEffort(action.effort, next.provider.model);
     if (err) { ctx.appendNote(err); return; }
-    next = setReasoningEffort(next, action.effort as NonNullable<Settings["provider"]["reasoningEffort"]>);
+    next = setReasoningEffort(next, action.effort as NonNullable<NonNullable<Settings["provider"]>["reasoningEffort"]>);
   }
   saveSettings(settingsPath, next);
   // T5 status chrome: report the post-write resolved globals (both axes — the footer tracks each
   // independently; see `CommandCtx.onModelChanged`).
-  ctx.onModelChanged?.(next.provider.model, next.provider.reasoningEffort);
+  ctx.onModelChanged?.((next.provider?.model ?? ""), next.provider?.reasoningEffort);
   const sessionLine = action.kind === "setModel" || action.kind === "setModelAndEffort"
-    ? await applySessionModel(ctx, next.provider.model, action.confirmLossy === true)
+    ? await applySessionModel(ctx, (next.provider?.model ?? ""), action.confirmLossy === true)
     : null;
   const changed = [
-    action.kind === "setModel" || action.kind === "setModelAndEffort" ? `model ${modelDisplayWithHint(next.provider.model)}` : null,
-    action.kind === "setEffort" || action.kind === "setModelAndEffort" ? `effort ${next.provider.reasoningEffort}` : null,
+    action.kind === "setModel" || action.kind === "setModelAndEffort" ? `model ${modelDisplayWithHint((next.provider?.model ?? ""))}` : null,
+    action.kind === "setEffort" || action.kind === "setModelAndEffort" ? `effort ${next.provider?.reasoningEffort}` : null,
   ].filter(Boolean).join(", ");
   ctx.appendNote(sessionLine === null
     ? `updated (${changed}) — takes effect next turn, no daemon restart needed`
@@ -263,9 +263,9 @@ async function applyModelPick(ctx: CommandCtx, slug: string): Promise<void> {
   if (err) { ctx.appendNote(err); return; }
   const next = setProviderModel(settings, parseModelTag(slug));
   saveSettings(settingsPath, next);
-  ctx.onModelChanged?.(next.provider.model, next.provider.reasoningEffort);
-  const sessionLine = await applySessionModel(ctx, next.provider.model, false);
-  ctx.appendNote(`${sessionLine}; default for new sessions: ${modelDisplayWithHint(next.provider.model)}`);
+  ctx.onModelChanged?.((next.provider?.model ?? ""), next.provider?.reasoningEffort);
+  const sessionLine = await applySessionModel(ctx, (next.provider?.model ?? ""), false);
+  ctx.appendNote(`${sessionLine}; default for new sessions: ${modelDisplayWithHint((next.provider?.model ?? ""))}`);
 }
 
 /** Mirrors main.ts `case "output-style"` (~:1546): NO client/daemon RPC at all — same
@@ -336,7 +336,7 @@ function applyOutputStylePick(ctx: CommandCtx, name: string): void {
  *  configured)" branch and the two summary lines (folded into one note, newline-joined). */
 async function runStatus(ctx: CommandCtx): Promise<void> {
   const s = await ctx.client.daemonStatus();
-  const provider = s.provider ? `${s.provider.id} (${s.provider.model})` : "(none configured)";
+  const provider = s.provider ? `${s.provider.id} (${(s.provider?.model ?? "")})` : "(none configured)";
   ctx.appendNote([
     `moss-core v${s.version} up ${formatElapsed(s.uptimeMs)} · ${s.socketPath}`,
     `provider: ${provider} · sessions: ${s.sessionsCount} · plugins: ${s.pluginsCount}`,

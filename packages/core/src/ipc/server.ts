@@ -136,7 +136,7 @@ import { withProblemsForRoles, type RoleHealthRegistry } from "../providers/role
 import type { InternalRouter } from "../providers/internal-router";
 import { internalRoleProblemsFor } from "../providers/internal-role-problems";
 import { catalogRoleProblemsFor } from "../providers/catalog-role-problems";
-import { DEFAULT_PROVIDER, usageTrackingFrom, pinsFor, addLocalDir, effortRefusalFor, loadSettings, saveSettings, setAdvisorModel, Settings, modelRolesFor, setModelRole, setSkillDenied, skillDenyRule, setMcpServerDisabled, setConnectorToolPermission, connectorPermissionTable, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, stripCredentialShapedMcpHeaders, sdkDenyRules, sdkUserMcpServers, liveSettingsView, computerUseMirrorFrom, type McpServerSettingsEntry } from "../settings";
+import { usageTrackingFrom, pinsFor, addLocalDir, effortRefusalFor, loadSettings, saveSettings, setAdvisorModel, Settings, modelRolesFor, setModelRole, setSkillDenied, skillDenyRule, setMcpServerDisabled, setConnectorToolPermission, connectorPermissionTable, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, stripCredentialShapedMcpHeaders, sdkDenyRules, sdkUserMcpServers, liveSettingsView, computerUseMirrorFrom, type McpServerSettingsEntry } from "../settings";
 import { addMcpServerInScope, mcpServerInScope, McpRenameRefusal, removeMcpServerForgettingPermissions, renameMcpServerCarryingSettings, type McpScope, type McpScopeTarget } from "../agent/mcp/mcp-write";
 import { saveAnswerEverywhere, saveAnswerInProject, SavedAnswerRefused } from "../agent/saved-answers";
 import { localScopeKeyFor, projectScopeRootFor, projectScopeTrusted } from "../runtime-sdk/run-home-input";
@@ -978,7 +978,7 @@ function resolveModelSelection(model: string, settings?: Settings): string {
  *  test harnesses boot this server with no `mossHome` wired at all — same "typed no-op, never a
  *  crash" precedent as every other `opts.mossHome`-gated reader in this file (`livePlugins`,
  *  `provider.configure`, …). Falls back to `undefined`, which `pinsFor`/`dispatchPinMessage` both
- *  already treat as "use `DEFAULT_PROVIDER`" — never a throw. */
+ *  already treat as "no default model" — never a throw. */
 function liveSettingsFor(opts: { mossHome?: string }): Settings | undefined {
   if (!opts.mossHome) return undefined;
   try {
@@ -3242,7 +3242,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // The default model is the one a new session of that mode runs on (dispatch its pin, the rest
         // `settings.provider.model`); a session on another model may differ.
         const modeDefaultTag = (mode: "code" | "dispatch" | "chat"): string | undefined =>
-          mode === "dispatch" ? pinsFor(settings).dispatch : settings?.provider?.model ?? DEFAULT_PROVIDER.model;
+          mode === "dispatch" ? pinsFor(settings).dispatch : settings?.provider?.model;
         const searchable = new Set((["code", "dispatch", "chat"] as const).filter((mode) => toolSearchSupportedBy(modeDefaultTag(mode))));
         const capabilities = CAPABILITY_SERVER_KEYS.map((key) => {
           // `capabilityToolName(key, "")` mints the exact `mcp__moss__<key>__` prefix every one

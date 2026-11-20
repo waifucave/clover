@@ -9,6 +9,9 @@ import { SessionStore } from "../../src/sessions/store";
 import { Settings, pinsFor, ownProviderFor } from "../../src/settings";
 import { splitTag } from "../../src/runtime-sdk/model-tag";
 import { RoleHealthRegistry } from "../../src/providers/role-health";
+
+/** A home whose default model is a Codex one (2026-11-20: a home with no settings has no default model, so no pin). */
+const CODEX_DEFAULT = Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } });
 import {
   SessionCleaner, renderTranscript, hasUserSetTitle, CLEANER_EFFORT, CLEANER_INSTRUCTION,
   CLEANER_MAX_JUDGMENTS_PER_PASS, CLEANER_MIN_IDLE_MS, CLEANER_RETRY_BACKOFF_MS, CLEANER_TRANSCRIPT_MAX_CHARS,
@@ -186,7 +189,7 @@ function makeCleaner(
     bgWork: () => false,
     home,
     enabled: () => true,
-    settings: () => null, // WS-20: pinsFor(null) -> the DEFAULT_PROVIDER-derived pin (codex-oauth/gpt-6.1-terra)
+    settings: () => CODEX_DEFAULT, // a home whose default is a Codex model -> its pin (codex-oauth/gpt-6.1-terra)
     now: () => Date.now(),
     ...over,
   });
@@ -259,7 +262,7 @@ describe("SessionCleaner — the happy path (session-activity-hygiene T7)", () =
 
     expect(provider.requests).toHaveLength(1);
     const req = provider.requests[0]!;
-    expect(req.model).toBe("gpt-6.1-terra"); // WS-20: pinsFor(null).cleaner split to its bare modelId
+    expect(req.model).toBe("gpt-6.1-terra"); // WS-20: pinsFor(CODEX_DEFAULT).cleaner split to its bare modelId
     expect(req.reasoningEffort).toBe(CLEANER_EFFORT);
     expect(req.instructions).toBe(CLEANER_INSTRUCTION);
     const content = (req.input[0] as { content: string }).content;
@@ -819,7 +822,7 @@ describe("SessionCleaner — strict verdict parsing (ANY deviation ⇒ keep, NO 
     const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "moss-cleaner-rh-home-")));
     const failing = new FakeProvider([[{ type: "error", code: "auth", message: "401" }]]);
     const errSpy = spyOn(console, "error").mockImplementation(() => {});
-    const expectedTag = `${ownProviderFor(null)}/${splitTag(pinsFor(null).cleaner).modelId}`;
+    const expectedTag = `${ownProviderFor(CODEX_DEFAULT)}/${splitTag(pinsFor(CODEX_DEFAULT).cleaner).modelId}`;
     try {
       await makeCleaner(store, home, failing, { now: agedNow, roleHealth }).runPass();
       const problem = roleHealth.problemFor("pins.cleaner", expectedTag);

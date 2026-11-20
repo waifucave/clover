@@ -1,0 +1,16 @@
+{
+  "type": "setup_changed",
+  "ts": 1781270000000,
+  "setup": {
+    "ready": true,
+    "missing": [],
+    "providers": [
+      "anthropic"
+    ],
+    "default": {
+      "model": "anthropic/claude-fable-5-2",
+      "source": "chosen"
+    },
+    "dismissed": false
+  }
+}

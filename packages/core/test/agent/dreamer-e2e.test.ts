@@ -10,6 +10,10 @@ import { assistantMemoryDirFor } from "../../src/agent/memory-dir";
 import { ContextAssembler } from "../../src/agent/context";
 import { TrustStore } from "../../src/agent/trust";
 import { SkillStore } from "../../src/agent/skills";
+import { Settings as SettingsSchema } from "../../src/settings";
+
+/** A home whose default model is a Codex one (2026-11-20: a home with no settings has no default model, so no pin). */
+const CODEX_DEFAULT = SettingsSchema.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } });
 
 /** Dreaming (Phase 7b) — end-to-end scenarios (Task 5, the final task). One continuous dispatch
  *  session lives through FOUR dream cycles, each a real `dreamer.tick()` against a real temp
@@ -88,7 +92,7 @@ describe("Dreaming end-to-end (Task 5): teach / forget / tombstone-survival / te
     ]);
 
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "ignored" },
       store,
       dir: () => dir,

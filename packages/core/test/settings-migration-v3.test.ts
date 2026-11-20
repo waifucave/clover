@@ -40,7 +40,7 @@ describe("WS-20 (spec §5): settings v2 -> v3 migration", () => {
     }));
     const presentProviders = new Set(["openai"]);
     const s = loadSettings(path, { presentProviders, persistMigration: true });
-    expect(s.provider.model).toBe(tag("codex-oauth/gpt-5.6-terra")); // rule 3 wins, unaffected by presence
+    expect(s.provider?.model).toBe(tag("codex-oauth/gpt-5.6-terra")); // rule 3 wins, unaffected by presence
     expect(s.reviewer?.model).toBe(tag("openai/gpt-5.6-terra")); // rule 5, presence-aware
   });
 
@@ -56,7 +56,7 @@ describe("WS-20 (spec §5): settings v2 -> v3 migration", () => {
       reviewer: { model: "gpt-5.6-terra" },
     }));
     const s = loadSettings(path); // bare call — exactly what the CLI does
-    expect(s.provider.model).toBe(tag("codex-oauth/gpt-5.6-terra"));
+    expect(s.provider?.model).toBe(tag("codex-oauth/gpt-5.6-terra"));
     expect(s.reviewer?.model).toBe(tag("codex-oauth/gpt-5.6-terra")); // fixed order: codex-oauth first
     expect(JSON.parse(readFileSync(path, "utf8")).schemaVersion).toBe(2); // left exactly as found
   });
@@ -73,7 +73,7 @@ describe("WS-20 (spec §5): settings v2 -> v3 migration", () => {
     const home = mkdtempSync(join(tmpdir(), "ws20-"));
     writeFileSync(join(home, "settings.json"), JSON.stringify({ schemaVersion: 2, provider: { type: "openai-compatible", model: "my-finetune", baseUrl: "http://127.0.0.1:9999/v1" } }));
     const s = loadSettings(join(home, "settings.json"));
-    expect(s.provider.model).toBe(tag("openai/gpt-5.6-sol")); // rule 2: S empty → the legacy provider (openai-compatible ⇒ openai) at its default model, one log line
+    expect(s.provider?.model).toBe(tag("openai/gpt-5.6-sol")); // rule 2: S empty → the legacy provider (openai-compatible ⇒ openai) at its default model, one log line
     expect(s.providers?.openai?.baseUrl).toBe("http://127.0.0.1:9999/v1");
   });
 
@@ -92,7 +92,7 @@ describe("WS-20 (spec §5): settings v2 -> v3 migration", () => {
       reviewer: { model: "claude-opus-5" },
     }));
     const s = loadSettings(path, { persistMigration: true });
-    expect(s.provider.model).toBe(tag("anthropic/claude-opus-5"));
+    expect(s.provider?.model).toBe(tag("anthropic/claude-opus-5"));
     expect(s.reviewer?.model).toBe(tag("anthropic/claude-opus-5"));
     // The migration persisted a VALID v3 file.
     const onDisk = JSON.parse(readFileSync(path, "utf8"));

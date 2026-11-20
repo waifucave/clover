@@ -6,6 +6,10 @@ import type { Provider, ProviderEvent, TurnRequest } from "../../src/providers/t
 import { SessionStore } from "../../src/sessions/store";
 import { FakeProvider } from "../../src/agent/fake-provider";
 import { Dreamer, DREAM_MIN_EVENTS, DREAM_MIN_SPACING_MS } from "../../src/agent/dreamer";
+import { Settings as SettingsSchema } from "../../src/settings";
+
+/** A home whose default model is a Codex one (2026-11-20: a home with no settings has no default model, so no pin). */
+const CODEX_DEFAULT = SettingsSchema.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } });
 
 /** A real temp store with a dispatch session — same fixture shape as dreamer-cycle.test.ts. */
 function setup(prefix: string): { home: string; store: SessionStore; dispatchId: string; dir: string } {
@@ -64,7 +68,7 @@ describe("Dreamer gates — each independently blocks (provider call count stays
     fillSubstantive(store, dispatchId, DREAM_MIN_EVENTS);
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => false, activeTurnCount: () => 0,
     });
@@ -77,7 +81,7 @@ describe("Dreamer gates — each independently blocks (provider call count stays
     fillSubstantive(store, dispatchId, DREAM_MIN_EVENTS);
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 1,
     });
@@ -91,7 +95,7 @@ describe("Dreamer gates — each independently blocks (provider call count stays
     const dir = join(home, "memory");
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -105,7 +109,7 @@ describe("Dreamer gates — each independently blocks (provider call count stays
     store.append(dispatchId, { type: "harness_attached", sessionId: dispatchId, clientName: "cli" });
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -121,7 +125,7 @@ describe("Dreamer gates — each independently blocks (provider call count stays
     writeFileSync(join(dir, "dream-state.json"), JSON.stringify({ watermarkSeq: 0, lastDreamAt: fixedNow - DREAM_MIN_SPACING_MS / 2 }));
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, now: () => fixedNow,
     });
@@ -136,7 +140,7 @@ describe("Dreamer — fires when all gates pass", () => {
     fillSubstantive(store, dispatchId, DREAM_MIN_EVENTS);
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -152,7 +156,7 @@ describe("Dreamer — fires when all gates pass", () => {
     fillSubstantive(store, dispatchId, DREAM_MIN_EVENTS);
     const provider = new HangingProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, timeoutMs: 50, // short so the dangling first tick() resolves quickly
     });
@@ -172,7 +176,7 @@ describe("Dreamer — fires when all gates pass", () => {
     const provider = okProvider();
     // Fresh Dreamer instance (simulates a daemon restart reading persisted state off disk).
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, now: () => fixedNow,
     });
@@ -188,7 +192,7 @@ describe("Dreamer — start()/stop()", () => {
     // enabled() is the FIRST thing every tick() reads -> counting its calls isolates "is the
     // timer still firing tick()" from the gating logic exercised by the tests above.
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider: okProvider(), model: "x" },
       store,
       dir: () => dir,
@@ -216,7 +220,7 @@ describe("Dreamer — carried-over review fix: timeout aborts the in-flight prov
     fillSubstantive(store, dispatchId, DREAM_MIN_EVENTS);
     const provider = new HangingProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, timeoutMs: 1,
     });
@@ -237,7 +241,7 @@ describe("Dreamer — carried-over review fix: timeout aborts the in-flight prov
       process.env.MOSS_DREAM_TIMEOUT_MS = "not-a-number";
       const provider = new DelayedProvider(30); // resolves in 30ms — fine under the real default, fatal under NaN
       const dreamer = new Dreamer({
-        settings: () => null,
+        settings: () => CODEX_DEFAULT,
         provider: { provider, model: "x" }, store, dir: () => dir,
         enabled: () => true, activeTurnCount: () => 0, // no explicit timeoutMs -> falls back to the env-derived default
       });
@@ -275,7 +279,7 @@ describe("Dreamer — the T7 cleaner rides the same scheduler slot", () => {
     // No dispatch session and no substantive events: every dream gate blocks.
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, cleaner,
     });
@@ -305,7 +309,7 @@ describe("Dreamer — the T7 cleaner rides the same scheduler slot", () => {
     }
     const provider = new OrderingProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, cleaner,
     });
@@ -321,7 +325,7 @@ describe("Dreamer — the T7 cleaner rides the same scheduler slot", () => {
     const cleaner = recordingCleaner([]);
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => false, activeTurnCount: () => 0, cleaner,
     });
@@ -338,7 +342,7 @@ describe("Dreamer — the T7 cleaner rides the same scheduler slot", () => {
     const cleaner = recordingCleaner([], { throws: true });
     const provider = okProvider("not json at all"); // makes runCycle throw
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, cleaner,
     });
@@ -356,7 +360,7 @@ describe("Dreamer — the T7 cleaner rides the same scheduler slot", () => {
     fillSubstantive(store, dispatchId, DREAM_MIN_EVENTS);
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });

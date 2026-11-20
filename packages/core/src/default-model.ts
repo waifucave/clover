@@ -84,9 +84,9 @@ export function setupMissing(present: ReadonlySet<string>, answer: DefaultAnswer
   return answer.model === undefined ? ["model"] : [];
 }
 
-/** The plain sentence a turn that needs a model and has none is refused with. */
-export function noDefaultModelReason(present: ReadonlySet<string>): string {
-  return present.size === 0
-    ? "MOSS has no model to answer with yet: add a model provider (a key or a sign-in) in Settings, or open the setup guide."
-    : "MOSS has no default model yet: pick one in Settings, or open the setup guide.";
-}
+/** The plain sentence a turn that needs a model and has none is refused with: it leads to adding a provider or picking
+ *  a model. */
+export const NO_DEFAULT_MODEL_REASON = "There's no model to answer with yet: add a model provider (a key or a sign-in) or pick a default model, in Settings or the setup guide.";
+
+/** The refusal's code, on the `agent_error` and the driver's typed refusal. */
+export const NO_DEFAULT_MODEL_CODE = "no_default_model";

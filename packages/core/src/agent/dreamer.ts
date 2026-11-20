@@ -175,7 +175,7 @@ export class Dreamer {
     // provider MOSS's jobs cannot use) rather than for "the pin names a provider we did not bind".
     const resolved = this.deps.resolve?.();
     if (resolved !== undefined && isInternalRefusal(resolved)) return;
-    const boundProviderId = resolved?.providerId ?? this.deps.provider?.live?.().providerId ?? ownProviderFor(settings);
+    const boundProviderId = resolved?.providerId ?? this.deps.provider?.live?.().providerId ?? ownProviderFor(settings) ?? "";
     const dreamPin = resolved?.tag ?? pinsFor(settings).dream;
     const dreamModel = resolved !== undefined
       ? resolved.model

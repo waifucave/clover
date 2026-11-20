@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
-import { effectiveDefault, noDefaultModelReason, providerOfTag, recommendedModel, settledDefault, setupMissing } from "../src/default-model";
+import { effectiveDefault, NO_DEFAULT_MODEL_REASON, providerOfTag, recommendedModel, settledDefault, setupMissing } from "../src/default-model";
 
 const catalog = loadCatalog();
 const rec = (p: string) => recommendedModel(catalog, p);
@@ -56,8 +56,8 @@ describe("effectiveDefault", () => {
     expect(effectiveDefault("winter-test/echo", new Set(), rec)).toEqual({ model: "winter-test/echo", source: "chosen" });
   });
   test("the refusal sentence leads to adding a provider or picking a model", () => {
-    expect(noDefaultModelReason(new Set())).toMatch(/add a model provider/);
-    expect(noDefaultModelReason(two)).toMatch(/pick one/);
+    expect(NO_DEFAULT_MODEL_REASON).toMatch(/add a model provider/);
+    expect(NO_DEFAULT_MODEL_REASON).toMatch(/pick a default model/);
   });
 });
 

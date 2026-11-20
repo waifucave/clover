@@ -14,7 +14,10 @@ import { RoleHealthRegistry } from "../../src/providers/role-health";
 // this is the SAME value production falls back to on a daemon with no settings loaded at all
 // (`pinsFor`'s own `DEFAULT_PROVIDER`-rooted default) — computed here rather than hand-copied so a
 // future default-rule change can't silently desync this expectation from the real one.
-const DREAM_MODEL_UNDER_TEST = splitTag(pinsFor(null).dream).modelId;
+// 2026-11-20: a home with no settings has no default model (and so no pin); the fixtures run on a home whose default
+// is a Codex model, the old fixed default.
+const CODEX_DEFAULT = Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } });
+const DREAM_MODEL_UNDER_TEST = splitTag(pinsFor(CODEX_DEFAULT).dream).modelId;
 
 /** A real temp store with a dispatch session (the sole session `dispatchSessionId()` finds) —
  *  same fixture shape across all 8 cases; individual tests append whatever events/memory files
@@ -65,7 +68,7 @@ describe("Dreamer.tick", () => {
 
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "ignored" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -88,7 +91,7 @@ describe("Dreamer.tick", () => {
 
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "some-other-model" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -113,7 +116,7 @@ describe("Dreamer.tick", () => {
     const fixedNow = new Date("2026-07-18T12:00:00Z").getTime();
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, now: () => fixedNow,
     });
@@ -135,7 +138,7 @@ describe("Dreamer.tick", () => {
     const fixedNow = 1_753_000_000_000;
     const provider = okProvider(opsJson);
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, now: () => fixedNow,
     });
@@ -154,7 +157,7 @@ describe("Dreamer.tick", () => {
 
     const provider = okProvider('{"ops":[]}');
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -172,7 +175,7 @@ describe("Dreamer.tick", () => {
 
     const provider = okProvider("I have nothing worth keeping today.");
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -188,7 +191,7 @@ describe("Dreamer.tick", () => {
     const tooMany = { ops: Array.from({ length: 13 }, (_, i) => ({ op: "tombstone", text: `t${i}` })) };
     const provider = okProvider(JSON.stringify(tooMany));
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -206,7 +209,7 @@ describe("Dreamer.tick", () => {
 
     const provider = okProvider();
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider, model: "x" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
@@ -293,14 +296,14 @@ describe("Dreamer role-health wiring (2026-09-18) — observation only", () => {
     const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "moss-dreamer-rh-home-")));
     const failing = new FakeProvider([[{ type: "error", code: "rate_limit", providerCode: "usage_limit_reached", message: "429" }]]);
     const dreamer = new Dreamer({
-      settings: () => null, provider: { provider: failing, model: "ignored" }, store, dir: () => dir,
+      settings: () => CODEX_DEFAULT, provider: { provider: failing, model: "ignored" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, roleHealth,
     });
     // Unchanged existing behaviour: tick() itself never throws (the scheduler precedent) — the
     // thrown "provider error: 429" is caught and logged inside tick, not surfaced here.
     await expect(dreamer.tick()).resolves.toBeUndefined();
 
-    const expectedTag = `${ownProviderFor(null)}/${DREAM_MODEL_UNDER_TEST}`;
+    const expectedTag = `${ownProviderFor(CODEX_DEFAULT)}/${DREAM_MODEL_UNDER_TEST}`;
     const problem = roleHealth.problemFor("pins.dream", expectedTag);
     expect(problem).not.toBeNull();
     expect(problem?.reason).toBe("usage-limit");
@@ -310,7 +313,7 @@ describe("Dreamer role-health wiring (2026-09-18) — observation only", () => {
     fillSubstantive(store, dispatchId, DREAM_MIN_EVENTS);
     const ok = new FakeProvider([[{ type: "text_delta", delta: '{"ops":[]}' }, { type: "done", stopReason: "end_turn" }]]);
     const dreamer2 = new Dreamer({
-      settings: () => null, provider: { provider: ok, model: "ignored" }, store, dir: () => dir,
+      settings: () => CODEX_DEFAULT, provider: { provider: ok, model: "ignored" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0, roleHealth, now: () => Date.now() + DREAM_MIN_SPACING_MS + 1,
     });
     await dreamer2.tick();
@@ -323,12 +326,12 @@ describe("Dreamer role-health wiring (2026-09-18) — observation only", () => {
     const roleHealth = new RoleHealthRegistry(mkdtempSync(join(tmpdir(), "moss-dreamer-rh-quota-")));
     const failing = new FakeProvider([[{ type: "error", code: "rate_limit", providerCode: "usage_limit_reached", message: "429" }]]);
     const dreamer = new Dreamer({
-      settings: () => null,
+      settings: () => CODEX_DEFAULT,
       provider: { provider: failing, model: "ignored", quota: { subscriptionQuota: () => ({ info: { status: "rejected", resetsAt: 2_000_000 }, at: 1 }) } },
       store, dir: () => dir, enabled: () => true, activeTurnCount: () => 0, roleHealth,
     });
     await dreamer.tick();
-    const expectedTag = `${ownProviderFor(null)}/${DREAM_MODEL_UNDER_TEST}`;
+    const expectedTag = `${ownProviderFor(CODEX_DEFAULT)}/${DREAM_MODEL_UNDER_TEST}`;
     const problem = roleHealth.problemFor("pins.dream", expectedTag);
     expect(problem?.reason).toBe("usage-limit");
     expect(problem?.retryAt).toBe(new Date(2_000_000 * 1000).toISOString());
@@ -339,7 +342,7 @@ describe("Dreamer role-health wiring (2026-09-18) — observation only", () => {
     fillSubstantive(store, dispatchId, DREAM_MIN_EVENTS);
     const failing = new FakeProvider([[{ type: "error", code: "rate_limit", message: "429" }]]);
     const dreamer = new Dreamer({
-      settings: () => null, provider: { provider: failing, model: "ignored" }, store, dir: () => dir,
+      settings: () => CODEX_DEFAULT, provider: { provider: failing, model: "ignored" }, store, dir: () => dir,
       enabled: () => true, activeTurnCount: () => 0,
     });
     await expect(dreamer.tick()).resolves.toBeUndefined();
@@ -360,7 +363,7 @@ describe("the dreamer reconciles the internal-jobs credential snapshot", () => {
     let asked = 0;
     const dreamer = new Dreamer({
       provider: { provider: okProvider(), model: "unused" },
-      store, dir: () => dir, settings: () => null,
+      store, dir: () => dir, settings: () => CODEX_DEFAULT,
       // `enabled: false` gates the dream pass out entirely — the reconcile must still happen, because
       // it is about the DAEMON's credentials, not about whether this particular job is going to run.
       enabled: () => false, activeTurnCount: () => 0,
@@ -380,7 +383,7 @@ describe("the dreamer reconciles the internal-jobs credential snapshot", () => {
         provider: new FakeProvider([[{ type: "error", code: "auth", message: "invalid credential" }]]),
         model: "unused",
       },
-      store, dir: () => dir, settings: () => null,
+      store, dir: () => dir, settings: () => CODEX_DEFAULT,
       enabled: () => true, activeTurnCount: () => 0,
       refreshCredentials: () => { asked += 1; },
     });
@@ -399,7 +402,7 @@ describe("the dreamer reconciles the internal-jobs credential snapshot", () => {
         provider: new FakeProvider([[{ type: "error", code: "rate_limit", message: "429" }]]),
         model: "unused",
       },
-      store, dir: () => dir, settings: () => null,
+      store, dir: () => dir, settings: () => CODEX_DEFAULT,
       enabled: () => true, activeTurnCount: () => 0,
       refreshCredentials: () => { asked += 1; },
     });
