@@ -1615,23 +1615,38 @@ async function pressOnIsland(cdp: Cdp, card: Card, appLog = join(logs, "app.log"
   }
   // lane HS: the button's page as it is now: the island can fold the card and draw it again while it settles (a slower
   // machine's first frames), which replaces the page the first look found; the ready mark is read on the live one.
-  const ready = await until("the sealed page's ready-to-answer mark on the island", 30_000, async () => {
-    for (const d of await buttonDocs()) {
-      if ((await cdp.evaluate(d.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) !== "yes") continue;
-      const at = await cdp.centerOf(d.session, BUTTON).catch(() => undefined);
-      if (at !== undefined) return { s: d.session, btn: at };
-    }
-    return undefined;
-  }, 100)
-    .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"}; the island's layout: ${await islandCardLayout(cdp, card.id)})`));
-  const { s, btn } = ready;
-  await sleep(300);
-  await cdp.click(s, btn.x, btn.y);
-  const verdict = await until(`the app's answer for the ${card.kind} card pressed on the island`, 8_000, () => {
-    const text = readLog(appLog).slice(from);
-    if (text.includes(`sealed: answer accepted for ${card.id}`)) return "accepted";
-    return /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
-  }, 200).catch(() => undefined);
+  // A page that said "yes" can say "no" again before the click (the island lays the card out again: its buttons stop showing and show
+  // again, and the page starts its 500 ms over), and the page then turns the press down as too early (run 44827000098: ready read
+  // yes, "settling" 12 ms after the buttons showed again). The mark is read again right before each click, and a press the page
+  // turned down is made again at once, as the person is told to (sealed-press.ts); only an answer counts, and only on the page's own
+  // fresh report.
+  let verdict: string | undefined;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const ready = await until("the sealed page's ready-to-answer mark on the island", 30_000, async () => {
+      for (const d of await buttonDocs()) {
+        if ((await cdp.evaluate(d.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) !== "yes") continue;
+        const at = await cdp.centerOf(d.session, BUTTON).catch(() => undefined);
+        if (at !== undefined) return { s: d.session, btn: at };
+      }
+      return undefined;
+    }, 100)
+      .catch(async (err: unknown) => fail(`${why(err)} (the island's Approve was never ready; the app logged: ${readLog(appLog).slice(from).split("\n").filter((l) => /sealed: .*(visible|press)|fallback/.test(l)).slice(-8).join(" | ") || "nothing"}; the island's layout: ${await islandCardLayout(cdp, card.id)})`));
+    const { s, btn } = ready;
+    await sleep(300);
+    if ((await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) !== "yes") { say(`${card.kind} card press: the island page's ready mark went back to no before the click (attempt ${attempt + 1}): waiting for it again`); continue; }
+    const clickedAt = readLog(appLog).length;
+    await cdp.click(s, btn.x, btn.y);
+    verdict = await until(`the app's answer for the ${card.kind} card pressed on the island`, 8_000, () => {
+      const text = readLog(appLog).slice(from);
+      if (text.includes(`sealed: answer accepted for ${card.id}`)) return "accepted";
+      const refused = /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
+      if (refused !== undefined) return refused;
+      return pressTurnedDownAsEarly(readLog(appLog).slice(clickedAt)) ? "again" : undefined;
+    }, 200).catch(() => undefined);
+    if (verdict !== "again") break;
+    say(`${card.kind} card press: the island page turned the press down as too early (attempt ${attempt + 1}): pressing again`);
+    verdict = undefined;
+  }
   const log = readLog(appLog).slice(from);
   if (verdict !== "accepted") fail(`the press on the island's ${card.kind} card: ${verdict?.trim() ?? "no answer within 8 s"} (the app logged: ${log.split("\n").filter((l) => /sealed: .*press|fallback/.test(l)).slice(-6).join(" | ") || "no press line"})`);
   if (new RegExp(`fallback card for ${card.id}`).test(log)) fail(`the app drew its fallback card for the ${card.kind} card though the island showed its buttons`);
