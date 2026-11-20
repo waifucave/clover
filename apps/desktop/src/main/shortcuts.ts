@@ -45,7 +45,11 @@ export function fallbackMayShow(input: { headless: boolean; smokeFallback: boole
  *  shows only when no plugin has both buttons visible within 2 s). A report that leaves both buttons visible somewhere
  *  disarms it; a frame that stops showing starts it again only while no surface still has both buttons visible and the
  *  fallback isn't already up. */
-export function fallbackOnVisibility(input: { visible: boolean; bothVisible: boolean; fallbackOpen: boolean }): "disarm" | "arm" | "keep" {
+export function fallbackOnVisibility(input: { visible: boolean; bothVisible: boolean; fallbackOpen: boolean; answering?: boolean }): "disarm" | "arm" | "keep" {
   if (input.visible) return input.bothVisible ? "disarm" : "keep";
+  // A card whose answer is on its way to the core: its buttons stop showing because it was answered (the island folds the
+  // card as the press goes), not because no part drew them, and a card window must not come up for a card the person just
+  // answered (a slow answer, a plugin's approve that installs it, took 3 s on a runner while the 2 s timer ran).
+  if (input.answering === true) return "keep";
   return input.bothVisible || input.fallbackOpen ? "keep" : "arm";
 }

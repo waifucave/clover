@@ -144,6 +144,7 @@ import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world"
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
 import { OUTSIDE_FOLDER, OUTSIDE_TOOL, outsideWrong, writeOutside, type ProbeAnswer } from "./outside-step";
 import { scaled } from "./time-scale";
+import { pressTurnedDownAsEarly, waitSealedReady } from "./sealed-press";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -1344,7 +1345,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean; always?: boolean; pick?: (card: Card) => { cdp: Cdp; log: string; onIsland?: boolean } }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
+async function turn(c: MossClient, session: string, text: string, timeoutMs = 120_000, o: { /** The app's log the card's arrival is read from, for a run whose app logs to its own file. */ log?: string; press?: boolean | { cdp: Cdp; log: string; inConversation?: boolean; narrow?: boolean; onIsland?: boolean; always?: boolean; pick?: (card: Card) => { cdp: Cdp; log: string; onIsland?: boolean } | Promise<{ cdp: Cdp; log: string; onIsland?: boolean }> }; onPressed?: (how: string) => void; /** Looks at a card while it is pending, before it is pressed. */ inspect?: (card: Card) => Promise<void>; /** Answers a card that offers it "Always allow" (over RPC). */ always?: boolean; /** Answers every card no (over RPC). */ deny?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -1368,7 +1369,7 @@ async function turn(c: MossClient, session: string, text: string, timeoutMs = 12
           if (o.press !== undefined && o.press !== false) {
             const by0 = o.press === true ? (pressCdp === undefined ? undefined : { cdp: pressCdp, log: join(logs, "app.log") }) : o.press;
             // lane HS: a run with a host picks where to press by the card's placement.
-            const by = by0 !== undefined && "pick" in by0 && typeof by0.pick === "function" ? { ...by0, ...by0.pick(card) } : by0;
+            const by = by0 !== undefined && "pick" in by0 && typeof by0.pick === "function" ? { ...by0, ...(await by0.pick(card)) } : by0;
             if (by === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
             if (by!.onIsland === true) {
               const always = (by as { always?: boolean }).always === true && card.options.some((x) => x.kind === "approve" && (x as { remember?: string }).remember === "always");
@@ -1473,6 +1474,7 @@ const PLAIN_APPROVE = ".seal-button[data-kind=approve]:not(.quiet):not([data-rem
 async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")): Promise<"island" | "fallback"> {
   await appGotCard(card, appLog);
   const from = readLog(appLog).length;
+  const cardSeenAt = Date.now();
   // The card is pressed where the app drew it: its island's own sealed button, or the fallback card's. A press can land on
   // a frame that goes away a moment later (a plugin install remounts the island's layer, and the island folds a card back
   // into its strip), so a press that brings no answer within a few seconds is made again on whatever is drawn then, the
@@ -1511,20 +1513,28 @@ async function pressApprove(cdp: Cdp, card: Card, appLog = join(logs, "app.log")
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, s).catch(() => undefined);
     // The page says when it will take a press (body[data-ready], its own gates: visible, shown long enough, the pointer in);
     // the press waits for that, as a person's would. A page that never says (an older build) gets the fixed wait.
-    const readySeen = await until("the page's ready-to-answer mark", 10_000, async () => {
-      const v = await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").catch(() => "gone");
-      return v === "yes" || v === "none" || v === "gone" ? v : undefined;
-    }, 100).catch(() => "never");
+    // Only "yes" is ready (sealed-press.ts): a page just loaded reads none until its first mark and a read between documents fails,
+    // and taking either for ready pressed 250 to 430 ms after the page first showed (its own gate wants 500): "settling", the
+    // press lost, the island's card folded 12 s after it came, and nothing left to press (runs 44815142351 and 44816507198).
+    const readyWaitFrom = Date.now();
+    const readySeen = await waitSealedReady(async () => { const v = await cdp.evaluate(s, "document.body.dataset.ready ?? 'none'").then((x) => String(x), () => undefined); return v; }, { timeoutMs: scaled(10_000), noneForMs: 3_000 });
     await sleep(readySeen === "none" ? 1_500 : 300);
+    say(`${card.kind} card press: ${isOwn ? "fallback" : "island"} page ready=${readySeen} after ${Date.now() - readyWaitFrom} ms (${Date.now() - cardSeenAt} ms after the card was first looked for)`);
     const state = await cdp.evaluate(s, "JSON.stringify({answering:document.body.dataset.answering??null,answered:document.body.dataset.answered??null,ready:document.body.dataset.ready??null,state:(document.querySelector('.state')||{}).textContent??null,w:innerWidth,h:innerHeight})").catch(() => "gone");
+    const clickedAt = readLog(appLog).length;
     await cdp.click(s, btn.x, btn.y).catch(() => undefined);
-    tried.push(`${isOwn ? "fallback" : "island"} at ${Math.round(btn.x)},${Math.round(btn.y)} ${String(state)}`);
+    tried.push(`${isOwn ? "fallback" : "island"} at ${Math.round(btn.x)},${Math.round(btn.y)} ready=${readySeen} after ${Date.now() - readyWaitFrom} ms ${String(state)}`);
+    // The page says at once when it turned the press down as too early (the person is told to press again): the press is made
+    // again then, not after the answer's whole wait (3 times as long on a runner, longer than the island keeps a card up).
     const verdict = await until(`the app's answer for the ${card.kind} card`, 5_000, () => {
       const text = readLog(appLog).slice(from);
       if (text.includes(`sealed: answer accepted for ${card.id}`)) return "accepted";
-      return /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
+      const refused = /sealed: (?:core refused answer|answer held back|answer refused)[^\n]*/.exec(text)?.[0];
+      if (refused !== undefined) return refused;
+      return pressTurnedDownAsEarly(readLog(appLog).slice(clickedAt)) ? "again" : undefined;
     }, 300).catch(() => undefined);
     if (verdict === "accepted") return isOwn ? "fallback" : "island";
+    if (verdict === "again") { tried[tried.length - 1] += " (turned down as too early: pressed again)"; continue; }
     if (verdict !== undefined) fail(`the press on the ${card.kind} card's Approve: ${verdict.trim()} [apps/desktop/src/main/index.ts sealedAnswer → packages/core/src/approvals/broker.ts #verify]`);
   }
   return fail(`the press on the ${card.kind} card's Approve reached nothing in 45 s (no "sealed:" line in app.log); pressed: ${tried.join(" | ")} [scripts/acceptance/run.ts pressApprove → apps/desktop/src/main/sealed-pages.ts ownCardPage]`);
@@ -4723,7 +4733,13 @@ async function browserOnlyRun(app: { exe: string; args: string[] }, o: { withHos
     let windowPresses = 0;
     const lastPlace = (card: Card) => [...readLog(log).matchAll(new RegExp(`router: ${card.id} placed (\\w+)`, "g"))].at(-1)?.[1];
     const onHostIsland = (card: Card) => hostCdp !== undefined && (lastPlace(card) === "island" || lastPlace(card) === "elsewhere");
-    const pick = (card: Card) => (onHostIsland(card) ? { cdp: hostCdp!, log: hostLog, onIsland: true } : { cdp: cdp!, log });
+    // The card is seen over RPC the moment the engine raises it, and the window's log hears of it (and of its placement) a beat
+    // later, 290 ms on a runner (run 44815142351): a pick made before that line took the window for a card on the host's island
+    // and pressed where its buttons are not for 60 s. The pick waits for the router's word first, as `pressWhereHeld` does.
+    const pick = async (card: Card) => {
+      if (hostCdp !== undefined) await until(`the router placing ${card.id}`, 20_000, () => (lastPlace(card) !== undefined ? true : undefined), 200).catch(() => undefined);
+      return onHostIsland(card) ? { cdp: hostCdp!, log: hostLog, onIsland: true } : { cdp: cdp!, log };
+    };
     const pressWhereHeld = async (card: Card) => {
       if (hostCdp !== undefined) await until(`the router placing ${card.id}`, 20_000, () => (lastPlace(card) !== undefined ? true : undefined), 200).catch(() => undefined);
       if (onHostIsland(card)) { hostPresses++; await pressOnIsland(hostCdp!, card, hostLog); } else { windowPresses++; await pressApprove(cdp!, card, log); }

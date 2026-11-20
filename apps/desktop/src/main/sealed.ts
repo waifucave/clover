@@ -187,6 +187,11 @@ export class SealedFrames {
     return c !== undefined && !this.resolved.has(id) && !this.answered.has(id) && (c.expiresAt === null || c.expiresAt > this.now());
   }
 
+  /** Whether an answer to this card is on its way to the core (`buildAnswer` went out, `confirmedAnswer` has not come back). */
+  isAnswering(id: string): boolean {
+    return this.pending.has(id);
+  }
+
   /** One card, pending or resolved. */
   get(id: string): SealedCard | undefined {
     return this.cards.get(id);

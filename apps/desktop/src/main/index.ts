@@ -638,6 +638,9 @@ async function ready(): Promise<void> {
       const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
       if (r.accepted !== true) {
         sealed.confirmedAnswer(out.card.id, false);
+        // The press disarmed the card's fallback and the buttons stopped showing while the answer was out (the fallback stays
+        // down for a card being answered): a refused answer with no part showing both buttons starts the 2 s again.
+        if (sealed.isPending(out.card.id) && !sealed.buttonsVisible(out.card.id) && fallbacks.get(out.card.id)?.win === undefined) void armFallback(out.card.id);
         if (r.reason === "computer use is acting right now") log(`sealed: answer refused (computer use acting)`);
         log(`sealed: core refused answer (${typeof r.reason === "string" ? r.reason.slice(0, 120) : "no reason"})`);
         return { accepted: false, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) };
@@ -668,7 +671,7 @@ async function ready(): Promise<void> {
       if (visible === true) noteBothVisible(cardId, sealed.windowOf(token));
       const own = fallbacks.get(cardId);
       const fallbackOpen = own?.win !== undefined && !own.win.isDestroyed();
-      const step = fallbackOnVisibility({ visible: visible === true, bothVisible: sealed.buttonsVisible(cardId), fallbackOpen });
+      const step = fallbackOnVisibility({ visible: visible === true, bothVisible: sealed.buttonsVisible(cardId), fallbackOpen, answering: sealed.isAnswering(cardId) });
       if (step === "disarm") disarmFallback(cardId);
       else if (step === "arm" && sealed.get(cardId) !== undefined) {
         log(`card: ${cardId} fallback timer armed (a button stopped showing in ${surfaceName(sealed.windowOf(token))})`);
@@ -1228,6 +1231,8 @@ function scheduleSurfacesReport(): void {
 async function showFallbackCard(cardId: string, strip = false): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
+  // The person's answer is on its way to the core: no card window for a card they just answered (a refusal arms it again).
+  if (sealed.isAnswering(cardId)) { log(`card: the fallback card for ${cardId} was not drawn (its answer is on its way to the core)`); return; }
   // lane HS (B1): and only it draws one (the host never docks a strip: it has no window; a window never draws the island's).
   if (!fallbackHere(cardId)) { log(`card: ${strip ? "the window's strip" : "the fallback card"} for ${cardId} is another program's to draw (${enginePlaces.get(cardId)?.kind ?? "no place"})`); return; }
   const smokeFallback = SMOKE_SEALED_FALLBACK;

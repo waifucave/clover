@@ -115,6 +115,20 @@ describe("the sealed frames' store", () => {
     expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
   });
 
+  test("a card is answering from the moment its answer is built until the core's word (the fallback card stays down meanwhile)", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const made = store.mint(CARD.id, "button:allow_once", parent)!;
+    expect(store.isAnswering(CARD.id)).toBe(false);
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+    expect(store.isAnswering(CARD.id)).toBe(true);
+    store.confirmedAnswer(CARD.id, false);
+    expect(store.isAnswering(CARD.id)).toBe(false);
+    expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+    store.confirmedAnswer(CARD.id, true);
+    expect(store.isAnswering(CARD.id)).toBe(false);
+  });
+
   test("a refused answer's channel isn't put back once the card resolved, or once a newer mint replaced it", () => {
     const store = new SealedFrames();
     store.fromCore(CARD);

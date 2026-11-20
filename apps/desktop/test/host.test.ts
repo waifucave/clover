@@ -328,5 +328,11 @@ describe("the fallback card window", () => {
     // No surface shows both any more: the 2 s start again, unless the fallback card is already up.
     expect(fallbackOnVisibility({ visible: false, bothVisible: false, fallbackOpen: false })).toBe("arm");
     expect(fallbackOnVisibility({ visible: false, bothVisible: false, fallbackOpen: true })).toBe("keep");
+    // The person's answer is on its way to the core (the island folds the card as the press goes): the buttons stopping is the
+    // answer, never a card no part drew, so no timer starts (a plugin's approve took 3 s on a runner, the timer 2 s).
+    expect(fallbackOnVisibility({ visible: false, bothVisible: false, fallbackOpen: false, answering: true })).toBe("keep");
+    expect(fallbackOnVisibility({ visible: false, bothVisible: false, fallbackOpen: false, answering: false })).toBe("arm");
+    // …but both buttons showing somewhere still disarms it, answering or not.
+    expect(fallbackOnVisibility({ visible: true, bothVisible: true, fallbackOpen: false, answering: true })).toBe("disarm");
   });
 });
