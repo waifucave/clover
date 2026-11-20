@@ -125,7 +125,7 @@ describe("the home's engine is checked before the app starts it, and engine rese
     expect(asked[0]).toContain("identifier");
   });
 
-  test("engine reset takes out the engine, tree, marker and records, refuses while an engine answers, and touches nothing else", async () => {
+  test("engine reset takes out the engine, its sidecars, tree, marker and records, refuses while an engine answers, and touches nothing else", async () => {
     const home = join(root, "h9");
     await run(home, app("1.0.0"), "1.0.0");
     mkdirSync(join(home, "apps"), { recursive: true });
@@ -133,7 +133,7 @@ describe("the home's engine is checked before the app starts it, and engine rese
     mkdirSync(join(home, "conversations"), { recursive: true });
     writeFileSync(join(home, "conversations", "keep.txt"), "mine");
     mkdirSync(join(home, "bin", "daemon"), { recursive: true });
-    writeFileSync(join(home, "bin", "daemon", "moss-plugin-bun"), "bun");
+    writeFileSync(join(home, "bin", "daemon", "stranger"), "mine too");
     const out: string[] = [], err: string[] = [];
     expect(await runEngineReset({ home, platform: "linux", engineRunning: async () => true, out: (l) => out.push(l), err: (l) => err.push(l) })).toBe(1);
     expect(existsSync(engineBinaryPath(home))).toBe(true);
@@ -144,7 +144,9 @@ describe("the home's engine is checked before the app starts it, and engine rese
     expect(existsSync(join(home, "bin", "engine.json"))).toBe(false);
     expect(existsSync(appRecordPath(home, "code"))).toBe(false);
     expect(readFileSync(join(home, "conversations", "keep.txt"), "utf8")).toBe("mine");
-    expect(readFileSync(join(home, "bin", "daemon", "moss-plugin-bun"), "utf8")).toBe("bun");
+    // The files an install places beside the engine go with it (`engineSidecars`); a file of the home's own stays.
+    for (const f of ["moss-plugin-bun", "moss-link"]) expect(existsSync(join(home, "bin", "daemon", f))).toBe(false);
+    expect(readFileSync(join(home, "bin", "daemon", "stranger"), "utf8")).toBe("mine too");
     expect(JSON.parse(out[0]!).reset).toBe(true);
     // The next app start installs its own.
     expect((await run(home, app("1.0.0"), "1.0.0")).out[0]).toMatchObject({ installed: true });

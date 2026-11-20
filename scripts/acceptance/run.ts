@@ -87,7 +87,7 @@ import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
 import { checkPageReport } from "./layer-page-step";
 import { shellDoc, dumpFrames, failureShot, renderNewUser, treeDocs, treeText, UI_STEPS, uiSteps } from "./ui-steps";
 import { FIGURE_PACK_STEP, seedOldFigure } from "./figure-steps";
-import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, SIDEBAR_ITEMS, exampleNotesStep, exampleWeatherStep, type ExampleCtx } from "./example-steps";
+import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP, SIDEBAR_ITEMS, exampleNotesStep, exampleWeatherStep, callTurn, type ExampleCtx } from "./example-steps";
 import { BUNDLED_TOOLS_STEP, bundledToolsStep } from "./bundled-tools-step";
 import { TOOL_SETTING_STEP, toolSettingStep } from "./tool-setting-step";
 import { CODE_TOOLS_STEP, codeToolsStep } from "./code-tools-step";
@@ -137,7 +137,7 @@ import { listProcesses, nameLeftovers, reap, runProcesses, type ReapResult } fro
 import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
-import { APP_NEWER, APP_OLDER, ENGINE_NEWER, ENGINE_OLDER, RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, WORDS as RELEASE_WORDS } from "./release-step";
+import { APP_NEWER, APP_OLDER, ENGINE_NEWER, ENGINE_OLDER, MISSING_BESIDE, RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, RELEASE_INSTALL_STEP, WORDS as RELEASE_WORDS } from "./release-step";
 import { chainOwnRuns, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
@@ -873,7 +873,8 @@ async function modelPluginsUp(): Promise<string> {
   }, 300);
 }
 
-async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised = false): Promise<{ proc: ChildProcess; log: string }> {
+/** `binary`: the engine to start instead of the bundle copy `packagedCore()` makes: the one an app's install placed in the home (the release row's INSTALL). Packaged target only. */
+async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised = false, binary?: string): Promise<{ proc: ChildProcess; log: string }> {
   daemonRun++;
   // Usage-inert, both targets (the compiled core honours the same variables): no daemon of the run reads or runs the
   // user's own Codex, Claude Code, Antigravity or OpenCode, nor the plan beat.
@@ -886,7 +887,7 @@ async function startDaemonProc(extraEnv: Record<string, string> = {}, supervised
     // keychain file as the source target, nothing else.
     const { MOSS_ACCEPTANCE_RUN_PID: _pid, MOSS_ACCEPTANCE_USER_HOME: _user, ...packagedEnv } = env;
     // A core that carries the test build's outside-world seam reaches the run's fakes by name, on loopback.
-    started = startChild(`daemon-${daemonRun}`, packagedCore(), supervised ? ["supervise"] : ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { MOSS_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
+    started = startChild(`daemon-${daemonRun}`, binary ?? packagedCore(), supervised ? ["supervise"] : ["daemon", "run"], { ...packagedEnv, ...(outsideWorld === undefined ? {} : { MOSS_TEST_OUTSIDE_WORLD: outsideWorld.spec }) });
   }
   lastDaemonLog = started.log;
   const socket = join(home, "run", "core.sock");
@@ -5782,9 +5783,10 @@ async function coldStartStep(app: { exe: string; args: string[] }, runs: number)
 /** The two release rows (release-step.ts): a daemon and an app of the test builds, each stamped with the release the row needs.
  *  Packaged target only: the stamps are a test build's seam, which the source target doesn't have. */
 async function releaseSteps(app: { exe: string; args: string[] }): Promise<void> {
-  const behindN = stepNumber(FULL_STEPS, RELEASE_BEHIND_STEP), aheadN = stepNumber(FULL_STEPS, RELEASE_AHEAD_STEP);
+  const installN = stepNumber(FULL_STEPS, RELEASE_INSTALL_STEP), behindN = stepNumber(FULL_STEPS, RELEASE_BEHIND_STEP), aheadN = stepNumber(FULL_STEPS, RELEASE_AHEAD_STEP);
   if (target !== "packaged" || !packagedCoreSays("MOSS_TEST_ENGINE_RELEASE")) {
     const why0 = "the release stamps (MOSS_TEST_ENGINE_RELEASE, MOSS_TEST_APP_RELEASE) are a test build's seam; this core has none, so the run never makes an engine and an app of different releases";
+    record(installN, "BLOCKED", why0);
     record(behindN, "BLOCKED", why0);
     record(aheadN, "BLOCKED", why0);
     return;
@@ -5808,6 +5810,58 @@ async function releaseSteps(app: { exe: string; args: string[] }): Promise<void>
     return { proc, cdp: cdp! };
   };
   const stopDaemon = async (): Promise<void> => { if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); } };
+
+  try {
+    // INSTALL: the bundle's own `engine install` (what an app runs before it starts the login item) into the run's home, then the
+    // engine started from where the login item would start it. Nothing placed there before: the home's `bin/` is this row's own, and
+    // is taken out again so the rows after it run on a home with no installed engine, as they did.
+    await stopDaemon();
+    const bundleDaemon = join(appBundle!, "Contents", "Resources", "daemon");
+    const bin = join(home, "bin");
+    rmSync(bin, { recursive: true, force: true });
+    try {
+      const installed = spawnSync(join(bundleDaemon, "moss-core"), ["engine", "install", "--app", appBundle!], { env: baseEnv(), encoding: "utf8", timeout: 120_000 });
+      const said = (installed.stdout ?? "").trim().split("\n").at(-1) ?? "";
+      let result: { installed?: boolean; unsafe?: boolean; binary?: string; build?: string } = {};
+      try { result = JSON.parse(said) as typeof result; } catch { /* named below */ }
+      if (installed.status !== 0 || result.installed !== true) fail(`engine install didn't place the engine (exit ${installed.status}: ${(installed.stderr ?? "").trim().slice(0, 300) || said.slice(0, 300) || "no output"})`);
+      if (result.unsafe === true) fail("engine install says the home's engine doesn't meet the engine's code requirement (unsafe): the app would start its own instead");
+      const placed = join(bin, "daemon");
+      if (result.binary !== join(placed, "moss-core")) fail(`engine install names ${result.binary} as the binary, not ${join(placed, "moss-core")}`);
+      // The set the bundle holds is the set the home holds: every file of the app's daemon/ folder (the stray `.DS_Store` aside).
+      const bundled = readdirSync(bundleDaemon).filter((f) => !f.startsWith(".")).sort();
+      const inHome = readdirSync(placed).filter((f) => !f.startsWith(".") && !f.endsWith(".new") && !f.endsWith(".old")).sort();
+      if (bundled.join(",") !== inHome.join(",")) fail(`the home's daemon/ holds ${inHome.join(", ")}, the bundle's holds ${bundled.join(", ")}`);
+      for (const f of bundled) if (!readFileSync(join(placed, f)).equals(readFileSync(join(bundleDaemon, f)))) fail(`${f} in the home isn't the bundle's, byte for byte`);
+      if (!existsSync(join(bin, "plugins")) || !existsSync(join(bin, "engine.json"))) fail("the bundled plugin tree or the install marker isn't beside the engine in the home");
+      const marker = JSON.parse(readFileSync(join(bin, "engine.json"), "utf8")) as { build?: string };
+      if (!/^\d{14}$/.test(marker.build ?? "")) fail(`the install marker carries no build stamp (${JSON.stringify(marker.build)}): a newer build of this release would never replace it`);
+      // The installed engine, started from the home.
+      const logFrom = 0;
+      const daemon = await startDaemonProc({}, false, join(placed, "moss-core"));
+      const c = (await appDriver()).client;
+      try {
+        await signInKey(c);
+        const listed = await until("the character plugin's MCP server to list (the engine's `plugin MCP moss/character/figure` line)", 120_000, () => /\[plugins\] plugin MCP moss\/character\/figure: listed \d+ tool\(s\)[^\n]*/.exec(readLog(daemon.log))?.[0], 300);
+        await modelPluginsUp();
+        await sleep(2_000);
+        const log = readLog(daemon.log).slice(logFrom);
+        for (const re of MISSING_BESIDE) { const m = re.exec(log); if (m !== null) fail(`the installed engine says: ${m[0].slice(0, 200)}`); }
+        const session = await keyedCodeSession(c, "release-install");
+        const called = await callTurn({ requests: () => fake!.requests, turn: (s: string, t: string, ms?: number) => turn(c, s, t, ms) } as unknown as ExampleCtx, session, "figure_status", {});
+        // The plugin's own words: its code ran in the plugin Bun beside the engine (no avatar is shown in a run, and it says so).
+        if (!/no avatar is shown/.test(called.result.text)) fail(`${called.called} answered, but not with the plugin's own words: ${called.result.text.slice(0, 200)}`);
+        record(installN, "PASS", `engine install placed ${bundled.join(", ")} and the plugin tree in the home (marker build ${marker.build}), the engine started from there found the process holder and the link sidecar (no missing-file line), "${listed.replace(/^\[plugins\] /, "").slice(0, 90)}", and ${called.called} answered in the plugin's words`);
+      } finally {
+        c.close();
+      }
+    } finally {
+      await stopDaemon();
+      rmSync(bin, { recursive: true, force: true });
+    }
+  } catch (err) {
+    record(installN, statusOf(err), why(err));
+  }
 
   try {
     // BEHIND: the engine is on 9.0.0, the app on 1.0.0.
@@ -5845,6 +5899,8 @@ async function releaseSteps(app: { exe: string; args: string[] }): Promise<void>
       mkdirSync(join(res, "daemon"), { recursive: true });
       mkdirSync(join(res, "plugins"), { recursive: true });
       writeFileSync(join(res, "daemon", "moss-core"), `#!/bin/sh\necho "moss ${APP_NEWER}"\n`, { mode: 0o755 });
+      // The files an engine copy carries beside the engine (engineSidecars: every OS's names; each OS places its own): the copy refuses a bundle without them.
+      for (const f of ["moss-plugin-bun", "moss-link", "moss-process-holder", "moss-plugin-bun.exe", "moss-link.exe"]) writeFileSync(join(res, "daemon", f), `#!/bin/sh\nexit 0\n`, { mode: 0o755 });
     }
     await stopDaemon();
     await startDaemonProc({ MOSS_TEST_ENGINE_RELEASE: ENGINE_OLDER, MOSS_TEST_ENGINE_COPY_CHECK: "pass" });

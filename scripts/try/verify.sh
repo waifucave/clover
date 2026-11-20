@@ -78,6 +78,22 @@ REQ=$(cd "$W" && scripts/pinned-bun -e 'const b = await import("./packages/core/
 codesign --verify -R="$REQ" "$A" 2>/dev/null && note "appPeer: the app satisfies the daemon's dist app requirement" || bad "appPeer: the app does not satisfy: $REQ"
 SELF=$(cd "$W" && scripts/pinned-bun -e 'const b = await import("./packages/core/src/bundled-identities.ts"); console.log(`anchor apple generic and ${b.DEVELOPER_ID_CLAUSES} and certificate leaf[subject.OU] = "${b.MOSS_TEAM_ID ?? "37N77U9RSZ"}"`)')
 codesign --verify -R="$SELF" "$R/daemon/moss-core" 2>/dev/null && note "appPeer: the core is a Developer ID of the team (dist form of the check)" || bad "appPeer: the core fails its own Developer ID check"
+# The engine copy places a SET (packages/core/src/update/engine-copy.ts `placeEngine`: the engine and `engineSidecars("darwin")`
+# beside it): the app's daemon/ folder holds exactly that set, and each file meets the requirement the copy asks of it on the
+# Mac (its own identifier, the team, Developer ID). A file shipped and not placed leaves the home's engine without it (the plugin
+# code, the process holder or the links do not run); one the copy asks for and the app lacks makes the copy refuse the bundle.
+# `set_check LABEL RESOURCES-DIR`; each file's line is `<name> <requirement>`, the requirement the copy's own functions give.
+SET_LINES=$(cd "$W" && scripts/pinned-bun -e 'const c = await import("./packages/core/src/update/engine-copy.ts"); const b = await import("./packages/core/src/bundled-identities.ts"); console.log("moss-core " + c.engineCopyRequirement("dist", true)); for (const s of b.engineSidecars("darwin")) console.log(s.file + " " + c.sidecarCopyRequirement("dist", true, s.file))')
+set_check() {
+  local label="$1" dir="$2/daemon" want have name req
+  want=$(echo "$SET_LINES" | awk '{print $1}' | sort | tr '\n' ' '); have=$(ls -A "$dir" 2>/dev/null | grep -v '^\.' | sort | tr '\n' ' ')
+  [ -n "$want" ] && [ "$want" = "$have" ] && note "set: $label's daemon/ holds exactly the set the engine copy places ($want)" || bad "set: $label's daemon/ holds [$have], the copy places [$want]"
+  while IFS= read -r line; do
+    name="${line%% *}"; req="${line#* }"
+    codesign --verify --strict -R="$req" "$dir/$name" 2>/dev/null && note "set: $label's $name meets the copy's code requirement" || bad "set: $label's $name fails the copy's code requirement ($req)"
+  done <<< "$SET_LINES"
+}
+set_check "MOSS Code" "$R"
 codesign -dvvv "$A" 2>&1 | grep -qE 'flags=0x[0-9a-f]+\([^)]*runtime' && note "appPeer: the app is hardened" || bad "appPeer: the app is not hardened"
 open_hits=$(codesign -d --entitlements - --xml "$A" 2>/dev/null | grep -cE 'get-task-allow|allow-dyld-environment-variables|disable-library-validation')
 [ "$open_hits" = 0 ] && note "appPeer: the app has none of OPENING_ENTITLEMENTS" || bad "appPeer: the app carries an opening entitlement"
@@ -163,6 +179,7 @@ else
   # One release: the same version, engine, sidecars and tree in both apps, and the host helper of the same code in both.
   v1=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$A/Contents/Info.plist" 2>/dev/null); v2=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$MA/Contents/Info.plist" 2>/dev/null)
   [ -n "$v1" ] && [ "$v1" = "$v2" ] && note "one release: both apps are $v1" || bad "one release: MOSS Code is $v1, MOSS is $v2"
+  set_check "MOSS" "$MR"
   diff -rq "$R/daemon" "$MR/daemon" >/dev/null 2>&1 && note "one release: the same engine and sidecars in both apps" || bad "one release: the two apps' daemon/ differ"
   diff -rq "$R/plugins" "$MR/plugins" >/dev/null 2>&1 && note "one release: the same bundled tree in both apps" || bad "one release: the two apps' plugins/ differ"
   HREQ=$(cd "$W" && scripts/pinned-bun -e 'const w = await import("./packages/core/src/host/world.ts"); console.log(w.hostRequirement("dist"))')

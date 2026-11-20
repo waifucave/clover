@@ -105,7 +105,8 @@ export async function runEngineReset(env: Pick<EngineInstallEnv, "home" | "platf
   try {
     const bin = engineBinaryPath(env.home, platform);
     const tree = engineTreePath(env.home);
-    const targets = [bin, `${bin}.new`, `${bin}.old`, tree, `${tree}.new`, `${tree}.old`, join(env.home, ENGINE_MARKER), join(env.home, "bin", ".restarted-into.json"), ...MOSS_PROGRAMS.map((p) => join(env.home, APP_RECORDS_DIR, `${p}.json`))];
+    const sidecars = engineSidecars(platform).flatMap((s) => { const f = join(dirname(bin), s.file); return [f, `${f}.new`, `${f}.old`]; });
+    const targets = [bin, `${bin}.new`, `${bin}.old`, ...sidecars, tree, `${tree}.new`, `${tree}.old`, join(env.home, ENGINE_MARKER), join(env.home, "bin", ".restarted-into.json"), ...MOSS_PROGRAMS.map((p) => join(env.home, APP_RECORDS_DIR, `${p}.json`))];
     try { for (const e of readdirSync(join(env.home, "bin"))) if (e.startsWith(".verify-")) targets.push(join(env.home, "bin", e)); } catch { /* no bin/ */ }
     for (const t of targets) if (existsSync(t)) { rmSync(t, { recursive: true, force: true }); removed.push(t.slice(env.home.length + 1)); }
     env.out(JSON.stringify({ reset: true, removed }));

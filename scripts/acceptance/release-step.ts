@@ -9,8 +9,19 @@
 //     `now`), which the app logs as it switching. The app's bundle is a stand-in folder the run makes (the test core takes it for
 //     the code requirement and still checks its `--version`), so the engine is placed in the run's temp home; what is NOT proven
 //     here is the signature check on a real signed build: that is the signed build's packaged run, on the Mac.
+//   * INSTALL (EI): the engine the app's own install puts in the home runs the plugin code. The packaged bundle's `moss-core engine
+//     install --app <bundle>` (what an app runs before it starts the login item) places the engine and every file beside it
+//     (`engineSidecars`) in the run's temp home, the engine is started from there (`<home>/bin/daemon/moss-core`, as the login item
+//     does), and a bundled plugin's MCP tool is listed and called, the process holder and the link sidecar are found. Every other
+//     row runs a COPY of the whole bundle's `daemon/` folder (`packagedCore`), where the sidecars are always beside the engine: no
+//     row saw an engine that had been placed without them, which is why this one installs the way the apps do. The code check is the
+//     real one (the twin is signed with the Developer ID): each file against its own requirement.
+export const RELEASE_INSTALL_STEP = "release: the engine an app's install places in the home runs the plugin code: every file beside it is placed and checked, a bundled plugin's tool is listed and called, the process holder and the link sidecar are found";
 export const RELEASE_BEHIND_STEP = "release: an app older than the engine updates itself before it connects: its window says it is installing the update, and offline says plainly it can't reach the update server and doesn't connect";
 export const RELEASE_AHEAD_STEP = "release: a newer app waits for the engine's work to finish and says so in its window, and Switch now asks the engine to switch at once";
+
+/** The engine's own words when a file beside it is missing (daemon.ts's process holder line, device-links.ts's link line): none of them may be in the log. */
+export const MISSING_BESIDE = [/is missing beside this moss-core/, /no link sidecar \(moss-link\) beside the daemon/] as const;
 
 /** The stamps: the engine is ahead of the older app, and behind the newer one. */
 export const ENGINE_NEWER = "9.0.0";

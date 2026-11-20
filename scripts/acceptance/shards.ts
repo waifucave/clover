@@ -59,7 +59,7 @@ import { WORKSHOP_POINTS_STEP } from "./workshop-points-step";
 import { BROWSER_STEP } from "./browser-step";
 import { CODE_ADAPTER_STEP, OAUTH_SIGN_IN_STEP, THIRD_PARTY_MODEL_STEP } from "./code-adapter-step";
 import { SCHEDULED_ROUTINE_STEP } from "./routine-schedule-step";
-import { RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP } from "./release-step";
+import { RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, RELEASE_INSTALL_STEP } from "./release-step";
 import { MOSS_STEPS } from "./moss-step";
 import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP } from "./host-step";
 import { ROWS_ELSEWHERE } from "./elsewhere";
@@ -113,7 +113,7 @@ const OTHERS: readonly Unit[] = [
   { id: "acp", rows: [ACP_BACKEND_STEP], phase: "parallel", estimate: 40 },
   { id: "builder-examples", rows: [BUILDER_EXAMPLES_STEP], phase: "parallel", estimate: 150 },
   { id: "workshop-points", rows: [WORKSHOP_POINTS_STEP], phase: "parallel", estimate: 60 },
-  { id: "release", rows: [RELEASE_BEHIND_STEP, RELEASE_AHEAD_STEP], phase: "parallel", estimate: 90 },
+  { id: "release", rows: [RELEASE_INSTALL_STEP, RELEASE_BEHIND_STEP, RELEASE_AHEAD_STEP], phase: "parallel", estimate: 150 },
   { id: "plugin-app", rows: [CHILD_STEP, NOTIFY_STEP, LISTEN_STEP, WEB_STEP, DRAG_STEP, REVIEW_STEP, SURFACE_COPY_STEP, CONVERSATION_COPY_STEP, STAGE_COPY_STEP], phase: "parallel", estimate: 330 },
   { id: "browser", rows: [BROWSER_STEP], phase: "parallel", estimate: 60 },
   { id: "models", rows: [CODE_ADAPTER_STEP, THIRD_PARTY_MODEL_STEP, OAUTH_SIGN_IN_STEP, SCHEDULED_ROUTINE_STEP], phase: "parallel", estimate: 90 },
