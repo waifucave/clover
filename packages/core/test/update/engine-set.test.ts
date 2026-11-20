@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { engineSidecars } from "../../src/bundled-identities";
-import { compareBuilds, engineBinaryPath, engineSidecarPaths, installedSetProblem, isNewerCopy, isSameCopy, locateEngineIn, placeEngine, readEngineMarker, verifyBundleEngine, verifyStagedEngine, verifyStagedSidecar, type CopyPolicy } from "../../src/update/engine-copy";
+import { compareBuilds, engineBinaryPath, engineVersionEnv, engineSidecarPaths, installedSetProblem, isNewerCopy, isSameCopy, locateEngineIn, placeEngine, readEngineMarker, verifyBundleEngine, verifyStagedEngine, verifyStagedSidecar, type CopyPolicy } from "../../src/update/engine-copy";
 import { EngineReleaseHome } from "../../src/update/release-home";
 import { writeSidecars } from "./fixtures/sidecars";
 
@@ -201,6 +201,19 @@ describe("the checks cover the set", () => {
     symlinkSync(join(home, "bin", "daemon", "moss-core"), link);
     expect(installedSetProblem(home, policy())).toContain("moss-link is missing");
     expect(installedSetProblem(homeOf(), policy())).toContain("moss-core is missing");
+  });
+});
+
+describe("the environment a staged engine's --version runs in", () => {
+  const source = { PATH: "/usr/bin", HOME: "/tmp/h", MOSS_TEST_KEYCHAIN: "/tmp/k", MOSS_HOME: "/tmp/m", ANTHROPIC_API_KEY: "dummy123", SystemRoot: "C:\\Windows" };
+  test("a release's is PATH alone; a test-marked build's adds its keychain file and HOME, nothing else", () => {
+    expect(engineVersionEnv(source, false, "darwin")).toEqual({ PATH: "/usr/bin" });
+    expect(engineVersionEnv(source, true, "darwin")).toEqual({ PATH: "/usr/bin", HOME: "/tmp/h", MOSS_TEST_KEYCHAIN: "/tmp/k" });
+    expect(engineVersionEnv({ PATH: "/usr/bin", MOSS_TEST_KEYCHAIN: "" }, true, "linux")).toEqual({ PATH: "/usr/bin" });
+    expect(engineVersionEnv(source, false, "win32")).toEqual({ PATH: "/usr/bin", SystemRoot: "C:\\Windows" });
+    // A checkout, a unit test and every real build here are not test-marked: the default carries nothing.
+    expect(engineVersionEnv(source, undefined, "darwin")).toEqual({ PATH: "/usr/bin" });
+    expect(Object.keys(engineVersionEnv(source, false, "linux"))).not.toContain("ANTHROPIC_API_KEY");
   });
 });
 

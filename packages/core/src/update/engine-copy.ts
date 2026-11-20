@@ -32,6 +32,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, real
 import { basename, dirname, isAbsolute, join, sep } from "node:path";
 import { compareReleases, type AppInstallRecord } from "@waifucave/moss-protocol";
 import { DEVELOPER_ID_CLAUSES, MOSS_TEAM_ID, engineSidecars } from "../bundled-identities";
+import { TEST_KEYCHAIN_ENV } from "../auth/test-isolation";
 import type { MossProfile } from "../profile";
 import type { EngineCopy } from "../contracts/release-home";
 
@@ -298,12 +299,23 @@ export function installedSetProblem(home: string, policy: CopyPolicy): string | 
   return undefined;
 }
 
-/** `<binary> --version`, run with PATH alone for at most 10 s: its first line, or undefined when it failed. */
+declare const __MOSS_TEST_BUILD__: string | false | undefined;
+
+/** The environment `<binary> --version` runs in: PATH alone (a staged file is given nothing of this process's). A TEST-MARKED build
+ *  also hands on the two variables a test-marked engine needs to start at all (its throwaway keychain file and the temp HOME:
+ *  startup-guard.ts `testBuildStartRefusal`, which refuses even `--version` without them), so the real install path can be run on
+ *  a packaged test pair; a release build is compiled without that branch (`__MOSS_TEST_BUILD__` is false there). */
+export function engineVersionEnv(source: Record<string, string | undefined>, testBuild: boolean = typeof __MOSS_TEST_BUILD__ === "string", platform: NodeJS.Platform = process.platform): Record<string, string> {
+  const env: Record<string, string> = { PATH: source.PATH ?? source.Path ?? "" };
+  if (platform === "win32") { for (const k of ["SystemRoot", "windir"]) if (source[k] !== undefined) env[k] = source[k]!; }
+  if (testBuild) { for (const k of [TEST_KEYCHAIN_ENV, "HOME"]) if (source[k] !== undefined && source[k] !== "") env[k] = source[k]!; }
+  return env;
+}
+
+/** `<binary> --version`, run in `engineVersionEnv` for at most 10 s: its first line, or undefined when it failed. */
 export function engineVersionOf(binary: string): string | undefined {
   try {
-    const env: Record<string, string> = { PATH: process.env.PATH ?? process.env.Path ?? "" };
-    if (process.platform === "win32") { for (const k of ["SystemRoot", "windir"]) if (process.env[k] !== undefined) env[k] = process.env[k]!; }
-    const r = spawnSync(binary, ["--version"], { env, timeout: 10_000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true, encoding: "utf8" });
+    const r = spawnSync(binary, ["--version"], { env: engineVersionEnv(process.env), timeout: 10_000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true, encoding: "utf8" });
     return r.status === 0 ? r.stdout.trim().split("\n")[0] : undefined;
   } catch {
     return undefined;
