@@ -711,6 +711,24 @@ function wireBridge(): void {
     return engine.editBot(id, patch);
   });
   handle("moss:models", () => engine.models());
+  // The setup guide (2026-11-20): the engine's setup, the providers to add, a provider's terms, the default model, a skip.
+  handle("moss:setup", () => engine.setup());
+  handle("moss:setup-providers", () => engine.setupProviders());
+  handle("moss:open-terms", (w, a) => {
+    const pluginId = str(a.pluginId, 200);
+    const link = pluginId === undefined ? undefined : engine.termsLink(pluginId);
+    if (link === undefined || !link.startsWith("https://") || !personPressed(w)) return false;
+    // The person's own browser, from main; a headless run opens nothing on the screen.
+    if (!headless) void shell.openExternal(link);
+    return true;
+  });
+  handle("moss:set-default-model", (w, a) => {
+    const model = str(a.model, 200);
+    if (model === undefined) return { ok: false, why: "Not a model." };
+    if (!personPressed(w)) return { ok: false, why: "A default model is picked only right after your own click." };
+    return engine.setDefaultModel(model);
+  });
+  handle("moss:skip-setup", (w) => (personPressed(w) ? engine.skipSetup() : false));
   handle("moss:archive-bot", (w, a) => {
     const id = str(a.id, 64);
     if (id === undefined || !personPressed(w)) return false;

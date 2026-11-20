@@ -23,7 +23,7 @@ export const LEVELS: readonly { value: Level; label: string }[] = [
 
 type Section = { kind: "general" } | { kind: "bot"; id: string };
 
-export function SettingsPage(props: { bots: BotRow[]; strip?: ReactNode; bot?: string }) {
+export function SettingsPage(props: { bots: BotRow[]; strip?: ReactNode; bot?: string; onSetupGuide?: () => void }) {
   const [section, setSection] = useState<Section>(props.bot !== undefined ? { kind: "bot", id: props.bot } : { kind: "general" });
   // Opened again on a bot (the side panel's settings button) or on the account: follow it.
   useEffect(() => { setSection(props.bot !== undefined ? { kind: "bot", id: props.bot } : { kind: "general" }); }, [props.bot]);
@@ -47,7 +47,7 @@ export function SettingsPage(props: { bots: BotRow[]; strip?: ReactNode; bot?: s
           ))}
         </nav>
         <div className="page__body ma2-body">
-          {bot !== undefined ? <BotPage key={bot.id} bot={bot} /> : <General />}
+          {bot !== undefined ? <BotPage key={bot.id} bot={bot} /> : <General {...(props.onSetupGuide !== undefined ? { onSetupGuide: props.onSetupGuide } : {})} />}
         </div>
       </div>
     </main>
@@ -80,7 +80,7 @@ const KIND_WORDS: Record<string, string> = { desktop: "Computer", laptop: "Compu
 // The account, keys and sign-ins, approval levels and devices
 // ---------------------------------------------------------------------------------------------
 
-function General() {
+function General(props: { onSetupGuide?: () => void }) {
   const [s, setS] = useState<SettingsView | undefined>(undefined);
   const load = (): void => { void bridge().settings().then(setS); };
   useEffect(load, []);
@@ -103,6 +103,11 @@ function General() {
           </div>
         ) : <p className="muted">Not signed in. Signing in links your computers and phone.</p>}
       </Card>
+      {props.onSetupGuide !== undefined ? (
+        <Card title="Setup guide" id="setup" note="Add a model provider and pick your default model, step by step.">
+          <button type="button" className="text-button" onClick={props.onSetupGuide} data-open-setup>Open the setup guide</button>
+        </Card>
+      ) : null}
       <Card title="Keys and sign-ins" id="keys" note="For the models and voices your plugins bring. A key you paste here is kept by MOSS's engine and is never shown again.">
         {s === undefined ? <Pending /> : s.signIns === "waiting" ? <Waiting what="sign-ins" /> : s.signIns.length === 0 ? <p className="muted">No model or voice needs a key yet.</p> : (
           <ul className="kv ma2-keys">
@@ -142,7 +147,7 @@ type SignIn = Exclude<SettingsView["signIns"], "waiting">[number];
 
 /** One of a plugin's sign-ins. A key goes from MOSS's own field to the engine once: the field is emptied the moment it is
  *  sent, and nothing the person typed is ever drawn back (no echo, no "last four"). */
-function SignInRow(props: { row: SignIn; onChanged: () => void }) {
+export function SignInRow(props: { row: SignIn; onChanged: () => void }) {
   const r = props.row;
   const signedIn = r.state === "signed-in";
   const [editing, setEditing] = useState(false);

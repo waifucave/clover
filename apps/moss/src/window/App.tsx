@@ -10,6 +10,7 @@ import { Strip } from "./cards/CardFrame";
 import { SidePanel } from "./panel/SidePanel";
 import { PluginsPage } from "./plugins/PluginsPage";
 import { SettingsPage } from "./settings/SettingsPage";
+import { SetupGuide, type SetupStep } from "./setup/SetupGuide";
 import { faceMotion } from "./faces/Face";
 import type { MossView } from "../shared/view";
 
@@ -34,6 +35,13 @@ export function App() {
   const [panel, setPanel] = useState(false);
   /** The bot whose own choices Settings opens on (the side panel's settings button), if any. */
   const [settingsBot, setSettingsBot] = useState<string | undefined>(undefined);
+  /** The setup guide: `auto` until the engine's setup says whether it opens by itself; `open` once shown (it stays
+   *  until the person finishes or skips it, even as the setup gets ready under it); `closed` after. Settings opens it. */
+  const [guide, setGuide] = useState<"auto" | "open" | "closed">("auto");
+  const [guideStep, setGuideStep] = useState<SetupStep | undefined>(undefined);
+  useEffect(() => {
+    if (guide === "auto" && view.setup !== undefined && !view.setup.ready && !view.setup.dismissed) setGuide("open");
+  }, [guide, view.setup?.ready, view.setup?.dismissed]);
   /** The test build's renders may draw a page without the strip, so the page itself shows whole. */
   const [stripShown, setStripShown] = useState(true);
   const [, setTick] = useState(0);
@@ -56,8 +64,9 @@ export function App() {
   if (typeof __MOSS_TEST_BUILD__ === "string") {
     // The test build's hook for the UI test and the renders: open a bot, its panel or a page, and hold the faces still.
     (window as unknown as { __mossTest: unknown }).__mossTest = {
-      go: (g: { bot?: string; panel?: boolean; page?: "plugins" | "settings"; calm?: boolean; strip?: boolean }) => {
+      go: (g: { bot?: string; panel?: boolean; page?: "plugins" | "settings"; calm?: boolean; strip?: boolean; guide?: SetupStep | false }) => {
         if (g.calm !== undefined) faceMotion.calm = g.calm;
+        if (g.guide !== undefined) { setGuideStep(g.guide === false ? undefined : g.guide); setGuide(g.guide === false ? "closed" : "open"); }
         setStripShown(g.strip !== false);
         if (g.page !== undefined) { setSettingsBot(g.page === "settings" ? g.bot : undefined); setPage({ page: g.page }); }
         else if (g.bot !== undefined && g.bot !== "") setPage({ bot: g.bot });
@@ -66,6 +75,8 @@ export function App() {
     };
   }
   const bot = shown !== undefined && "bot" in shown ? view.bots.find((b) => b.id === shown.bot) : undefined;
+  /** The default bot (Alpha, `default-bot.ts`), else the first: where the finished setup guide lands. */
+  const defaultBot = view.bots.find((b) => b.id === "alpha") ?? view.bots[0];
   const names = useMemo(() => new Map(view.bots.map((b) => [b.id, b.name])), [view.bots]);
   const inConversation = bot === undefined ? [] : view.cards.filter((c) => c.place === "conversation" && c.bot === bot.id);
   // The strip: every card the router placed in this window that this conversation doesn't draw.
@@ -79,10 +90,22 @@ export function App() {
         {banner !== "" ? <p className="banner" role="status">{view.connection.reason ?? banner}</p> : null}
         {view.notice !== undefined ? <p className="banner banner--notice" role="status" data-notice>{view.notice}</p> : null}
         {shown !== undefined && "page" in shown && shown.page === "plugins" ? <PluginsPage strip={strip} />
-          : shown !== undefined && "page" in shown && shown.page === "settings" ? <SettingsPage bots={view.bots} strip={strip} {...(settingsBot !== undefined ? { bot: settingsBot } : {})} />
+          : shown !== undefined && "page" in shown && shown.page === "settings" ? <SettingsPage bots={view.bots} strip={strip} onSetupGuide={() => { setGuideStep("providers"); setGuide("open"); }} {...(settingsBot !== undefined ? { bot: settingsBot } : {})} />
           : bot !== undefined ? <Conversation bot={bot} cards={inConversation} strip={strip} panelOpen={panel} onPanel={() => setPanel((p) => !p)} {...(view.talk !== undefined ? { talk: view.talk } : {})} />
           : <main className="conversation conversation--empty" data-col="conversation">{strip}<p className="muted">{view.pieces.bots === "waiting" ? "Waiting for the engine's bots." : "Make a bot with + to start."}</p></main>}
       </div>
+      {guide === "open" ? (
+        <SetupGuide
+          setup={view.setup} botName={defaultBot?.name ?? "your bot"} {...(guideStep !== undefined ? { initialStep: guideStep } : {})}
+          onClose={() => setGuide("closed")}
+          onDone={() => {
+            setGuide("closed");
+            if (defaultBot !== undefined) setPage({ bot: defaultBot.id });
+            // Ready to type: the composer takes the focus once her conversation is drawn.
+            setTimeout(() => document.querySelector<HTMLTextAreaElement>("[data-composer] textarea")?.focus(), 50);
+          }}
+        />
+      ) : null}
       {bot !== undefined && panel ? <SidePanel bot={bot} cardsKey={view.cards.map((c) => c.id).join(",")} onClose={() => setPanel(false)} onSettings={() => { setSettingsBot(bot.id); setPage({ page: "settings" }); }} /> : null}
     </div>
   );

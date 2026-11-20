@@ -18,7 +18,7 @@ import { oneLine, safeDetail } from "../shared/status-line";
 import type { SealedFrames } from "./sealed";
 import { talkCommandOf, type TalkCommand } from "./voice";
 import type {
-  BotEdit, BotRecordRow, BotRow, BotSetting, CardRow, ConnectionKind, MemoryFileRow, ModelRow, SettingsView, ConversationPage, Message, MossView, Piece, PieceState, PictureFrameView, PictureRow, PluginRow, RoutineEdit, RoutineRow, ToolRow,
+  BotEdit, BotRecordRow, BotRow, BotSetting, CardRow, ConnectionKind, MemoryFileRow, ModelRow, ProviderRow, SettingsView, SetupRow, ConversationPage, Message, MossView, Piece, PieceState, PictureFrameView, PictureRow, PluginRow, RoutineEdit, RoutineRow, ToolRow,
 } from "../shared/view";
 
 export interface EngineClient {
@@ -118,6 +118,8 @@ export class MossEngine {
   private client: EngineClient | undefined;
   private connection: { kind: ConnectionKind; reason?: string } = { kind: "connecting" };
   private engineRelease: string | undefined;
+  /** The home's setup as the engine last said it (`setup.state`), for the setup guide; absent until it answers. */
+  private setupNow: SetupRow | undefined;
   private readonly pieces: Partial<Record<Piece, PieceState>> = {};
   private records = new Map<string, BotRecordView>();
   private summaries = new Map<string, BotSummary>();
@@ -185,7 +187,7 @@ export class MossEngine {
       cards.push({ id: c.id, ...(c.bot !== undefined ? { bot: c.bot } : {}), kind: c.kind, place: p.kind });
     }
     const talk = "command" in this.talk ? { ready: true as const } : { ready: false as const, why: this.talk.why };
-    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.releaseNotice !== undefined ? { notice: this.releaseNotice } : this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
+    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.setupNow !== undefined ? { setup: this.setupNow } : {}), ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.releaseNotice !== undefined ? { notice: this.releaseNotice } : this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
   }
 
   /** How many pending cards MOSS knows that the router hasn't placed yet (anywhere): the smoke run waits for none. */
@@ -307,7 +309,7 @@ export class MossEngine {
     this.removedBots.clear();
     this.resolvedCards.clear();
     await client.request("events.subscribe", { areas: MOSS_EVENT_AREAS }, 10_000).catch((err: unknown) => this.log(`engine: events.subscribe failed (${err instanceof Error ? err.message.slice(0, 120) : "error"})`));
-    await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards(), this.loadTalk(), this.loadHost()]);
+    await Promise.all([this.loadBots(), this.loadSummaries(), this.loadActivity(), this.loadCards(), this.loadTalk(), this.loadHost(), this.loadSetup()]);
     this.changed();
   }
 
@@ -439,8 +441,14 @@ export class MossEngine {
         return;
       case "plugin_changed":
       case "plugin_point_changed":
-        // A plugin on, off or changed may change who fills the voice point or which command holds the key.
+        // A plugin on, off or changed may change who fills the voice point or which command holds the key, and which
+        // providers the setup counts.
         void this.loadTalk();
+        void this.loadSetup().then(() => this.changed());
+        return;
+      case "plugin_auth_changed":
+        // A key or a sign-in added or removed, here or in MOSS Code: the setup may be done, or need a model again.
+        void this.loadSetup().then(() => this.changed());
         return;
       case "card_placed": {
         const place = CardPlacement.safeParse(e.place);
@@ -795,6 +803,81 @@ export class MossEngine {
     const r = await this.read<{ models: { id: string; name: string | { en: string }; providerName: string | { en: string }; signedIn?: boolean }[] }>("models", "models.list", {});
     if (r === undefined) return { waiting: true };
     return r.models.map((m) => ({ id: m.id, title: textOf(m.name), provider: textOf(m.providerName), ready: m.signedIn !== false }));
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The setup guide (2026-11-20): the engine holds what is set up; MOSS only draws it
+  // ---------------------------------------------------------------------------------------------
+
+  /** Reads the home's setup (`setup.state`); an engine that doesn't serve it leaves the guide closed. */
+  private async loadSetup(): Promise<void> {
+    const client = this.client;
+    if (client === undefined) return;
+    const r = await client.request<SetupRow>("setup.state", {}, 10_000).catch(() => undefined);
+    if (client !== this.client || r === undefined) return;
+    this.setupNow = r;
+  }
+
+  async setup(): Promise<SetupRow | { waiting: true }> {
+    await this.loadSetup();
+    return this.setupNow ?? { waiting: true };
+  }
+
+  /** The model providers the installed model plugins offer (the `models` point's plugins), each with its terms and its
+   *  ways in, the ones added first; a provider's terms link stays here (main opens it). */
+  async setupProviders(): Promise<ProviderRow[] | { waiting: true }> {
+    const points = await this.read<{ points: { name: string; occupants: { pluginId: string }[] }[] }>("plugins", "point.list");
+    if (points === undefined) return { waiting: true };
+    const ids = [...new Set((points.points.find((p) => p.name === "models")?.occupants ?? []).map((o) => o.pluginId))];
+    const rows = await Promise.all(ids.map(async (id): Promise<ProviderRow | undefined> => {
+      const [detail, auth] = await Promise.all([
+        this.client?.request<{ plugin: { name: string | { en: string }; manifest: { contributes?: { models?: { name?: string | { en: string }; terms?: unknown; auth?: { help?: unknown }[] }[] } } } }>("plugin.get", { id }, 10_000).catch(() => undefined),
+        this.client?.request<{ auth: ProviderRow["auth"] }>("plugin.auth.list", { id }, 10_000).catch(() => undefined),
+      ]);
+      if (detail === undefined) return undefined;
+      const entries = detail.plugin.manifest.contributes?.models ?? [];
+      const first = entries[0];
+      const helps = entries.flatMap((e) => e.auth ?? []).map((a) => (typeof a.help === "string" ? a.help : undefined));
+      const terms = typeof first?.terms === "string" ? (/^https:\/\//.test(first.terms) ? { link: true as const } : { text: first.terms.slice(0, 4000) }) : undefined;
+      if (typeof first?.terms === "string" && /^https:\/\//.test(first.terms)) this.termsLinks.set(id, first.terms);
+      return {
+        pluginId: id,
+        name: textOf(first?.name ?? detail.plugin.name) || id,
+        ...(terms !== undefined ? { terms } : {}),
+        auth: (auth?.auth ?? []).map((a) => ({ index: a.index, method: a.method, state: a.state, ...(a.account !== undefined ? { account: a.account } : {}), ...(helps[a.index] !== undefined ? { help: helps[a.index]! } : {}) })),
+      };
+    }));
+    const ready = (p: ProviderRow) => p.auth.some((a) => a.state === "signed-in" || a.state === "refreshing");
+    return rows.filter((r): r is ProviderRow => r !== undefined).sort((a, b) => Number(ready(b)) - Number(ready(a)) || a.name.localeCompare(b.name) || a.pluginId.localeCompare(b.pluginId));
+  }
+
+  /** The terms links the guide listed, by plugin: main opens one in the person's browser; the window never has it. */
+  private readonly termsLinks = new Map<string, string>();
+
+  termsLink(pluginId: string): string | undefined {
+    return this.termsLinks.get(pluginId);
+  }
+
+  async setDefaultModel(model: string): Promise<{ ok: true; setup: SetupRow } | { ok: false; why: string }> {
+    const client = this.client;
+    if (client === undefined) return { ok: false, why: "MOSS isn't connected to its engine." };
+    try {
+      const r = await client.request<{ setup: SetupRow }>("models.setDefault", { model }, 10_000);
+      this.setupNow = r.setup;
+      this.changed();
+      return { ok: true, setup: r.setup };
+    } catch (err) {
+      return { ok: false, why: notServed(err) ? "Picking a default model isn't served by this engine yet." : err instanceof Error ? err.message.slice(0, 300) : "The engine didn't take the model." };
+    }
+  }
+
+  /** The person skipped the guide: the engine keeps it, so it doesn't open by itself again in MOSS or MOSS Code. */
+  async skipSetup(): Promise<boolean> {
+    const r = await this.read<SetupRow>("models", "setup.dismiss", { dismissed: true });
+    if (r === undefined) return false;
+    this.setupNow = r;
+    this.changed();
+    return true;
   }
 
   /** For the tests and renders' facts: the placements MOSS holds now. */

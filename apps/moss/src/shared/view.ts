@@ -50,6 +50,30 @@ export interface MossView {
   engine?: string;
   /** One plain notice for the person (the background host the engine gave up starting), or none. */
   notice?: string;
+  /** What the home's setup needs (the engine's `setup.state`): the setup guide opens by itself while it isn't ready and
+   *  the person hasn't skipped it. Absent until the engine answers (an older engine never does). */
+  setup?: SetupRow;
+}
+
+/** The engine's answer to "is this home set up for a first reply" (`setup.state`). */
+export interface SetupRow {
+  ready: boolean;
+  missing: ("provider" | "model")[];
+  /** The providers the person added, by catalog id. */
+  providers: string[];
+  default?: { model: string; source: "chosen" | "computed" };
+  /** Each added provider's recommended model, where the catalog names one. */
+  recommended?: Record<string, string>;
+  dismissed: boolean;
+}
+
+/** A model provider the setup guide offers, with its own way in: its terms first (a link main opens, or a short text),
+ *  then a key or a sign-in. */
+export interface ProviderRow {
+  pluginId: string;
+  name: string;
+  terms?: { link: true } | { text: string };
+  auth: { index: number; method: "api-key" | "oauth-pkce" | "custom" | "core"; state: string; account?: string; help?: string }[];
 }
 
 export interface Attachment {
@@ -269,6 +293,13 @@ export interface MossBridge {
   /** The person tried to act on a bot's screen (a click, a key, a scroll): it is watch only, and main says so. */
   pictureInput(kind: "pointer" | "key" | "wheel"): void;
   models(): Promise<ModelRow[] | { waiting: true }>;
+  /** The setup guide: the home's setup as the engine has it now, the model providers to add, a provider's terms opened in
+   *  the person's browser by main, the default model picked, and the guide skipped (the engine's, for both apps). */
+  setup(): Promise<SetupRow | { waiting: true }>;
+  setupProviders(): Promise<ProviderRow[] | { waiting: true }>;
+  openTerms(pluginId: string): Promise<boolean>;
+  setDefaultModel(model: string): Promise<{ ok: true; setup: SetupRow } | { ok: false; why: string }>;
+  skipSetup(): Promise<boolean>;
 }
 
 /** A mood in words, said beside every face (the kit's README: "a mood is shown by motion alone"). */
