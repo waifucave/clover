@@ -159,11 +159,12 @@ export class Cdp {
 
   /** The centre of the first element matching `selector` (or whose text contains `text`) in a session, in that session's viewport
    *  (scrolled into view first when it lies outside it). */
+  /** `text` is matched as a substring of the element's text; written `=Name` it must be one whole line of it, or its aria-label. */
   async centerOf(session: string, selector: string, text?: string): Promise<{ x: number; y: number } | undefined> {
     const v = await this.evaluate(session, `(() => {
       ${CLIPPED_AWAY_JS}
       const els = [...document.querySelectorAll(${JSON.stringify(selector)})].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
-      const el = ${text === undefined ? "els[0]" : `els.find((e) => (e.innerText || e.getAttribute('aria-label') || '').includes(${JSON.stringify(text)}))`};
+      const el = ${text === undefined ? "els[0]" : `els.find((e) => ${text.startsWith("=") ? `(e.innerText || '').split('\\n').some((l) => l.trim() === ${JSON.stringify(text.slice(1))}) || e.getAttribute('aria-label') === ${JSON.stringify(text.slice(1))}` : `(e.innerText || e.getAttribute('aria-label') || '').includes(${JSON.stringify(text)})`})`};
       if (!el) return null;
       let r = el.getBoundingClientRect();
       // Below the fold (a long list: the Installed tab on a home with many plugins), a press at its place would land

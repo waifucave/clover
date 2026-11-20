@@ -81,7 +81,7 @@ export async function run(ctx: { cdp: Cdp; rpc: MossClient; home: string; root: 
   }
   if (history > 0) out(`history: Alpha's conversation now has ${await seed(rpc, history)} replies`);
   for (const c of cases) {
-    if (c === "alpha") await openTab(cdp, "MOSS");
+    if (c === "alpha") await openTab(cdp, "=MOSS");
     else if (c === "plain") {
       const bots = (await rpc.request<{ bots: { id: string; name?: string }[] }>("bot.list", {})).bots;
       const other = bots.find((b) => b.id !== "alpha");
