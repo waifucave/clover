@@ -31,7 +31,8 @@ body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: v
 .moss-page__terms { margin: 0; padding: 8px 10px; max-height: 120px; overflow: auto; font-size: 12px; border-left: 3px solid var(--moss-color-hairline, GrayText); white-space: pre-wrap; }
 .moss-page__check, .moss-page__field { display: flex; align-items: center; gap: 8px; }
 .moss-page__field { flex-direction: column; align-items: stretch; gap: 4px; font-size: 12px; }
-.moss-page__field input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--moss-color-hairline, GrayText); background: var(--moss-color-control, Field); color: inherit; }
+.moss-page__field input, .moss-page__field select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--moss-color-hairline, GrayText); background: var(--moss-color-control, Field); color: inherit; }
+.moss-page__step { margin: 0; color: var(--moss-color-text-muted, GrayText); font-size: 12px; }
 .moss-page__auth, .moss-page__row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .moss-page__actions { display: flex; justify-content: flex-end; gap: 8px; }
 .moss-page__status:empty { display: none; }

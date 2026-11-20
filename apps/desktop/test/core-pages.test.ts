@@ -1,7 +1,7 @@
 // The core's own pages (spec §5.8): the welcome guide's providers, terms and sign-ins, and safe mode's plugin manager,
 // through the main process's checked calls. A key the user pastes reaches the daemon's sign-in and nothing else.
 import { describe, expect, test } from "bun:test";
-import { anyReady, listManaged, listProviders, pageCall, PAGE_CALLS, type PageClient, type PageDeps } from "../src/main/core-pages";
+import { anyReady, guideOpens, listManaged, listProviders, pageCall, PAGE_CALLS, type PageClient, type PageDeps } from "../src/main/core-pages";
 
 const SUMMARY = { version: "1.0.0", source: "index", class: "code", namespace: "x", scope: "everywhere", adult: false, children: [], dev: false };
 
@@ -103,6 +103,37 @@ describe("the welcome guide", () => {
     await expect(pageCall("welcome.openTerms", { id: "moss/openai" }, d)).rejects.toThrow("no terms to open");
     await pageCall("welcome.done", {}, d);
     expect([d.done, d.closed]).toEqual([1, 1]);
+  });
+});
+
+describe("the setup guide's engine half", () => {
+  const SETUP = { ready: false, missing: ["model"], providers: ["luna", "openai"], dismissed: false };
+  const engine = () => client({
+    "setup.state": () => SETUP,
+    "setup.dismiss": (p) => ({ ...SETUP, dismissed: p.dismissed }),
+    "models.list": () => ({ models: [
+      { id: "luna/moon-1", name: { en: "Moon 1" }, provider: "luna", providerName: { en: "Luna AI" }, plugin: "luna-models", efforts: [], images: false, signedIn: true },
+      { id: "dark/x", name: "X", provider: "dark", providerName: "Dark", plugin: "dark-models", efforts: [], images: false, signedIn: false },
+    ] }),
+    "models.setDefault": (p) => ({ setup: { ...SETUP, ready: true, missing: [], default: { model: p.model, source: "chosen" } } }),
+  });
+
+  test("it opens by itself only while the home isn't set up and the person hasn't skipped it", () => {
+    expect(guideOpens({ ready: false, dismissed: false })).toBe(true);
+    expect(guideOpens({ ready: true, dismissed: false })).toBe(false);
+    expect(guideOpens({ ready: false, dismissed: true })).toBe(false);
+  });
+
+  test("the state, the signed-in models only, a default picked, and a skip the engine keeps", async () => {
+    const c = engine();
+    const d = deps(c);
+    expect(await pageCall("welcome.setup", {}, d)).toEqual(SETUP);
+    expect(await pageCall("welcome.models", {}, d)).toEqual({ models: [{ id: "luna/moon-1", name: "Moon 1", provider: "luna", providerName: "Luna AI" }] });
+    expect(await pageCall("welcome.setDefault", { model: "luna/moon-1" }, d)).toMatchObject({ ready: true, default: { model: "luna/moon-1" } });
+    await expect(pageCall("welcome.setDefault", { model: 7 }, d)).rejects.toThrow("which model?");
+    await pageCall("welcome.skip", {}, d);
+    expect(c.calls.filter((x) => x.method === "setup.dismiss").map((x) => x.params)).toEqual([{ dismissed: true }]);
+    expect([d.done, d.closed]).toEqual([0, 1]);
   });
 });
 

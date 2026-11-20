@@ -39,7 +39,7 @@ import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } f
 import { daemonEndpoint, dial as dialDaemon, RpcCallError, type DaemonClient } from "./protocol/client";
 import { FileGrants, answersFor } from "./ui/file-grants";
 import { OptionalCalls } from "./pair/optional-calls";
-import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
+import { anyReady, guideOpens, listProviders, pageCall, type CorePage } from "./core-pages";
 import type { KeyTarget } from "./ui/tree-calls";
 import { AnswerKey, KeyRegistration, fileVault, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
@@ -1830,6 +1830,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
 let corePage: CorePage | null = null;
 /** The plugin and key the key dialog is for, set only by the door's `ui.secret`; gone when the page closes. */
 let keyTarget: { target: KeyTarget; session: string; shown?: boolean } | undefined;
+/** Where an app before the engine kept the guide's setup (2026-11-20) noted it done or skipped: carried over once, as the
+ *  engine's own `setup.dismiss`, then removed. */
 const welcomeFlag = () => join(app.getPath("userData"), "welcome-done");
 
 const pageDeps = {
@@ -1840,13 +1842,9 @@ const pageDeps = {
     if (headless) log(`open: would open a page in the browser (${new URL(url).host})`);
     else await shell.openExternal(url);
   },
+  // The guide finished: the window lands on the coding side, a new code session when there's none (the shell's own act).
   welcomeDone: () => {
-    try {
-      mkdirSync(dirname(welcomeFlag()), { recursive: true });
-      writeFileSync(welcomeFlag(), `${new Date().toISOString()}\n`);
-    } catch (err) {
-      log(`welcome: couldn't note it's done: ${why(err)}`);
-    }
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootPartMessage(mainWindow.id, { type: "shell-act", act: { kind: "go", target: { side: "code" } } });
   },
   page: () => corePage,
   closePage: () => {
@@ -1868,17 +1866,30 @@ async function openPage(page: CorePage): Promise<void> {
   if (win !== undefined) runtime.rootMessage(win.id, { type: "core-page", page });
 }
 
-/** The welcome guide opens by itself on a start with no model provider signed in, until it is done or skipped. */
+/** The setup guide opens by itself while the engine says this home isn't set up for a first reply (no provider, or no
+ *  default model) and the person hasn't skipped it, in this app or in MOSS (`setup.state`, the engine's). */
 async function maybeWelcome(client: DaemonClient): Promise<void> {
-  if (runtime.safeMode || corePage !== null || existsSync(welcomeFlag())) return;
+  if (runtime.safeMode || corePage !== null) return;
+  let state: { ready: boolean; dismissed: boolean } | undefined;
   try {
-    const providers = await listProviders(client, runtime.language);
-    if (anyReady(providers)) return;
+    state = await client.request<{ ready: boolean; dismissed: boolean }>("setup.state", {});
+    // An app before the engine held this noted the guide done or skipped in its own folder: the engine's now.
+    if (existsSync(welcomeFlag())) {
+      if (!state.ready && !state.dismissed) state = await client.request<{ ready: boolean; dismissed: boolean }>("setup.dismiss", { dismissed: true });
+      try { rmSync(welcomeFlag(), { force: true }); } catch { /* it is only read once more */ }
+    }
   } catch {
-    // A daemon that can't list them (an older one, the fake): no guide.
-    return;
+    // An older engine (no `setup.state`): the rule it had, no provider signed in; a daemon that can't list them, no guide.
+    if (existsSync(welcomeFlag())) return;
+    try {
+      if (anyReady(await listProviders(client, runtime.language))) return;
+    } catch {
+      return;
+    }
+    state = { ready: false, dismissed: false };
   }
-  log("welcome: no model provider is signed in; the guide opens");
+  if (!guideOpens(state)) return;
+  log("welcome: this home isn't set up for a first reply; the setup guide opens");
   await openPage("welcome");
 }
 
@@ -3251,6 +3262,8 @@ function setMenu(): void {
         { role: "about" },
         { type: "separator" },
         { label: "Settings…", accelerator: "Command+,", click: () => void show({ kind: "settings" }) },
+        // The setup guide again, whenever the person wants it (core, like the guide itself).
+        { label: translate(runtime.coreStrings(), "moss.core.welcome.menu"), click: () => void openPage("welcome") },
         { type: "separator" },
         { role: "hide" },
         { role: "hideOthers" },
