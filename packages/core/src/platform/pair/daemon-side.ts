@@ -78,7 +78,7 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
     stopDaemon: input.stopDaemon,
     ...(input.log ? { log: input.log } : {}),
   }, { ...input.options, desktop: launcher !== null });
-  input.log?.(`[pair] ${typeof __MOSS_TEST_BUILD__ === "string" ? "a test-marked build: the daemon never starts the app" : launcher === null ? "no app installed: the daemon runs alone" : `the app starts with: ${launcher.how}`}`);
+  input.log?.(`[pair] ${typeof __MOSS_TEST_BUILD__ === "string" ? "a test-marked build: the daemon never starts the app" : launcher === null ? "the daemon starts no app: no app bundle holds this engine and MOSS_APP names none (the apps start the engine, and the engine starts the host)" : `the app starts with: ${launcher.how}`}`);
   pair.start({ appKept: takeAppKept(input.runDir, now()) });
   return {
     pair,

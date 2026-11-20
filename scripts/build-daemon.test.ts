@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DAEMON_TARGETS, daemonCompileCommand, hostBundlesLine, MANIFEST_EMBED, occurrences, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs, versionLine } from "./build-daemon";
+import { buildStampAt, DAEMON_TARGETS, daemonCompileCommand, hostBundlesLine, MANIFEST_EMBED, occurrences, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs, versionLine } from "./build-daemon";
 import { TEST_BUILD_LABEL } from "./test-build";
 
 const compileCore = (JSON.parse(readFileSync(join(import.meta.dir, "..", "packages", "cli", "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["compile:core"]!;
@@ -35,6 +35,18 @@ describe("build:daemon", () => {
     expect(() => daemonCompileCommand(compileCore, "linux-x64", false, true)).toThrow("macOS's");
     expect(versionLine("1.2.3")).toBe("moss 1.2.3");
     expect(versionLine("1.2.3", true)).toBe(`moss 1.2.3 test build (${TEST_BUILD_LABEL}: a test-marked build, never for release)`);
+  });
+
+  test("a build stamp is one more define on every step, a bare number; with none the command is what it was", () => {
+    const plain = daemonCompileCommand(compileCore, "darwin-arm64");
+    const stamped = daemonCompileCommand(compileCore, "darwin-arm64", false, false, "20261120090807");
+    expect(stamped).toBe(plain.replaceAll("--define __MOSS_TEST_BUILD__=false ", "--define __MOSS_TEST_BUILD__=false --define __MOSS_ENGINE_BUILD__=20261120090807 "));
+    expect(stamped.split("--define __MOSS_ENGINE_BUILD__=20261120090807 ").length).toBe(7);
+    expect(plain).not.toContain("__MOSS_ENGINE_BUILD__");
+    expect(() => daemonCompileCommand(compileCore, "darwin-arm64", false, false, "2026-11-20")).toThrow("14 digits");
+    // The stamp is the time of the build in UTC and orders as numbers: a later build is a larger stamp.
+    expect(buildStampAt(new Date("2026-11-20T09:08:07.123Z"))).toBe("20261120090807");
+    expect(Number(buildStampAt(new Date("2026-11-20T10:00:00Z")))).toBeGreaterThan(Number(buildStampAt(new Date("2026-11-20T09:59:59Z"))));
   });
 
   test("the command is compile:core itself, with only the target and the output changed", () => {

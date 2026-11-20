@@ -20,7 +20,7 @@ import type { ReleaseHome } from "../contracts/release-home";
 import type { UpdateGate } from "./gate";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { copyAcceptable, locateEngineIn, placeEngine, verifyBundleEngine, verifyStagedEngine, type CopyPolicy } from "./engine-copy";
+import { copyAcceptable, locateEngineIn, placeEngine, verifyBundleEngine, verifyStagedEngine, verifyStagedSidecar, type CopyPolicy } from "./engine-copy";
 
 /** How long the gate stays closed for a swap before it would reopen by itself (a swap that never finishes). */
 export const SWAP_MS = 5 * 60_000;
@@ -211,12 +211,12 @@ export class ReleaseService {
   }
 }
 
-/** The place an app's bundle carries its engine, for the default `place`. */
+/** The place an app's bundle carries its engine and the files beside it, for the default `place`. */
 export function defaultPlace(home: string, policy: CopyPolicy): (copy: { release: string; build?: string; from: string }) => void {
   return (copy) => {
     const src = locateEngineIn(copy.from, policy.platform);
     if (src === undefined) throw new Error("no engine to find in that bundle");
-    placeEngine(home, { ...src, root: copy.from }, copy, policy.platform, (staged) => verifyStagedEngine(staged, copy.release, policy));
+    placeEngine(home, { ...src, root: copy.from }, copy, policy.platform, (staged) => verifyStagedEngine(staged, copy.release, policy), (staged, file) => verifyStagedSidecar(staged, file, policy));
   };
 }
 

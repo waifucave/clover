@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { deflateRawSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { engineSidecars } from "../packages/core/src/bundled-identities";
+import { RESOURCE_BINARIES } from "./release/lib";
 import { BUNDLED_IDENTIFIERS, bundledBinaryProblems, bundledFiles, CORE_IDENTIFIERS, HOLDER_FILE, holderCompileArgs, PLUGIN_BUN, PLUGIN_BUN_ENTITLEMENTS, pluginBunZip, unpackPluginBun, zipEntry } from "./bundled-binaries";
 
 const ROOT = join(import.meta.dir, "..");
@@ -21,6 +23,20 @@ describe("the binaries beside the core", () => {
     expect(bundledFiles("darwin-arm64")).toEqual(["moss-plugin-bun", "moss-process-holder"]);
     expect(bundledFiles("linux-x64")).toEqual(["moss-plugin-bun"]);
     expect(bundledFiles("windows-x64")).toEqual(["moss-plugin-bun.exe"]);
+  });
+
+  test("the files the engine copy places beside the core are the files the release signs beside it, under the same identifiers", () => {
+    // `engineSidecars` (bundled-identities.ts) is what `placeEngine` copies and checks on macOS; `RESOURCE_BINARIES` is what the
+    // release build signs into the app's daemon/ folder. A file in one and not the other is a file that is shipped and not placed
+    // (the engine would run from the home without it) or placed and not shipped (the copy would refuse every bundle).
+    const signed = RESOURCE_BINARIES.filter((b) => b.file !== "moss-core");
+    expect(engineSidecars("darwin").map((s) => s.file).sort()).toEqual(signed.map((b) => b.file).sort());
+    for (const s of engineSidecars("darwin")) expect(signed.find((b) => b.file === s.file)?.identifier as string | undefined).toBe(s.identifier.dist);
+    // The dev identifiers are the dist ones with `.dev`, which the dev daemon signs its own copies under.
+    for (const s of engineSidecars("darwin")) expect(s.identifier.dev).toBe(`${s.identifier.dist}.dev`);
+    // Windows and Linux ship the plugin Bun and the link sidecar, not the holder.
+    expect(engineSidecars("linux").map((s) => s.file)).toEqual(["moss-plugin-bun", "moss-link"]);
+    expect(engineSidecars("win32").map((s) => s.file)).toEqual(["moss-plugin-bun.exe", "moss-link.exe"]);
   });
 
   test("each has its own identifiers, none of them the core's", () => {

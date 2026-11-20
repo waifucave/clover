@@ -20,7 +20,7 @@ import { AppInstallRecord, APP_RECORDS_DIR, ENGINE_INSTALL_LOCK, MOSS_PROGRAMS a
 import type { Clock } from "../contracts/clock";
 import type { EngineCopy, ReleaseHome, ReleaseJudgment } from "../contracts/release-home";
 import { tryFileLock } from "../lock";
-import { isNewerCopy, readEngineMarker } from "./engine-copy";
+import { isNewerCopy, isSameCopy, readEngineMarker } from "./engine-copy";
 
 /** The most a record file may be: a record is a few hundred bytes; more is not one. */
 export const MAX_RECORD_BYTES = 8 * 1024;
@@ -33,6 +33,10 @@ export interface EngineReleaseHomeOptions {
   clock: Clock;
   /** Puts a copy under `<home>/bin/` (`placeEngine`), synchronously, under the install lock. Throws on failure. */
   place(copy: EngineCopy): void;
+  /** Whether the set under `<home>/bin/daemon/` is whole (engine and sidecars present and passing their checks: `installedSetProblem`).
+   *  Asked only when the installed copy is the very copy being installed, which is then placed again when it says false: the repair
+   *  of a copy a failed or older install left without its sidecars. Absent: the set is taken as whole. */
+  intact?(): boolean;
   /** Whether a bundle path still exists (default: the disk). */
   exists?(path: string): boolean;
   /** Test seam: time an install holds the lock, on the clock. */
@@ -162,7 +166,8 @@ export class EngineReleaseHome implements ReleaseHome {
       try {
         await this.#o.hold?.();
         const have = this.installed();
-        const installed = isNewerCopy(copy, have);
+        // A newer copy replaces the installed one; the very same copy (release and build) replaces it only to repair it.
+        const installed = isNewerCopy(copy, have) || (have !== undefined && isSameCopy(copy, have) && this.#o.intact?.() === false);
         if (installed) this.#o.place(copy);
         return { installed, current: this.installed() ?? { ...copy } };
       } finally {

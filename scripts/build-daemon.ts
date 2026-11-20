@@ -86,14 +86,24 @@ export const MANIFEST_EMBED = `.build/${BUNDLED_MANIFEST_FILE}`;
  * same for every target. Throws when the script no longer has the shape this relies on: update this file, don't
  * guess around it.
  */
-export function daemonCompileCommand(compileCoreScript: string, target: DaemonTarget, embedManifest = false, testBuild = false): string {
+export function daemonCompileCommand(compileCoreScript: string, target: DaemonTarget, embedManifest = false, testBuild = false, buildStamp?: string): string {
   if (testBuild && target !== "darwin-arm64") throw new Error("a test-marked core is macOS's (darwin-arm64) only");
+  if (buildStamp !== undefined && !/^\d{14}$/.test(buildStamp)) throw new Error(`a build stamp is 14 digits (UTC YYYYMMDDHHMMSS), not ${JSON.stringify(buildStamp)}`);
   if (compileCoreScript.split(COMPILE).length !== 2) throw new Error(`compile:core no longer has exactly one \`${COMPILE}\` — update scripts/build-daemon.ts`);
   if (compileCoreScript.split(COMPILE_CORE_OUTFILE).length !== 2) throw new Error(`compile:core no longer writes ${COMPILE_CORE_OUTFILE} — update scripts/build-daemon.ts`);
   return compileCoreScript
     .replace(COMPILE, `${COMPILE} --target=${DAEMON_TARGETS[target]} ${DIST_EXEC_ARGV}`)
     .replace(COMPILE_CORE_OUTFILE, `${embedManifest ? `${MANIFEST_EMBED} ` : ""}--outfile ../../${daemonOutput(target)}`)
-    .replaceAll("bun build ", `bun build --define ${DIST_BUILD_DEFINE} --define ${testBuildDefineArg(testBuild)} `);
+    .replaceAll("bun build ", `bun build --define ${DIST_BUILD_DEFINE} --define ${testBuildDefineArg(testBuild)}${buildStamp === undefined ? "" : ` --define ${ENGINE_BUILD_DEFINE_NAME}=${buildStamp}`} `);
+}
+
+/** The define the build stamp (`packages/core/src/engine-build.ts`) is compiled in with: the 14 digits as a bare number (no quotes
+ *  to get wrong in cmd.exe or sh; 14 digits are exact in a double), which the core turns back into the string. */
+export const ENGINE_BUILD_DEFINE_NAME = "__MOSS_ENGINE_BUILD__";
+
+/** A build's stamp: the time it was made, UTC `YYYYMMDDHHMMSS`, so a later build of one release orders after an earlier one. */
+export function buildStampAt(now: Date = new Date()): string {
+  return now.toISOString().replace(/\.\d+Z$/, "").replace(/[-:T]/g, "");
 }
 
 export interface BuildDaemonArgs {
@@ -351,9 +361,11 @@ export function occurrences(binary: Uint8Array, needle: Uint8Array): number {
 }
 
 async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string, script: string, version: string, host: DaemonTarget | undefined, expected: string, manifestBytes: Uint8Array | undefined): Promise<number> {
+  // One stamp for the run: every target it builds is the same build.
+  const stamp = buildStampAt();
   for (const target of args.targets) {
     const testBuild = args.testBuild === true;
-    const command = daemonCompileCommand(script, target, args.pluginsManifest !== undefined, testBuild);
+    const command = daemonCompileCommand(script, target, args.pluginsManifest !== undefined, testBuild, stamp);
     const output = join(root, ...daemonOutput(target).split("/"));
     if (args.dryRun) {
       console.log(`build:daemon: ${target}: (in packages/cli) ${command}`);

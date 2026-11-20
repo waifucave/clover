@@ -409,6 +409,9 @@ export function appTokenAclBootTrust(input: { profile: "dist" | "dev"; log: (lin
     input.log(`keychain: the app-token access lists were not checked (${err instanceof Error ? err.name : "error"})`);
     return undefined;
   }
-  if (trust === undefined) input.log(`keychain: no ${input.profile === "dev" ? "MOSS Code Dev build signed by MOSS's team" : "enclosing MOSS app"} to grant the pairing tokens to — their access lists are left as they are`);
+  // Dist: an engine installed under the home (`<home>/bin/daemon/`, the only place one runs from since RL) is in no app bundle, so
+  // nobody is trusted beyond this process; MOSS and MOSS Code read `run/app.token`, never these two Keychain items, so nothing
+  // is left to prompt (the Swift app that read them is not part of this product).
+  if (trust === undefined) input.log(input.profile === "dev" ? "keychain: no MOSS Code Dev build signed by MOSS's team to grant the pairing tokens to — their access lists are left as they are" : "keychain: this engine runs from the home, outside any app bundle, so the pairing tokens' access lists are left as they are (the apps read run/app.token, not those items)");
   return trust;
 }

@@ -1,25 +1,29 @@
 // `moss-core engine install --app <bundle path> [--build <id>]` (spec §3.1 "Where the copies are found"; RL). What an app
-// runs, with its OWN bundled engine, before it starts anything through the OS: it puts that engine (and the bundled tree
-// beside it) under the home, at `<home>/bin/daemon/moss-core` and `<home>/bin/plugins`, UNDER THE INSTALL LOCK and only
-// when it is newer than what is there (a newer release, or the same release and a newer build). The loser of two apps
-// starting at once finds the winner's copy in place and just uses it. It prints one JSON line, `{ installed, binary,
-// release, build? }`: the binary the login item and the apps start the engine from, whichever copy won.
+// runs, with its OWN bundled engine, before it starts anything through the OS: it puts that engine, the files that sit beside
+// it (the plugin Bun, the link sidecar, the process holder: `engineSidecars`) and the bundled tree beside them under the home,
+// at `<home>/bin/daemon/` and `<home>/bin/plugins`, UNDER THE INSTALL LOCK and only when it is newer than what is there (a
+// newer release, or the same release and a newer build: this build's own stamp, `ENGINE_BUILD`, unless `--build` names one),
+// or is the very copy that is there and its set is not whole (a sidecar missing or failing its check: placed again). The loser
+// of two apps starting at once finds the winner's copy in place and just uses it. It prints one JSON line, `{ installed,
+// binary, release, build? }`: the binary the login item and the apps start the engine from, whichever copy won.
 //
 // Nothing here reads a path from anyone but the caller's own command line: the source is the running binary
-// (`process.execPath`) and the tree beside it, and the check the engine makes of any staged copy (`verifyStagedEngine`: on
-// macOS its code requirement, on every OS that it says it is this release) applies to it too.
+// (`process.execPath`), the named files in its own folder and the tree beside it, and the checks the engine makes of any
+// staged copy (`verifyStagedEngine` and `verifyStagedSidecar`: on macOS each file's code requirement, on every OS that the
+// engine says it is this release) apply to them too.
 import { existsSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { APP_RECORDS_DIR, ENGINE_INSTALL_LOCK, MOSS_PROGRAMS } from "@waifucave/moss-protocol";
 import { tryFileLock } from "../lock";
 import { CORE_VERSION } from "../version";
+import { ENGINE_BUILD } from "../engine-build";
 import { resolveMossProfile } from "../profile";
 import { SystemClock } from "../clock/system-clock";
-import { codesignCheck, engineBinaryPath, engineCopyRequirement, engineTreePath, ENGINE_MARKER, placeEngine, verifyStagedEngine, type CodeCheck, type CopyPolicy } from "./engine-copy";
+import { codesignCheck, engineBinaryPath, engineCopyRequirement, engineTreePath, ENGINE_MARKER, installedSetProblem, placeEngine, verifyStagedEngine, verifyStagedSidecar, type CodeCheck, type CopyPolicy } from "./engine-copy";
 import { EngineReleaseHome } from "./release-home";
 import { appPeerRequirement } from "../platform/peer-signature";
 import { endpointAnswers, resolveEndpoint } from "../platform/transport";
-import { DEVELOPER_ID_CLAUSES } from "../bundled-identities";
+import { DEVELOPER_ID_CLAUSES, engineSidecars } from "../bundled-identities";
 
 export const ENGINE_INSTALL_USAGE = "usage: moss-core engine install --app <the app's bundle path> [--build <id>]";
 
@@ -40,8 +44,8 @@ export interface EngineInstallEnv {
 
 export async function runEngineInstall(argv: readonly string[], env: EngineInstallEnv): Promise<number> {
   const at = (flag: string) => { const i = argv.indexOf(flag); return i < 0 ? undefined : argv[i + 1]; };
-  const app = at("--app"), build = at("--build");
-  if (app === undefined || !isAbsolute(app) || (argv.includes("--build") && (build === undefined || build === "" || build.length > 64))) { env.err(ENGINE_INSTALL_USAGE); return 2; }
+  const app = at("--app"), asked = at("--build"), build = asked ?? ENGINE_BUILD;
+  if (app === undefined || !isAbsolute(app) || (argv.includes("--build") && (asked === undefined || asked === "" || asked.length > 64))) { env.err(ENGINE_INSTALL_USAGE); return 2; }
   const release = env.release ?? CORE_VERSION;
   const platform = env.platform ?? process.platform;
   const exec = realpathSync(env.execPath ?? process.execPath);
@@ -65,8 +69,10 @@ export async function runEngineInstall(argv: readonly string[], env: EngineInsta
       home: env.home, engine: release, clock: new SystemClock(),
       place: (copy) => {
         const tree = join(dirname(dirname(exec)), "plugins");
-        placeEngine(env.home, { binary: exec, ...(existsSync(tree) ? { tree } : {}) }, copy, platform, (staged) => (env.verify ?? ((s, r) => verifyStagedEngine(s, r, policy)))(staged, copy.release));
+        const sidecars = engineSidecars(platform).map((s) => join(dirname(exec), s.file));
+        placeEngine(env.home, { binary: exec, sidecars, ...(existsSync(tree) ? { tree } : {}) }, copy, platform, (staged) => (env.verify ?? ((s, r) => verifyStagedEngine(s, r, policy)))(staged, copy.release), (staged, file) => verifyStagedSidecar(staged, file, policy));
       },
+      intact: () => installedSetProblem(env.home, policy) === undefined,
     });
     // Already running from the home's own copy: there is nothing to put anywhere.
     let installed = false;

@@ -3,10 +3,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { runEngineInstall, runEngineReset } from "../../src/update/engine-install-command";
 import { appRecordPath } from "../../src/update/release-home";
 import { engineBinaryPath } from "../../src/update/engine-copy";
+import { writeSidecars } from "./fixtures/sidecars";
 
 const root = mkdtempSync(join(tmpdir(), "moss-rl-eic-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -21,6 +22,7 @@ function app(release: string): { exec: string; bundle: string } {
   const exec = join(resources, "daemon", "moss-core");
   writeFileSync(exec, `#!/bin/sh\necho "moss ${release}"\n`);
   chmodSync(exec, 0o755);
+  writeSidecars(join(resources, "daemon"), release);
   writeFileSync(join(resources, "plugins", "p", "f"), release);
   return { exec, bundle };
 }
@@ -48,6 +50,25 @@ describe("engine install", () => {
     expect((await run(home, app("1.1.0"), "1.1.0")).out[0]).toMatchObject({ installed: true, release: "1.1.0" });
     expect((await run(home, app("1.0.0"), "1.0.0", ["--build", "99"])).out[0]).toMatchObject({ installed: false, release: "1.1.0" });
     expect(readFileSync(engineBinaryPath(home), "utf8")).toContain("moss 1.1.0");
+  });
+
+  test("the sidecars come with the engine; a bundle missing one is refused and places nothing; a same-build copy with one gone is placed again", async () => {
+    const home = join(root, "h10");
+    const a = app("1.0.0");
+    expect((await run(home, a, "1.0.0", ["--build", "7"])).out[0]).toMatchObject({ installed: true });
+    for (const f of ["moss-plugin-bun", "moss-link"]) expect(readFileSync(join(home, "bin", "daemon", f), "utf8")).toBe(`${f} 1.0.0\n`);
+    expect((await run(home, a, "1.0.0", ["--build", "7"])).out[0]).toMatchObject({ installed: false });
+    rmSync(join(home, "bin", "daemon", "moss-link"));
+    expect((await run(home, a, "1.0.0", ["--build", "7"])).out[0]).toMatchObject({ installed: true, build: "7" });
+    expect(readFileSync(join(home, "bin", "daemon", "moss-link"), "utf8")).toBe("moss-link 1.0.0\n");
+    // A newer bundle that lacks one: refused (exit 1), and the installed set is as it was.
+    const b = app("1.0.0");
+    rmSync(join(dirname(b.exec), "moss-plugin-bun"));
+    const r = await run(home, b, "1.0.0", ["--build", "8"]);
+    expect(r.code).toBe(1);
+    expect(r.err[0]).toContain("moss-plugin-bun is missing from the bundle");
+    expect(readFileSync(join(home, "bin", "daemon", "moss-plugin-bun"), "utf8")).toBe("moss-plugin-bun 1.0.0\n");
+    expect(JSON.parse(readFileSync(join(home, "bin", "engine.json"), "utf8")).build).toBe("7");
   });
 
   test("an engine that is already running is never swapped under: nothing is placed, and it says it was deferred", async () => {
@@ -91,8 +112,8 @@ describe("the home's engine is checked before the app starts it, and engine rese
     expect(r.code).toBe(1);
     // A copy that passes at staging but fails when the app is about to start it.
     const home2 = join(root, "h7");
-    let call = 0;
-    const r2 = await run(home2, app("1.0.0"), "1.0.0", [], { platform: "darwin", check: () => ++call === 1 });
+    // (Staged files end in `.new`: the engine's and each sidecar's; the placed engine, which the app is about to start, doesn't.)
+    const r2 = await run(home2, app("1.0.0"), "1.0.0", [], { platform: "darwin", check: (p) => p.endsWith(".new") });
     expect(r2.out[0]).toMatchObject({ installed: true, unsafe: true });
     running = true;
     try {

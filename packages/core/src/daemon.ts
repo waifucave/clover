@@ -172,6 +172,7 @@ import { UpdateGate } from "./update/gate";
 import { acceptUpdateExit, updateHandlers, type SelfUpdate } from "./update/service";
 import { readInstallMarker } from "./update/install-marker";
 import { EngineReleaseHome } from "./update/release-home";
+import { ENGINE_BUILD } from "./engine-build";
 import { defaultPlace, ReleaseService, releaseHandlers } from "./update/release-service";
 import { UPDATE_RESTART_EXIT_CODE } from "./platform/login/supervise";
 import { appPeerRequirement } from "./platform/peer-signature";
@@ -3631,7 +3632,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let releaseRestartNow: () => void = () => {};
   const releaseRestart = new Promise<void>((resolve) => { releaseRestartNow = resolve; });
   const releaseService = new ReleaseService({
-    home: releaseHome, engine: { release: engineRelease, path: process.execPath }, gate: updateGate, policy: releasePolicy, homeDir: dirs.home,
+    home: releaseHome, engine: { release: engineRelease, ...(ENGINE_BUILD !== undefined ? { build: ENGINE_BUILD } : {}), path: process.execPath }, gate: updateGate, policy: releasePolicy, homeDir: dirs.home,
     // lane HS: the background host's supervisor: stopped for the swap, and started again after one that failed.
     host: { stop: (reason) => hostSupervision?.supervisor.stop(reason), boot: async () => hostSupervision?.boot() },
     emit: (event) => void mossServer?.coreEvent({ ...event }), restart: () => releaseRestartNow(), log: (line) => console.error(line),

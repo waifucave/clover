@@ -11,6 +11,7 @@ import { engineBinaryPath, placeEngine, locateEngineIn, verifyStagedEngine, type
 import { UpdateGate } from "../../src/update/gate";
 import { EngineReleaseHome } from "../../src/update/release-home";
 import { ReleaseService, ReleaseRefused, type ReleaseEventBody } from "../../src/update/release-service";
+import { writeSidecars } from "./fixtures/sidecars";
 
 const root = mkdtempSync(join(tmpdir(), "moss-rl-svc-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -25,6 +26,7 @@ function bundle(release: string): string {
     mkdirSync(join(res, "plugins", "x"), { recursive: true });
     writeFileSync(join(res, "daemon", "moss-core"), `#!/bin/sh\necho "moss ${release}"\n`);
     chmodSync(join(res, "daemon", "moss-core"), 0o755);
+    writeSidecars(join(res, "daemon"), release);
     writeFileSync(join(res, "plugins", "x", "a.txt"), "tree");
   }
   return dir;

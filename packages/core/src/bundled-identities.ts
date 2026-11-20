@@ -43,6 +43,24 @@ export const PLUGIN_BUN_IDENTIFIER = { dist: "com.waifucave.moss.core.plugin-bun
 export const PROCESS_HOLDER_FILE = "moss-process-holder";
 export const PROCESS_HOLDER_IDENTIFIER = { dist: "com.waifucave.moss.core.process-holder", dev: "com.waifucave.moss.core.process-holder.dev" } as const;
 
+/** The link sidecar (native/link), beside the core: the engine hands it the device key and starts it itself. Signed under its
+ *  own identifier by the release build (`scripts/release/lib.ts`'s `RESOURCE_BINARIES`, which a test holds to this). */
+export const LINK_FILE = "moss-link";
+export const LINK_IDENTIFIER = { dist: "com.waifucave.moss.core.link", dev: "com.waifucave.moss.core.link.dev" } as const;
+
+/** The files a MOSS app bundle ships in its `daemon/` folder besides `moss-core`, each with the identifier it is signed
+ *  under (dist, dev): the set the engine copy places beside the engine (`update/engine-copy.ts`) and the set
+ *  `scripts/try/verify.sh` holds a build's `Resources/daemon/` to. The process holder is macOS's alone. `.exe` names on
+ *  Windows. A file that is in the bundle and not here is a file the copy would not place: the verify check says so. */
+export function engineSidecars(platform: NodeJS.Platform = process.platform): { file: string; identifier: { readonly dist: string; readonly dev: string } }[] {
+  const exe = platform === "win32" ? ".exe" : "";
+  return [
+    { file: `${PLUGIN_BUN_FILE}${exe}`, identifier: PLUGIN_BUN_IDENTIFIER },
+    { file: `${LINK_FILE}${exe}`, identifier: LINK_IDENTIFIER },
+    ...(platform === "darwin" ? [{ file: PROCESS_HOLDER_FILE, identifier: PROCESS_HOLDER_IDENTIFIER }] : []),
+  ];
+}
+
 /** The designated requirement a shipped plugin Bun must satisfy on macOS: Apple's anchor, MOSS's team, its own
  *  identifier. Nothing but a binary MOSS's team signed under that identifier passes it. */
 export function pluginBunRequirement(team: string = MOSS_TEAM_ID): string {

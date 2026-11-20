@@ -65,11 +65,13 @@ describe("the records and the install lock are not the runners' to write", () =>
     chmodSync(src, 0o755);
     mkdirSync(join(root, "src-tree", "p"), { recursive: true });
     writeFileSync(join(root, "src-tree", "p", "f"), "x");
-    for (const n of ["1", "2"]) placeEngine(h2, { binary: src, tree: join(root, "src-tree") }, { release: `1.0.${n}`, from: "/x" }, "linux");
+    // The files beside the engine too (`engineSidecars`), so their swap copies are among what is on disk.
+    const sidecars = ["moss-plugin-bun", "moss-link"].map((f) => { const p = join(root, f); writeFileSync(p, f); chmodSync(p, 0o755); return p; });
+    for (const n of ["1", "2"]) placeEngine(h2, { binary: src, tree: join(root, "src-tree"), sidecars }, { release: `1.0.${n}`, from: "/x" }, "linux");
     const written: string[] = [];
     const walk = (d: string): void => { for (const e of readdirSync(d, { withFileTypes: true })) { const f = join(d, e.name); written.push(f.slice(h2.length + 1)); if (e.isDirectory()) walk(f); } };
     walk(join(h2, "bin"));
-    const names = new Set([...written, join("bin", "daemon", "moss-core.new"), join("bin", "plugins.new"), join("bin", ".install.lock"), join("bin", ".restarted-into.json")]);
+    const names = new Set([...written, join("bin", "daemon", "moss-core.new"), join("bin", "daemon", "moss-plugin-bun.new"), join("bin", "daemon", "moss-link.new"), join("bin", "plugins.new"), join("bin", ".install.lock"), join("bin", ".restarted-into.json")]);
     expect([...names].some((n) => n.endsWith("moss-core.old"))).toBe(true);
     for (const [who, caller] of callers) {
       const f = fence.forCaller(caller);
