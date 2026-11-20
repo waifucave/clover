@@ -396,6 +396,8 @@ describe("daemon wiring — deletion and teardown", () => {
       const kept = store.createSession("work", { cwd: home });
       store.append(kept, { type: "user_message", sessionId: kept, threadId: "main", text: "keep me", clientName: "test" });
       store.close();
+      // 2026-11-20: a fresh home names no default model, and the backfill waits for one; this home names one.
+      writeSettings(home);
       backdate(home, doomed);
 
       const rt = online(await boot(home));
@@ -414,6 +416,8 @@ describe("daemon wiring — deletion and teardown", () => {
       const sessionId = store.createSession("work", { cwd: home });
       store.append(sessionId, { type: "user_message", sessionId, threadId: "main", text: "hi", clientName: "test" });
       store.close();
+      // 2026-11-20: a fresh home names no default model, and the backfill waits for one; this home names one.
+      writeSettings(home);
 
       const d = await boot(home);
       const rt = online(d);

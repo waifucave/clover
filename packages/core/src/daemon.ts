@@ -3562,6 +3562,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   })));
   // The setup guide's questions (`setup.state`, `setup.dismiss`, `models.setDefault`), any client's.
   if (settings) Object.assign(mossLaneHandlers, laneMethodHandlers(setupMethods(setup)));
+  // Read once now: the boot's presence was taken before the legacy credential move, which may have added one.
+  if (settings) await setup.refresh();
   // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
   // are empty and anything else is refused while it opens; then the registry's handlers serve them.
   let pluginMethods: Record<string, MethodHandler> = {};

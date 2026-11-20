@@ -351,7 +351,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     ];
     const r = smoke(electron(), [root], "welcome", { MOSS_SMOKE_ROOT_STEPS: JSON.stringify(steps), MOSS_SMOKE_WAIT_TEXT: "Saved. MOSS keeps the key" });
     expectShell(r);
-    expect(r.all).toContain("welcome: no model provider is signed in; the guide opens");
+    expect(r.all).toContain("welcome: this home isn't set up for a first reply; the setup guide opens");
     const rootFrame = r.facts!.frames.find((x) => x.origin === "moss-core://app")!;
     expect(rootFrame.text).toContain("Welcome to MOSS");
     expect(rootFrame.text).toContain("Use it kindly.");
