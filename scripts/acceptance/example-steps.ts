@@ -695,7 +695,7 @@ export async function toAlphasTab(ctx: ExampleCtx): Promise<void> {
     await sleep(300);
     for (const d of await treeDocs(cdp)) {
       const c = await cdp.evaluate(d.session, `(() => {
-        const el = [...document.querySelectorAll(".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]")].find((e) => (e.innerText || "").split("\\n").some((l) => l.trim() === "Alpha") || e.getAttribute("aria-label") === "Alpha");
+        const el = [...document.querySelectorAll(".cl-sidebar button, .cl-sidebar a, .cl-sidebar [role=link]")].find((e) => (e.innerText || "").split("\\n").some((l) => l.trim() === "MOSS") || e.getAttribute("aria-label") === "MOSS");
         if (!el) return null;
         el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
         const r = el.getBoundingClientRect();

@@ -17,7 +17,7 @@ import { readExamples, type Example } from "../../plugins/moss/plugins/plugin-bu
 import { callTurn, fail, frames, leave, treeDocs, until, type ExampleCtx } from "./example-steps";
 import { drawn, drawnInSettings, openSidebarEntry, reloadsSettled } from "./window-open";
 
-export const BUILDER_EXAMPLES_STEP = "the plugin builder's 15 examples, each installed from a folder over RPC behind its OK card (ex-tool's pressed in the window) and running: Settings sections (ex-settings, ex-point, ex-board with ex-board-widget's widget in it, ex-buddy's child), the status line (ex-status), the pages from their sidebar entries (ex-app, ex-timeline, ex-fit with ex-fit-tile's tile in it) are drawn in the window; ex-theme is listed as a theme, ex-bot and ex-buddy as bots, ex-model's model as a model; ex-tool and ex-timeline's tools answer a call from Alpha; each removed afterwards";
+export const BUILDER_EXAMPLES_STEP = "the plugin builder's 15 examples, each installed from a folder over RPC behind its OK card (ex-tool's pressed in the window) and running: Settings sections (ex-settings, ex-point, ex-board with ex-board-widget's widget in it, ex-buddy's child), the status line (ex-status), the pages from their sidebar entries (ex-app, ex-timeline, ex-fit with ex-fit-tile's tile in it) are drawn in the window; ex-theme is listed as a theme, ex-bot and ex-buddy as bots, ex-model's model as a model; ex-tool and ex-timeline's tools answer a call from MOSS; each removed afterwards";
 
 interface Card { id: string; kind: string; pluginId?: string }
 

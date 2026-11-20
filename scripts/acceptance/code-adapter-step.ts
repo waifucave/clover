@@ -7,7 +7,7 @@
 import type { FakeGeminiRequest } from "./fake-gemini";
 import type { FakeOpenAiRequest } from "./fake-openai";
 
-export const CODE_ADAPTER_STEP = "a turn on each kind of model plugin at the user's own endpoint (providers.<id>.baseUrl, loopback fakes): Alpha on Gemini through the bundled Google plugin's code adapter in the plugin host, on OpenAI's Responses wire and on Groq's Chat Completions wire through the declarative plugins, each with the key stored through its sign-in";
+export const CODE_ADAPTER_STEP = "a turn on each kind of model plugin at the user's own endpoint (providers.<id>.baseUrl, loopback fakes): MOSS on Gemini through the bundled Google plugin's code adapter in the plugin host, on OpenAI's Responses wire and on Groq's Chat Completions wire through the declarative plugins, each with the key stored through its sign-in";
 
 /** The OpenAI-wire providers the clause runs: the plugin, the model Alpha is moved to, the wire, and the base URL
  *  path its catalog endpoint has (the user's endpoint keeps it). */
@@ -33,10 +33,10 @@ export const GOOGLE_PLUGIN = "moss/model-google";
 export const GEMINI_MODEL = "google/gemini-2.5-flash";
 export const GEMINI_REPLY = "ACCEPTANCE-GEMINI-OK from the plugin's adapter";
 
-export const THIRD_PARTY_MODEL_STEP = "a turn on a third-party code model plugin: a folder-installed plugin with its own provider on this computer and its own adapter, its OK approved (naming that address) and its key stored through its sign-in, answers Alpha's turn through the plugin host, reaching its one declared host with that key";
+export const THIRD_PARTY_MODEL_STEP = "a turn on a third-party code model plugin: a folder-installed plugin with its own provider on this computer and its own adapter, its OK approved (naming that address) and its key stored through its sign-in, answers MOSS's turn through the plugin host, reaching its one declared host with that key";
 export const THIRD_PARTY_KEY = "acceptance-models-dummy-key-not-a-secret";
 export const THIRD_PARTY_REPLY = "ACCEPTANCE-THIRDPARTY-OK from the plugin's own adapter";
-export const OAUTH_SIGN_IN_STEP = "an oauth-pkce sign-in through the core's real flow: a folder-installed plugin signs in against the run's OAuth server on this computer (the authorize URL fetched and its redirect delivered to the core's loopback callback by the run, no browser), the code exchanged with the PKCE verifier, and Alpha's turns on its model carry a live token, renewed by the core at the plugin's token endpoint near its expiry and after a 401";
+export const OAUTH_SIGN_IN_STEP = "an oauth-pkce sign-in through the core's real flow: a folder-installed plugin signs in against the run's OAuth server on this computer (the authorize URL fetched and its redirect delivered to the core's loopback callback by the run, no browser), the code exchanged with the PKCE verifier, and MOSS's turns on its model carry a live token, renewed by the core at the plugin's token endpoint near its expiry and after a 401";
 export const OAUTH_PLUGIN = "acceptance-oauth";
 export const OAUTH_MODEL = "acceptance-oauth/oauth-fast";
 export const OAUTH_REPLY = "ACCEPTANCE-OAUTH-OK over the token the sign-in stored";

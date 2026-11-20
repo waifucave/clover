@@ -33,24 +33,24 @@ const ui = (start: string): string => row(`window: ${start}`);
 
 export const ROWS_ELSEWHERE: ReadonlyMap<string, Elsewhere> = new Map<string, Elsewhere>([
   [ui("the Dispatch pill sends"), { owner: "MOSS", why: "the Dispatch pill sends to a bot" }],
-  [ui("Alpha's tab is drawn by Alpha's own layout"), { owner: "retired", why: "Alpha's tab drawn by her own layout: her tab layout is retired with the bot tab (G8), and MOSS draws its bots in its own window" }],
+  [ui("MOSS's tab is drawn by MOSS's own layout"), { owner: "retired", why: "MOSS's tab drawn by her own layout: her tab layout is retired with the bot tab (G8), and MOSS draws its bots in its own window" }],
   [ui("the bot editor opens the user's way"), { owner: "MOSS", why: "the bot editor, opened from a bot's tab and Settings › Bots" }],
   [ui("a bot's question card (AskUserQuestion)"), { owner: "MOSS", why: "a bot's question card (AskUserQuestion) with Send answer, and Try again on a failed turn, both bots' features this round (the MOSS unit's own rows): MOSS's coding agent has no AskUserQuestion (MOSS_CODE_TOOLS), so a code session raises no question card, and a failed turn in one shows its error row with no Try again" }],
-  [ui("Alpha's tab shows the stock sidebar"), { owner: "MC2", why: "Alpha's tab under Bots' plug: the stock sidebar, her top bar, her stage's fold" }],
+  [ui("MOSS's tab shows the stock sidebar"), { owner: "MC2", why: "MOSS's tab under Bots' plug: the stock sidebar, her top bar, her stage's fold" }],
   [ui("a bot plugin changes one thing in its tab"), { owner: "retired", why: "a bot plugin's own tab layout and another plugin's patch to it: the plug went with the bot tab (G8), and its fixtures (acceptance-layout-patch, acceptance-layout-mover) with it" }],
   [ui("a plugin with a bot (the plug rule)"), { owner: "retired", why: "a bot plugin's panel replacing a stock one on its bot's tab only: the plug went with the bot tab (G8)" }],
-  [ui("a plugin adds a panel of its own on the right"), { owner: "MOSS", why: "panels a plugin adds on Alpha's tab and a bot plugin's panels inside its bot (its coding-tab half, Slides on a coding session, is the MOSS unit's to keep with the rest)" }],
+  [ui("a plugin adds a panel of its own on the right"), { owner: "MOSS", why: "panels a plugin adds on MOSS's tab and a bot plugin's panels inside its bot (its coding-tab half, Slides on a coding session, is the MOSS unit's to keep with the rest)" }],
   [SURFACE_COPY_STEP, { owner: "MOSS", why: "a copy of the Dispatch pill sending to a bot's conversation" }],
   [row("a write to an ordinary folder lands with no card"), { owner: "MOSS", why: "a bot's level for writes, its card pressed where the bot's conversation is drawn (MOSS Code's window is told of code sessions' cards only)" }],
   [SHELL_STEP, { owner: "MOSS", why: "a bot's shell and RequestAccess, its card pressed where the bot's conversation is drawn" }],
   [OUTSIDE_STEP, { owner: "MOSS", why: "a command outside the sandbox, only in a bot's own conversation, its card pressed where that is drawn" }],
-  [AGENT_STEP, { owner: "MOSS", why: "Alpha's study-buddy agent and its card, pressed where her conversation is drawn" }],
-  [TAB_FLASH_STEP, { owner: "MOSS", why: "Alpha's tab never flashing on the way back to it" }],
+  [AGENT_STEP, { owner: "MOSS", why: "MOSS's study-buddy agent and its card, pressed where her conversation is drawn" }],
+  [TAB_FLASH_STEP, { owner: "MOSS", why: "MOSS's tab never flashing on the way back to it" }],
   [NOTIFY_STEP, { owner: "MOSS", why: "a turn a bot runs on its own reaching the notifier, from a bot's tab" }],
   [LISTEN_STEP, { owner: "MOSS", why: "push-to-talk where a bot's voice listens" }],
   [DRAG_STEP, { owner: "MOSS", why: "a bot's own controls dragging the window" }],
   [STAGE_COPY_STEP, { owner: "MC2", why: "a copy of the stage drawing a bot's figure" }],
-  [STAGE_STEP, { owner: "MC2", why: "Alpha's stage tools and their levels on her stage" }],
+  [STAGE_STEP, { owner: "MC2", why: "MOSS's stage tools and their levels on her stage" }],
 ]);
 
 for (const [name, e] of ROWS_ELSEWHERE) ELSEWHERE_NOTES.set(name, `runs elsewhere (${e.owner === "retired" ? "retired" : e.owner === "MOSS" ? "lane MA's moss unit" : "lane MC2"}): ${e.why}`);

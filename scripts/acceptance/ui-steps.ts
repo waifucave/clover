@@ -29,24 +29,24 @@ export const UI_STEPS = [
   "a setting changed in Settings is still there when it is opened again",
   "the Dispatch pill sends: a message typed in the pill goes to its bot, and the bot's reply is shown",
   "a send that is refused says so by the composer, and the draft stays",
-  "Alpha's tab is drawn by Alpha's own layout (its talk column)",
+  "MOSS's tab is drawn by MOSS's own layout (its talk column)",
   "a pending tool card is drawn by the island (not empty, not one colour, no raw JSON), and idle surfaces stay quiet",
   "the island and the pill are clear outside their own shape (no backdrop box), in dark and light",
   "the composer's slash menu lists a plugin's command and runs it as you: its result shows by the composer, and the line never reaches the bot",
   "Theme chosen in Settings (Dark, Light, System) reaches every window: the main window's and a card page's computed scheme follow it, the island and the pill stay see-through",
   "the Plugins page installs a plugin from a folder (main's picker), its OK card pressed; its detail shows its tools; it is removed on its sealed card; the page's own calls without a click are refused",
   "a third-party plugin with UI installed from its folder as it is (a TSX client importing React and the UI SDK, no react shipped) renders in its own layer once OK'd, its client built by the registry at load; turned off in the Plugins page it leaves the window, and its layer's own connection to the core closes",
-  "the bot editor opens the user's way, from Alpha's Edit button and from Settings → Bots → Edit, and draws its controls",
+  "the bot editor opens the user's way, from MOSS's Edit button and from Settings → Bots → Edit, and draws its controls",
   GENERAL_POINTS_STEP,
   "a bot's question card (AskUserQuestion) takes a pressed option and Send answer in the window and the turn goes on with the answer; a turn that fails shows Try again on its error row; one click sends the same message again (the user's own, byte for byte), the turn completes, the button goes, and nothing was sent twice",
   FIGURE_PACK_STEP,
   FIGURE_RENDERER_STEP,
   FIGURE_REACTS_STEP,
-  "Alpha's tab shows the stock sidebar exactly as on a plain bot's tab (same rows, size and colours) and her own top bar; her toggle folds the stock sidebar and back, her panel control opens and closes the panel sheet; a plain bot's tab keeps the stock bar; more scoped wins: an all-bots composer style loses to Alpha's own on her tab and shows on the plain bot's; her stage tools are offered to her and not to the plain bot; her outfit is her setting (her Outfit tool, the setting and her tool agree with what her figure wears)",
+  "MOSS's tab shows the stock sidebar exactly as on a plain bot's tab (same rows, size and colours) and her own top bar; her toggle folds the stock sidebar and back, her panel control opens and closes the panel sheet; a plain bot's tab keeps the stock bar; more scoped wins: an all-bots composer style loses to MOSS's own on her tab and shows on the plain bot's; her stage tools are offered to her and not to the plain bot; her outfit is her setting (her Outfit tool, the setting and her tool agree with what her figure wears)",
   "a bot plugin changes one thing in its tab: a layout of a few lines that extends the stock tab stands its stage to the left of the transcript, wider, and a hide entry takes the composer's model button out of its tab only",
-  "an idle app with Alpha's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
+  "an idle app with MOSS's tab open stays cheap: the main process under a small CPU budget and the windows and main trading only a few messages a second, counted by channel",
   "a third-party media plugin page (the `files` capability) opens a generated video with the app's file picker (a token, never a path), plays it from the media URL with a range answered and one past the end refused, runs a WebAssembly module from its own folder, and gets a token from the save picker",
-  "a third-party plugin fills the window's spots in Alpha's tab (composer.action, conversation.message, .extra, tool.result, the Dispatch pill's pill.target) and its page tries the UI SDK's hooks",
+  "a third-party plugin fills the window's spots in MOSS's tab (composer.action, conversation.message, .extra, tool.result, the Dispatch pill's pill.target) and its page tries the UI SDK's hooks",
   "a third-party plugin fills file.preview for images: a coding session's Files panel shows a picture through the plugin's own component (its name and media type), with no \"no preview\" note",
   "a plugin with a bot (the plug rule): its Browser panel replaces the stock one on its bot's tab only, and a replacement that doesn't draw gives way to the stock panel with a way to try again; its settings are on its bot's Edit page; the Plugins page's switch for its parts beside the bot is pressed and the bot is kept",
   "a plugin adds a panel of its own on the right with a button of its own (the owner, November 14): an ordinary plugin's on bots' and coding tabs, a bot plugin's inside its bot (her tab only) and one beside her; one opens beside a stock panel and draws, a frame opens its own through shell.openPanel, the app-parts switch turns the beside one off and keeps hers, and a panel with no title is refused by its words",
@@ -762,7 +762,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       last = `stage ${JSON.stringify(st)}, header ${head === undefined ? "missing" : JSON.stringify(head.value.slice(0, 60))}`;
       return head !== undefined ? { stage: st, header: head.value } : undefined;
     }, async () => `${last} || ${await dumpFrames(cdp)}`);
-    if (!parts.header.includes("Alpha")) fail(`Alpha's header says "${parts.header}"`);
+    if (!parts.header.includes("MOSS")) fail(`Alpha's header says "${parts.header}"`);
     const heldModel = (await rpc.request<{ bots: { model?: string }[] }>("bot.list", {})).bots[0]?.model ?? "";
     const wire = heldModel.slice(heldModel.indexOf("/") + 1);
     if (wire === "" || !parts.header.includes(wire)) fail(`Alpha's header says "${parts.header}", but the bot's model is ${heldModel} (a pick in step 10 must show in it)`);
@@ -1290,7 +1290,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const pickRow = await until(`${pick!.name}'s labels in its row`, 15_000, async () => rowLabels(pick!.name));
       if (pickRow !== JSON.stringify(pickWant)) fail(`${pick!.name}'s row shows ${pickRow}, the core derived ${JSON.stringify(pickWant)}`);
       const alphaWant = await wantLabels("alpha");
-      const alphaRow = await rowLabels("Alpha");
+      const alphaRow = await rowLabels("MOSS's stage");
       // Alpha's plugin brings no bot now (lane MC: she is the engine's default bot, a record): her row says what it does bring.
       if (alphaWant.includes("Bot") || alphaRow !== JSON.stringify(alphaWant)) fail(`Alpha's labels: the core derived ${JSON.stringify(alphaWant)} (her plugin brings no bot now), her row shows ${alphaRow}`);
       if ([...pickWant, ...alphaWant].some((l) => /plugin|type|kind/i.test(l))) fail(`a label names a kind of plugin: ${[...pickWant, ...alphaWant].join(", ")}`);
@@ -1620,7 +1620,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   });
 
   // 14: the bot editor, the user's way, both routes: Alpha's own Edit button (the pencil in her header), and Settings → Bots →
-  // Edit Alpha. Each time the editor is drawn: its heading, name and model controls are on screen.
+  // Edit MOSS. Each time the editor is drawn: its heading, name and model controls are on screen.
   const clickIn = async (what: string, selector: string, text: string | undefined, ms = 20_000) => {
     const at = await until(what, ms, async () => {
       for (const d of await treeDocs(cdp)) {
@@ -1632,7 +1632,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     await cdp.click(at.session, at.c.x, at.c.y);
   };
   // A tab just switched to is held invisible while its parts draw (the shell's KeptTab: `data-held`, up to 1.2 s), and a
-  // press made in one of its frames meanwhile lands nowhere (try 14j's packaged run: Edit Alpha pressed, no editor in
+  // press made in one of its frames meanwhile lands nowhere (try 14j's packaged run: Edit MOSS pressed, no editor in
   // 30 s). A person can only press what they see: wait for the hold to lift before pressing anything in the tab.
   const tabShown = async (what: string) => {
     await until(`${what}: the tab shown (its hold lifted)`, 10_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-window') && !document.querySelector('.cl-shell-kept[data-held]')").then((r) => (r?.value === true ? true : undefined), () => undefined), () => dumpFrames(cdp));
@@ -1650,7 +1650,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
           const e = document.querySelector('.cl-bot-editor:not(.cl-bot-editor--loading)');
           if (!e) return undefined;
           const t = e.innerText;
-          return JSON.stringify({ heading: /Edit Alpha/.test(t), name: !!e.querySelector('input[aria-label=Name]'), model: !!e.querySelector('select[aria-label=Model]'), back: /Back to the bot/.test(t) });
+          return JSON.stringify({ heading: /Edit MOSS/.test(t), name: !!e.querySelector('input[aria-label=Name]'), model: !!e.querySelector('select[aria-label=Model]'), back: /Back to the bot/.test(t) });
         })()`).catch(() => undefined);
         if (typeof r === "string") return r;
       }
@@ -1664,15 +1664,15 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
   await step(14, async () => {
     await escape();
     // Route 1: Alpha in the sidebar, then the pencil in her header.
-    await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+    await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "MOSS");
     await tabShown("Alpha's tab");
-    await clickIn("Alpha's Edit button", 'button[aria-label="Edit Alpha"]', undefined);
+    await clickIn("Alpha's Edit button", 'button[aria-label="Edit MOSS"]', undefined);
     const one = await editorDrawn("Alpha's Edit button");
     await clickIn("Back to the bot", "button", "Back to the bot");
-    // Route 2: Settings (the sidebar's gear), the Bots section of the Settings window (the sidebar has a Bots entry too), Edit Alpha.
+    // Route 2: Settings (the sidebar's gear), the Bots section of the Settings window (the sidebar has a Bots entry too), Edit MOSS.
     await clickIn("the Settings button", "button[aria-label=Settings]", undefined);
     await clickIn("the Settings window's Bots section", "button.cl-settings__section", "Bots");
-    await clickIn("Edit Alpha in Settings", '[class*=cl-settings__] button[aria-label="Edit Alpha"]', undefined);
+    await clickIn("Edit MOSS in Settings", '[class*=cl-settings__] button[aria-label="Edit MOSS"]', undefined);
     const two = await editorDrawn("Settings → Bots → Edit");
     await clickIn("Back to the bot", "button", "Back to the bot");
     return `the bot editor drew its heading, name and model controls (the figure is the avatar plugin's own Settings section now) from ${one} and from ${two}`;
@@ -1876,7 +1876,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     };
     const toAlpha = async () => {
       await escape();
-      if ((await inTree<boolean>(cdp, "!!document.querySelector('.ac')")) === undefined) await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+      if ((await inTree<boolean>(cdp, "!!document.querySelector('.ac')")) === undefined) await press("Alpha in the sidebar", SIDEBAR_ITEMS, "MOSS");
       await until("Alpha's own controls", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.ac')"), () => dumpFrames(cdp));
     };
     // The window's own sidebar as drawn: its box, ground, rule and material, the tokens its content takes, and each row's
@@ -1888,7 +1888,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return String(await cdp.evaluate(shell.session, `(() => {
         const side = document.querySelector('.cl-window__sidebar'), content = document.querySelector('.cl-window__sidebar-content');
         const cs = (e) => getComputedStyle(e), r = side.getBoundingClientRect(), c = cs(side), k = cs(content);
-        const skip = new Set(["Alpha", ${JSON.stringify(name)}]);
+        const skip = new Set(["MOSS", ${JSON.stringify(name)}]);
         const rows = [...document.querySelectorAll('.cl-sidebar__row')].filter((e) => e.getClientRects().length > 0).map((e) => {
           const words = (e.innerText || '').trim().split('\\n').map((l) => l.trim()).filter((l) => l !== '');
           const t = e.getAttribute('aria-label') || words.find((l) => l.length > 1) || words[0] || '';
@@ -1968,14 +1968,14 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (plainSide !== herSide) fail(`the sidebar beside Alpha's tab isn't the one beside a plain bot's: hers ${herSide}; plain ${plainSide}`);
       const plainTokens = await until("the plain bot's composer in the all-bots style", 20_000, async () => { const t = await composerTokens(); return t !== undefined && t.surface === EVERY.surface && t.composer === EVERY.composer ? t : undefined; }, async () => `its composer reads ${JSON.stringify(await composerTokens())}`);
       // 6. Back to Alpha by the sidebar's row: her chrome returns.
-      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "MOSS");
       await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
       // 7. A coding session started now, outside the window, with no tab change after it: the Code switch of the sidebar beside her
       // tab lists it (the sidebar follows `conversation.watch`), and its row goes to it (the session's id in the sidebar's current row).
       const codeId = await ensureCodingSession(ctx) ?? fail("this run could not start a coding session");
       const side = await toCodingSession(cdp, codeId, press);
       await press("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots");
-      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "MOSS");
       await until("her chrome back", 20_000, async () => ((await win("w.dataset.barMode")) === "none" ? true : undefined));
       // 8. Her stage tools are hers alone (`mcpServers.stage.scope: own-bot`): a turn of hers is offered them, the plain bot's isn't.
       const bots = async () => (await rpc.request<{ bots: { id: string; name: string; model?: string; mainSession?: string }[] }>("bot.list", {})).bots;
@@ -1994,7 +1994,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       // Her room's tools (her figure's are the avatar plugin's own, for every bot and session, on demand).
       const STAGE_TOOLS = ["set_scene", "set_mood", "pin_note", "stage_status"];
       const stageIn = (tools: readonly string[]) => STAGE_TOOLS.filter((t) => tools.some((x) => x === t || x.endsWith(`__${t}`)));
-      const hers = await offered("Alpha");
+      const hers = await offered("MOSS");
       // The plain bot on Alpha's model, picked the user's way (its user layer): the user's default here is a provider with no key.
       const alphaModel = (await bots()).find((b) => b.id === "alpha")?.model ?? fail("bot.list gives Alpha no model");
       await rpc.request("bot.setUserLayer", { id, patch: { model: alphaModel } }, 20_000);
@@ -2170,7 +2170,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       const p1 = await shows<Plain>(plainName, PLAIN, "the plain bot's tab with the patch off: the conversation drawn, the Edit button back in the bar", (x) => x.conv && x.editInTab === 0 && x.nudgeAt === -1 && x.edits === 1, 30_000);
       // Its hide is its own tab's: Alpha's composer keeps the model button.
       await escape().catch(() => undefined);
-      await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha");
+      await clickIn("Alpha in the sidebar", SIDEBAR_ITEMS, "MOSS");
       await until("Alpha's composer with its model button", 20_000, () => inTree<boolean>(cdp, "[...document.querySelectorAll('button.cl-composer__pill')].some((b) => (b.getAttribute('aria-label') || '').startsWith('Model:'))"), () => dumpFrames(cdp));
       return `${id} (tab/layout.json: extends the stock tab, 3 changes; two hide entries) and ${moverId} (a patch to that tab, its own CSS) installed from their folders: its stage ${m.stage.w} px (${Math.round(share * 100)}% of the ${m.tab.w} px tab) stands left of the transcript (${m.talk.w} px), the model drawn on it; the header moved to just above the composer (child ${m.header} of ${m.kids}) in the mover's row, ${m.nudged}; one of the mover's two header buttons (Pin hidden by the bot's list hide); no model button in its composer, Alpha's keeps hers; in the bot editor the mover switched off and Pin shown again: the header back on top (child ${off.header}) with ${off.buttons} buttons; on ${plainId} (no layout of its own) the top-bar Edit button sat just above the composer (row ${p0.nudgeAt}, composer ${p0.composerAt}), ${p0.nudged}, once in the window, with the conversation removed; pressed there, its editor switched the patch off and the conversation came back (${p1.edits} Edit button, in the bar); the user's own layout made the tab a column (stage ${mine.stage.h} px over the transcript) and Reset made it a row again${rendered.length > 0 ? `; rendered ${rendered.join(", ")}` : ""}`;
     } finally {
@@ -2635,7 +2635,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       if (!drawn!.includes("tiny.png") || !drawn!.includes("image/png")) fail(`the plugin's preview drew ${JSON.stringify(drawn!.slice(0, 120))}, not the file's name and media type`);
       if ((await inTree<boolean>(cdp, "[...document.querySelectorAll('.cl-files__empty-text')].some((e) => /preview/i.test(e.textContent || ''))")) !== undefined) fail("the Files panel still shows its no-preview note beside the plugin's preview");
       await pressIn("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots").catch(() => undefined);
-      await pressIn("Alpha in the stock sidebar", SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+      await pressIn("Alpha in the stock sidebar", SIDEBAR_ITEMS, "MOSS").catch(() => undefined);
       return `${id} installed from its folder, OK'd on its card ${ok}; a coding session's Files panel (opened from the sidebar's Code switch) listed tiny.png and, picked, drew it through the plugin's file.preview component (${JSON.stringify(drawn!.slice(0, 60))}), not the no-preview note`;
     } finally {
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
@@ -2722,7 +2722,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("her own Browser panel drawn again", 20_000, async () => ((await layerHas("[data-juniper-browser]")) ? true : undefined), () => dumpFrames(cdp));
       said.push("Show MOSS's panel (in the host's header) put the stock panel in her place and Use Juniper's panel brought hers back");
       // On Alpha's tab the stock one shows, with none of Juniper's inside her panel sheet.
-      await toTab("Alpha");
+      await toTab("MOSS");
       await until("Alpha's own controls", 20_000, () => inTree<boolean>(cdp, "!!document.querySelector('.ac')"), () => dumpFrames(cdp));
       if (!(await inTreeNow("document.querySelector('.cl-chrome-panels .cl-panel')"))) await press("her Browser control", ".ac__act", "Browser");
       await until("Alpha's panel sheet open", 15_000, () => inTree<boolean>(cdp, "!!document.querySelector('.cl-chrome-panels .cl-panel')"), () => dumpFrames(cdp));
@@ -2780,7 +2780,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await rpc.request("plugin.remove", { id }).catch(() => undefined);
       rmSync(parent, { recursive: true, force: true });
       await escape().catch(() => undefined);
-      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "MOSS").catch(() => undefined);
     }
   });
 
@@ -2872,7 +2872,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       said.push(`a panel entry with no title is refused: "${OFFICE_REFUSAL}"`);
       // 1. The ordinary plugin on Alpha's tab.
       await install(OFFICE_ID, writeOfficePanels(join(parent, "office")));
-      await toTab("Alpha");
+      await toTab("MOSS");
       await until("Alpha's controls with a Sheets button", 30_000, () => inTree<boolean>(cdp, `!!document.querySelector(${JSON.stringify(alphaButton("Sheets"))})`), () => dumpFrames(cdp));
       if (await has(alphaButton("Slides"))) fail("Slides (coding sessions only) has a button on Alpha's tab");
       await openOwn(alphaButton("Sheets"), sheets, OFFICE_ID, "[data-office-sheets]");
@@ -2893,7 +2893,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await install(bot, folder);
       await toTab(BOT_PARTS_BOT);
       await until("Juniper's bar with Scene and Desk and Sheets", 30_000, async () => ((await has(ownButton(`${bot}#scene`))) && (await has(ownButton(`${bot}#desk`))) && (await has(ownButton(sheets))) ? true : undefined), () => dumpFrames(cdp));
-      await toTab("Alpha");
+      await toTab("MOSS");
       await until("Alpha's controls with Desk", 30_000, () => inTree<boolean>(cdp, `!!document.querySelector(${JSON.stringify(alphaButton("Desk"))})`), () => dumpFrames(cdp));
       if (await has(alphaButton("Scene"))) fail("Juniper's inside panel, Scene, has a button on Alpha's tab");
       said.push("Juniper's tab has buttons for Scene, Desk and Sheets; Alpha's has Desk (beside her) and not Scene (inside her)");
@@ -2916,7 +2916,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
         const r = await rpc.request<{ plugin: { state: string; parts?: { app?: { enabled?: boolean } } } }>("plugin.get", { id: bot }).catch(() => undefined);
         return r?.plugin.state === "running" && r.plugin.parts?.app?.enabled === false ? true : undefined;
       });
-      await toTab("Alpha");
+      await toTab("MOSS");
       await until("Alpha's controls without Desk", 30_000, async () => ((await has(".ac__act[aria-label=Browser]")) && !(await has(alphaButton("Desk"))) ? true : undefined), () => dumpFrames(cdp));
       await toTab(BOT_PARTS_BOT);
       await until("Juniper's bar: Scene kept, Desk gone", 30_000, async () => ((await has(ownButton(`${bot}#scene`))) && !(await has(ownButton(`${bot}#desk`))) ? true : undefined), () => dumpFrames(cdp));
@@ -2928,7 +2928,7 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       rmSync(parent, { recursive: true, force: true });
       await escape().catch(() => undefined);
       await press("Bots in the sidebar's switch", ".cl-sidebar__switch-option", "Bots").catch(() => undefined);
-      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "Alpha").catch(() => undefined);
+      await press("Alpha in the sidebar", SIDEBAR_ITEMS, "MOSS").catch(() => undefined);
     }
   });
 

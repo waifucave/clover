@@ -6,7 +6,7 @@
 // and after (`window: moved by its title area, from (x, y) to (x, y)`, index.ts dragEnd). A refused drag logs "a drag was refused".
 import { fail, sleep, treeDocs, until, type ExampleCtx, toAlphasTab } from "./example-steps";
 
-export const DRAG_STEP = "Alpha's own controls drag the window: a real press on her drag handle (shell.dragWindow), a move and a release move the window by the cursor's offset, on her own handle in her own layer";
+export const DRAG_STEP = "MOSS's own controls drag the window: a real press on her drag handle (shell.dragWindow), a move and a release move the window by the cursor's offset, on her own handle in her own layer";
 
 export const DRAG_BY = { x: 120, y: 60 } as const;
 

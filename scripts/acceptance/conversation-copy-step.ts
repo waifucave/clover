@@ -18,7 +18,7 @@ import { randomBytes } from "node:crypto";
 import { CLIENT_BARE_IMPORTS, capabilityOkText } from "../../packages/plugin-sdk/src/index";
 import { fail, layerDocs, sleep, toSessionTab, until, type ExampleCtx } from "./example-steps";
 
-export const CONVERSATION_COPY_STEP = "a folder-installed copy of the conversation, under another id and behind its OK card (reads your conversations, sends as you), takes the bundled one's place in Alpha's tab: it draws her turn, shows Try again on a failed turn, a click the page makes itself sends nothing, and one real click sends the user's message again through the app's door by its user.send, never its id";
+export const CONVERSATION_COPY_STEP = "a folder-installed copy of the conversation, under another id and behind its OK card (reads your conversations, sends as you), takes the bundled one's place in MOSS's tab: it draws her turn, shows Try again on a failed turn, a click the page makes itself sends nothing, and one real click sends the user's message again through the app's door by its user.send, never its id";
 
 const PLUGINS = resolve(import.meta.dir, "..", "..", "plugins", "moss", "plugins");
 export const COPY_ID = "mirror-conversation";

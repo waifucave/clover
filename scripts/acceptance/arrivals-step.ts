@@ -10,7 +10,7 @@ import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { callTurn, fail, leave, until, type ExampleCtx } from "./example-steps";
 
-export const ARRIVALS_STEP = "a plugin arrives other ways: a folder copied into the plugins folder by hand is found, waits for its OK card and runs nothing before it, pressed it runs and its skill is in Alpha's Glossary; a bare skill folder and a bare agent file are wrapped, each OK card says MOSS made the plugin around it, pressed Glossary loads the skill and lists the agent";
+export const ARRIVALS_STEP = "a plugin arrives other ways: a folder copied into the plugins folder by hand is found, waits for its OK card and runs nothing before it, pressed it runs and its skill is in MOSS's Glossary; a bare skill folder and a bare agent file are wrapped, each OK card says MOSS made the plugin around it, pressed Glossary loads the skill and lists the agent";
 
 const FIXTURES = resolve(import.meta.dir, "fixtures");
 export const HAND = "acceptance-handcopy";

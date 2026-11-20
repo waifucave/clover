@@ -23,25 +23,25 @@ import type { MossClient } from "./client";
 import type { FakeProvider } from "./fake-anthropic";
 import type { Status } from "./steps";
 
-export const MOSS_LIST_STEP = "MOSS (the bots app) on a fresh home where only MOSS has run (no MOSS Code, no single answer key) and the bots are engine data: its list shows Alpha, the default bot (her record made by default), with her face and her mood in words, and only the engine's bots";
-export const MOSS_MESSAGE_STEP = "MOSS: a message typed and sent in Alpha's conversation reaches her one conversation (the record's main session), and her reply is drawn there as text; markup in a message stays text";
-export const MOSS_CARD_STEP = "MOSS: an approval card from Alpha's turn is drawn in her conversation in MOSS's window by the router; an answer with no press of the person's is refused by MOSS, one signed as MOSS Code with MOSS's key is refused by the engine, and a real press on its sealed Approve is taken, signed with MOSS's own registered key (program moss) on a computer with no other answer key";
-export const MOSS_AWAY_STEP = "MOSS not in front: the router places Alpha's next card off MOSS's window (the engine's card.placement) and MOSS draws none; in front again, the card comes back into her conversation and a press there answers it";
-export const MOSS_PANEL_STEP = "MOSS's side panel: Alpha's live picture from her tool, watch only (a click on it reaches nothing), with the publisher's name, and her routines; the plugin that publishes it added behind its OK card, pressed in MOSS's strip";
-export const MOSS_TOOLS_STEP = "MOSS's Plugins page: a plugin's tool set off there is off in the engine's tool.permissions, and Alpha's next turn isn't offered it (it was before)";
-export const MOSS_INSTRUCTIONS_STEP = "MOSS's Settings: Alpha's instructions shown as they are now, edited in place and saved by the person with no card (instructionsEditRule: the person's own edit is free); her next turn is given them";
+export const MOSS_LIST_STEP = "MOSS (the bots app) on a fresh home where only MOSS has run (no MOSS Code, no single answer key) and the bots are engine data: its list shows MOSS, the default bot (her record made by default, her face pinned to the coral tile with round eyes), with her face drawn from those pins and her mood in words, and only the engine's bots";
+export const MOSS_MESSAGE_STEP = "MOSS: a message typed and sent in MOSS's conversation reaches her one conversation (the record's main session), and her reply is drawn there as text; markup in a message stays text";
+export const MOSS_CARD_STEP = "MOSS: an approval card from MOSS's turn is drawn in her conversation in MOSS's window by the router; an answer with no press of the person's is refused by MOSS, one signed as MOSS Code with MOSS's key is refused by the engine, and a real press on its sealed Approve is taken, signed with MOSS's own registered key (program moss) on a computer with no other answer key";
+export const MOSS_AWAY_STEP = "MOSS not in front: the router places MOSS's next card off MOSS's window (the engine's card.placement) and MOSS draws none; in front again, the card comes back into her conversation and a press there answers it";
+export const MOSS_PANEL_STEP = "MOSS's side panel: MOSS's live picture from her tool, watch only (a click on it reaches nothing), with the publisher's name, and her routines; the plugin that publishes it added behind its OK card, pressed in MOSS's strip";
+export const MOSS_TOOLS_STEP = "MOSS's Plugins page: a plugin's tool set off there is off in the engine's tool.permissions, and MOSS's next turn isn't offered it (it was before)";
+export const MOSS_INSTRUCTIONS_STEP = "MOSS's Settings: MOSS's instructions shown as they are now, edited in place and saved by the person with no card (instructionsEditRule: the person's own edit is free); her next turn is given them";
 export const MOSS_MAKE_STEP = "MOSS: a bot made from the list's + (the person's bot.create, on a model chosen there from the ones the person has set up) opens on its own conversation and answers; that bot's MakeBot raises the person's OK card in MOSS naming the maker, and once pressed the new bot is listed, made by it";
 export const MOSS_EDITOR_STEP = "MOSS's Settings, a bot's own page (the bot editor, MOSS Code's old rows 14 and 15): its name, model and instructions edited there are kept: the engine's record has them, the list shows the new name, and the page opened again shows all three";
-export const MOSS_TRY_AGAIN_STEP = "MOSS: a turn that fails in Alpha's conversation shows Try again; one press sends the same words once more (session.resend), the next turn completes, and the button goes";
+export const MOSS_TRY_AGAIN_STEP = "MOSS: a turn that fails in MOSS's conversation shows Try again; one press sends the same words once more (session.resend), the next turn completes, and the button goes";
 export const MOSS_ARCHIVE_STEP = "MOSS's Settings: a bot archived leaves the list and is listed under Archived bots; brought back, it is in the list again with its conversation whole";
 export const MOSS_LONG_STEP = "MOSS: a long conversation the home already holds (a bot whose one conversation has 20,000 events, as the upgrade's copy brings the owner's): it opens on its latest page, scrolling up with the wheel reads the pages before it from the engine with the message under the eye kept in place, and the oldest message is reached by scrolling; its first paint and its page loads are timed";
-export const MOSS_ROUTINE_RUN_STEP = "MOSS's side panel: Run now on Alpha's routine starts it at once (routine.runNow, the person's press), its run is in routine.runs, and its result is drawn in her conversation";
-export const MOSS_ROUTINE_PAUSE_STEP = "MOSS's side panel: Pause on Alpha's routine pauses it (routine.edit: its file says paused, the engine lists it paused, Run now is off); Resume runs it again on its schedule (the file's paused taken out)";
-export const MOSS_ROUTINE_EDIT_STEP = "MOSS's side panel: Edit on Alpha's routine shows what it does as its file has it now (routine.get) and saves a new name, schedule and instructions to its file (routine.edit); a routine above the computer's level waits for its OK card, pressed in MOSS, and an edit to it raises the card again, pressed in MOSS";
+export const MOSS_ROUTINE_RUN_STEP = "MOSS's side panel: Run now on MOSS's routine starts it at once (routine.runNow, the person's press), its run is in routine.runs, and its result is drawn in her conversation";
+export const MOSS_ROUTINE_PAUSE_STEP = "MOSS's side panel: Pause on MOSS's routine pauses it (routine.edit: its file says paused, the engine lists it paused, Run now is off); Resume runs it again on its schedule (the file's paused taken out)";
+export const MOSS_ROUTINE_EDIT_STEP = "MOSS's side panel: Edit on MOSS's routine shows what it does as its file has it now (routine.get) and saves a new name, schedule and instructions to its file (routine.edit); a routine above the computer's level waits for its OK card, pressed in MOSS, and an edit to it raises the card again, pressed in MOSS";
 export const MOSS_MEMORY_STEP = "MOSS's Settings, a bot's own page: its memory folder's files listed as the engine serves them (memory.list), and a file opened shows its text as text (memory.read), read only";
-export const MOSS_ROUTINE_FAIL_STEP = "MOSS's side panel: a routine whose run fails (Run now on Alpha's routine, its model's call refused) shows in her conversation that it failed and why, marked as a failure";
+export const MOSS_ROUTINE_FAIL_STEP = "MOSS's side panel: a routine whose run fails (Run now on MOSS's routine, its model's call refused) shows in her conversation that it failed and why, marked as a failure";
 export const MOSS_DROP_STEP = "MOSS's composer: a file dropped on it is said plainly (MOSS sends pictures only, with the paperclip) and nothing is sent";
-export const MOSS_STATUS_STEP = "MOSS: while Alpha's turn runs her conversation shows ONE plain status line (no tool name, no argument, not a control) and her list row says the same short phrase; when the turn ends the line is gone, and no tool row or \"Used …\" line was ever drawn";
+export const MOSS_STATUS_STEP = "MOSS: while MOSS's turn runs her conversation shows ONE plain status line (no tool name, no argument, not a control) and her list row says the same short phrase; when the turn ends the line is gone, and no tool row or \"Used …\" line was ever drawn";
 export const MOSS_BOTH_KEYS_STEP = "MOSS beside MOSS Code on one computer: with MOSS Code's own answer key registered too, MOSS still answers its card with its own key (program moss), and MOSS Code's connection can't answer a card MOSS draws, even signed with MOSS Code's own key";
 
 /** The unit's rows, in the order it runs them. */
@@ -52,7 +52,7 @@ export const MOSS_ENV: Readonly<Record<string, string>> = { MOSS_BOT_SOURCE: "re
 
 interface CardSeen { id: string; hash: string; kind: string; bot?: string; session?: string; options: { id: string; kind: string; remember?: string }[]; fields?: unknown }
 type Placement = { kind: "conversation" | "strip"; program: string; window: string } | { kind: "island" } | { kind: "elsewhere" };
-interface RecordView { id: string; name: string | { en: string }; mainSession: string; model?: string; madeBy: { kind: string; id?: string } }
+interface RecordView { id: string; name: string | { en: string }; mainSession: string; model?: string; face?: { shape?: string; color?: string; eyes?: string; temper?: string }; madeBy: { kind: string; id?: string } }
 
 /** What run.ts gives the unit. */
 export interface MossUnitCtx {
@@ -386,7 +386,7 @@ async function records(c: MossClient): Promise<RecordView[]> {
 
 async function alpha(c: MossClient): Promise<RecordView> {
   const a = (await records(c)).find((b) => b.id === "alpha");
-  if (a === undefined) throw new Error("bot.records lists no Alpha");
+  if (a === undefined) throw new Error("bot.records lists no default bot (alpha)");
   return a;
 }
 
@@ -456,31 +456,35 @@ const tag = (what: string) => `ACCEPTANCE-TAG-MOSS${what.toUpperCase()}${randomB
 // ── the rows ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 async function listRow(s: UnitState): Promise<string> {
-  const a = await s.x.until("Alpha as a record (bot.records)", 60_000, async () => (await records(s.c).catch(() => [])).find((b) => b.id === "alpha"), 500);
+  const a = await s.x.until("the default bot as a record (bot.records)", 60_000, async () => (await records(s.c).catch(() => [])).find((b) => b.id === "alpha"), 500);
   // The unit's home is its own fresh one (`mossRun(true)`), made by this engine: no plugin bot was ever in it, so
   // Alpha is the default bot (`default`); only a home that had the old plugin Alpha gets her by the move (`move`).
   if (a.madeBy.kind !== "default") s.x.fail(`Alpha's record says it was made by ${JSON.stringify(a.madeBy)}, not by default (a home this engine made, with no plugin bot in it)`);
-  const row = await s.w.waitFor<{ name: string; mood: string; face: boolean; n: number }>("Alpha's row in MOSS's list", `(() => {
+  // The default bot's record pins her face: the whole tile, the kit's coral, round eyes (the owner's ruling of 2026-11-20).
+  if (JSON.stringify(a.face) !== JSON.stringify({ shape: "tile", color: "coral", eyes: "round" })) s.x.fail(`MOSS's record pins ${JSON.stringify(a.face)}, not the tile, coral, round eyes`);
+  if (nameOf(a.name) !== "MOSS") s.x.fail(`the default bot is named "${nameOf(a.name)}", not MOSS`);
+  const row = await s.w.waitFor<{ name: string; mood: string; face: boolean; traits: string; n: number }>("MOSS's row in MOSS's list", `(() => {
     const r = document.querySelector('[data-bot-row="alpha"]');
     if (!r) return null;
-    return { name: r.querySelector('.row__name')?.textContent ?? '', mood: r.querySelector('.mood, .row__line')?.textContent ?? '', face: !!r.querySelector('canvas, svg, [data-face]'), n: document.querySelectorAll('[data-bot-row]').length };
+    return { name: r.querySelector('.row__name')?.textContent ?? '', mood: r.querySelector('.mood, .row__line')?.textContent ?? '', face: !!r.querySelector('canvas, svg, [data-face]'), traits: ['data-shape', 'data-color', 'data-eyes'].map((k) => r.querySelector('[data-face]')?.getAttribute(k) ?? '').join(','), n: document.querySelectorAll('[data-bot-row]').length };
   })()`, 60_000);
-  if (row.name !== nameOf(a.name)) s.x.fail(`Alpha's row is named "${row.name}", not "${nameOf(a.name)}"`);
-  if (!row.face) s.x.fail("Alpha's row draws no face");
+  if (row.name !== nameOf(a.name)) s.x.fail(`MOSS's row is named "${row.name}", not "${nameOf(a.name)}"`);
+  if (!row.face) s.x.fail("MOSS's row draws no face");
+  if (row.traits !== "tile,coral,round") s.x.fail(`MOSS's face element carries "${row.traits}", not the pinned tile,coral,round`);
   if (!/Idle|Listening|Thinking|Working|Needs you|Stuck|Done|Asleep/.test(row.mood)) s.x.fail(`Alpha's row says no mood in words: "${row.mood}"`);
   const all = await records(s.c);
   if (row.n !== all.length) s.x.fail(`MOSS lists ${row.n} bot(s), the engine has ${all.length} record(s)`);
-  const shows = await s.w.waitFor<string>("Alpha's conversation open by itself", `document.querySelector('main.conversation')?.getAttribute('aria-label') ?? null`);
-  if (shows !== `${nameOf(a.name)}'s conversation`) s.x.fail(`MOSS opened "${shows}", not Alpha's conversation`);
-  return `bot.records: ${all.map((b) => `${b.id} (made by ${b.madeBy.kind})`).join(", ")}; MOSS lists ${row.n}: Alpha with her face and "${row.mood.trim().slice(0, 40)}", her conversation open by itself`;
+  const shows = await s.w.waitFor<string>("MOSS's conversation open by itself", `document.querySelector('main.conversation')?.getAttribute('aria-label') ?? null`);
+  if (shows !== `${nameOf(a.name)}'s conversation`) s.x.fail(`MOSS opened "${shows}", not MOSS's conversation`);
+  return `bot.records: ${all.map((b) => `${b.id} (made by ${b.madeBy.kind})`).join(", ")}; MOSS lists ${row.n}: MOSS with her face and "${row.mood.trim().slice(0, 40)}", her conversation open by itself`;
 }
 
 async function messageRow(s: UnitState): Promise<string> {
   const a = await alpha(s.c);
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const t = tag("MSG");
   const text = `hello Alpha <b>bold?</b> ${t}`;
-  await sendInMoss(s, "Alpha", text);
+  await sendInMoss(s, "MOSS", text);
   const said = await botSaid(s, `ACCEPTANCE-REPLY-OK ${t}`);
   const mine = await s.w.eval<{ text: string; html: boolean } | null>(`(() => { const b = [...document.querySelectorAll('.bubble--user')].find((x) => x.textContent.includes(${JSON.stringify(t)})); return b ? { text: b.textContent, html: b.querySelector('b') !== null } : null; })()`);
   if (mine === null) s.x.fail("the person's own message isn't drawn in her conversation");
@@ -507,14 +511,14 @@ function mossKey(file: string) {
 
 async function cardRow(s: UnitState): Promise<string> {
   const a = await alpha(s.c);
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const before = await cardIds(s.c);
-  await sendInMoss(s, "Alpha", "ACCEPTANCE-WRITE");
+  await sendInMoss(s, "MOSS", "ACCEPTANCE-WRITE");
   const card = await newCard(s, before, "the Write's approval card", (k) => k.session === a.mainSession);
   const place = await s.x.until("the router's place for the card", 20_000, async () => {
     const p = await placementOf(s.c, card.id);
     return p?.kind === "conversation" ? p : undefined;
-  }, 300).catch(async () => s.x.fail(`the router placed the card ${placeWords(await placementOf(s.c, card.id))}, not in Alpha's conversation in MOSS`));
+  }, 300).catch(async () => s.x.fail(`the router placed the card ${placeWords(await placementOf(s.c, card.id))}, not in MOSS's conversation in MOSS`));
   if (place.kind !== "conversation" || place.program !== "moss" || place.window !== "main") s.x.fail(`the card is placed ${placeWords(place)}, not in MOSS's window`);
   const frame = await s.w.cardFrame(card.id);
   const inConversation = await s.w.eval<boolean>(`!!document.querySelector('.messages [data-card=${JSON.stringify(card.id)}] iframe')`);
@@ -567,7 +571,7 @@ function createPublicKeyRaw(key: ReturnType<typeof createPrivateKey>): Uint8Arra
 
 async function awayRow(s: UnitState): Promise<string> {
   const a = await alpha(s.c);
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const from = s.x.readLog(s.appLog).length;
   writeFileSync(s.front, "back");
   try {
@@ -619,16 +623,16 @@ async function panelRow(s: UnitState): Promise<string> {
     return st === "enabled" || st === "running" ? st : undefined;
   }, 500);
   // Alpha makes a routine and uses the tool that publishes her picture.
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const routine = `MOSS panel probe ${randomBytes(2).toString("hex")}`;
   const a = await alpha(s.c);
-  const made = await turnInMoss(s, "Alpha", a.mainSession, callText("Routine", { name: routine, instructions: "ACCEPTANCE-TAG-MOSSROUTINE", schedule: "every 6h" }), "ACCEPTANCE-DONE");
+  const made = await turnInMoss(s, "MOSS", a.mainSession, callText("Routine", { name: routine, instructions: "ACCEPTANCE-TAG-MOSSROUTINE", schedule: "every 6h" }), "ACCEPTANCE-DONE");
   const listed = await s.x.until("her routine in routine.list", 30_000, async () => (await s.c.request<{ routines: { id: string; name: string }[] }>("routine.list", { bot: "alpha" })).routines.find((r) => r.name === routine), 500);
   s.routine = { id: listed.id, name: routine };
-  const showed = await turnInMoss(s, "Alpha", a.mainSession, callText("Show", {}), "ACCEPTANCE-DONE");
+  const showed = await turnInMoss(s, "MOSS", a.mainSession, callText("Show", {}), "ACCEPTANCE-DONE");
   await s.x.until("her live picture listed", 60_000, async () => ((await s.c.request<{ pictures: { publisher: string }[] }>("picture.list", { kind: "bots", bot: "alpha" })).pictures.some((p) => p.publisher === installed.id) ? true : undefined), 500);
   // The side panel, opened from her conversation's header.
-  await s.w.click(`button[aria-label="Open Alpha's screen and routines"]`);
+  await s.w.click(`button[aria-label="Open MOSS's screen and routines"]`);
   const shown = await s.w.waitFor<{ src: string; from: string; watch: boolean }>("her live picture drawn in the side panel", `(() => {
     const img = document.querySelector('.panel .screen img');
     if (!img || !img.src.startsWith('data:image/')) return null;
@@ -658,9 +662,9 @@ async function toolsRow(s: UnitState): Promise<string> {
   if (was === undefined) s.x.fail("tool.permissions doesn't list the plugin's FeedProbe");
   // Offered before: a turn's request carries it.
   const asked0 = s.x.fake.requests.length;
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const t0 = tag("TOOLA");
-  await sendInMoss(s, "Alpha", t0);
+  await sendInMoss(s, "MOSS", t0);
   await botSaid(s, `ACCEPTANCE-REPLY-OK ${t0}`);
   const offered = s.x.fake.requests.slice(asked0).some((r) => r.tools.some((n) => n.endsWith("FeedProbe")));
   // The Plugins page: FeedProbe's "Bots get it" set to Off.
@@ -672,10 +676,10 @@ async function toolsRow(s: UnitState): Promise<string> {
     .catch(async () => s.x.fail(`after the press on Off, tool.permissions says FeedProbe is ${JSON.stringify(await toolOf())}`));
   const drawnOn = await s.w.waitFor<string>("the page showing Off chosen", `document.querySelector(${JSON.stringify(off)})?.getAttribute('aria-checked') === 'true' ? 'yes' : null`, 10_000);
   // Her next turn isn't offered it.
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const asked1 = s.x.fake.requests.length;
   const t1 = tag("TOOLB");
-  await sendInMoss(s, "Alpha", t1);
+  await sendInMoss(s, "MOSS", t1);
   await botSaid(s, `ACCEPTANCE-REPLY-OK ${t1}`);
   const after = s.x.fake.requests.slice(asked1);
   if (after.length === 0) s.x.fail("her turn after the change reached no model");
@@ -908,10 +912,10 @@ async function longRowIn(s: UnitState): Promise<string> {
 
 /** Opens Alpha's side panel and waits for her routine's row there; the row's selector. */
 async function routineRowInPanel(s: UnitState, id: string): Promise<string> {
-  await openBot(s, "alpha", "Alpha");
-  if (!(await s.w.eval<boolean>("!!document.querySelector('.panel')"))) await s.w.click(`button[aria-label="Open Alpha's screen and routines"]`);
+  await openBot(s, "alpha", "MOSS");
+  if (!(await s.w.eval<boolean>("!!document.querySelector('.panel')"))) await s.w.click(`button[aria-label="Open MOSS's screen and routines"]`);
   const sel = `.panel [data-routine=${JSON.stringify(id)}]`;
-  await s.w.waitFor(`the routine ${id} in Alpha's side panel`, `!!document.querySelector(${JSON.stringify(sel)})`, 20_000);
+  await s.w.waitFor(`the routine ${id} in MOSS's side panel`, `!!document.querySelector(${JSON.stringify(sel)})`, 20_000);
   return sel;
 }
 
@@ -1059,7 +1063,7 @@ async function routineFailRow(s: UnitState): Promise<string> {
 
 /** A file dropped on the composer, by the browser's own drag events (DevTools' Input.dispatchDragEvent with a real file). */
 async function dropRow(s: UnitState): Promise<string> {
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const file = join(s.x.root, "acceptance-drop.pdf");
   writeFileSync(file, "%PDF-1.4 acceptance\n");
   const before = (await s.c.request<{ events: { type: string }[] }>("bot.conversation", { id: "alpha", limit: 200 })).events.filter((e) => e.type === "user_message").length;
@@ -1078,7 +1082,7 @@ async function dropRow(s: UnitState): Promise<string> {
 /** A turn that keeps running (the fake model's ACCEPTANCE-SLOW): the conversation's one status line, then its end. */
 async function statusRow(s: UnitState): Promise<string> {
   const a = await alpha(s.c);
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const id = randomBytes(3).toString("hex").toUpperCase();
   const toolWords = /mcp__|__|Used |tool_|\bBash\b|\bWebFetch\b|\.json|\//;
   const rowsBefore = await s.w.eval<number>("document.querySelectorAll('.messages [data-bubble]').length");
@@ -1090,7 +1094,7 @@ async function statusRow(s: UnitState): Promise<string> {
     const t = document.querySelector('.messages [data-status-line] [data-status-text]')?.textContent; if (t && window.__seenStatus.at(-1) !== t) window.__seenStatus.push(t);
     const m = document.querySelector('[data-bot-row=alpha] [data-mood-words]')?.textContent; if (m && window.__seenMood.at(-1) !== m) window.__seenMood.push(m);
   }; note(); new MutationObserver(note).observe(document.body, { subtree: true, childList: true, characterData: true }); })()`);
-  await sendInMoss(s, "Alpha", `ACCEPTANCE-SLOW-${id} keep going`);
+  await sendInMoss(s, "MOSS", `ACCEPTANCE-SLOW-${id} keep going`);
   const phrase = await s.w.waitFor<string>("the status line while her turn runs", "document.querySelector('.messages [data-status-line] [data-status-text]')?.textContent ?? null", 20_000)
     .catch(async (err: unknown) => {
       const feed = await s.c.request<{ activity: { subject: { id: string }; state: string; tool?: string }[] }>("activity.list", { kind: "bots" }).then((r) => JSON.stringify(r.activity.find((x) => x.subject.id === "alpha"))).catch(() => "unreadable");
@@ -1129,10 +1133,10 @@ async function bothKeysRow(s: UnitState): Promise<string> {
     const set = await code.client.request<{ applied?: boolean }>("device.answerKey.set", { publicKey: pub, held: "none", signature: sign(null, Buffer.from(answerKeyStatement(s.device, pub, "none")), privateKey).toString("base64") });
     if (set.applied !== true) s.x.fail(`MOSS Code's key wasn't applied: ${JSON.stringify(set)}`);
     const a = await alpha(s.c);
-    await openBot(s, "alpha", "Alpha");
+    await openBot(s, "alpha", "MOSS");
     const before = await cardIds(s.c);
     const path = join(s.x.userHome, ".acceptance", `moss-both-${randomBytes(3).toString("hex")}.txt`);
-    await sendInMoss(s, "Alpha", callText("Write", { file_path: path, content: "moss both\n" }));
+    await sendInMoss(s, "MOSS", callText("Write", { file_path: path, content: "moss both\n" }));
     const card = await newCard(s, before, "the Write's approval card", (k) => k.session === a.mainSession);
     const place = await s.x.until("the card placed in her conversation in MOSS", 20_000, async () => {
       const p = await placementOf(s.c, card.id);
@@ -1204,10 +1208,10 @@ async function editorRow(s: UnitState): Promise<string> {
 /** Try again: a turn that fails (the fake provider's 400, until it is healed), its note in MOSS with Try again, one press. */
 async function tryAgainRow(s: UnitState): Promise<string> {
   const a = await alpha(s.c);
-  await openBot(s, "alpha", "Alpha");
+  await openBot(s, "alpha", "MOSS");
   const id = randomBytes(3).toString("hex").toUpperCase();
   const words = `ACCEPTANCE-FAIL-${id}`;
-  await sendInMoss(s, "Alpha", words);
+  await sendInMoss(s, "MOSS", words);
   await s.w.waitFor("the failed turn's Try again in her conversation", "!!document.querySelector('.messages [data-try-again]')", 120_000);
   const sentBefore = (await s.c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 200 })).events.filter((e) => e.type === "user_message" && e.text === words).length;
   s.x.fake.heal(id);

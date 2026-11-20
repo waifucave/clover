@@ -14,7 +14,7 @@ import type { Cdp } from "./cdp";
 import { fail, sleep, until, type ExampleCtx } from "./example-steps";
 import { dumpFrames, treeDocs } from "./ui-steps";
 
-export const TAB_FLASH_STEP = "Alpha's tab never flashes the stock layout or an empty conversation: back from an app's page, the Plugins page, the Archive, the Settings dialog, after a minute away, and at the window's start, every frame drawn shows her layout, her frames drawn and her transcript";
+export const TAB_FLASH_STEP = "MOSS's tab never flashes the stock layout or an empty conversation: back from an app's page, the Plugins page, the Archive, the Settings dialog, after a minute away, and at the window's start, every frame drawn shows her layout, her frames drawn and her transcript";
 
 const FIXTURES = resolve(import.meta.dir, "fixtures");
 const APP_ID = "acceptance-ui";
@@ -103,7 +103,7 @@ async function openHerTab(cdp: Cdp): Promise<void> {
   if (hers === true) return;
   const at = await until("the sidebar's Alpha row", 20_000, async () => {
     for (const d of await treeDocs(cdp)) {
-      const c = await cdp.centerOf(d.session, STOCK_ROWS, "Alpha").catch(() => undefined);
+      const c = await cdp.centerOf(d.session, STOCK_ROWS, "MOSS").catch(() => undefined);
       if (c !== undefined) return { session: d.session, c };
     }
     return undefined;
@@ -193,19 +193,19 @@ export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (F
     judge("her tab → the app's page", await sampled(cdp, "the sidebar's app row", { selector: STOCK_ROWS, text: APP_TITLE }), false);
     await until("the app's page", 20_000, async () => ((await treeDocs(cdp)).length > 0 ? true : undefined));
     await sleep(1_000);
-    judge("the app's page → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
+    judge("the app's page → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "MOSS" }), true);
     await herTabSettled(cdp, 2);
 
     // 2. The Plugins page, and back.
     judge("her tab → Plugins", await sampled(cdp, "the sidebar's Plugins row", { selector: STOCK_ROWS, text: "Plugins" }), false);
     await sleep(1_000);
-    judge("Plugins → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
+    judge("Plugins → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "MOSS" }), true);
     await herTabSettled(cdp, 2);
 
     // 3. The Archive (from her tab, the sidebar's Archive row), and back.
     judge("her tab → Archive", await sampled(cdp, "the sidebar's Archive row", { selector: STOCK_ROWS, text: "Archive" }), false);
     await sleep(1_000);
-    judge("Archive → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }), true);
+    judge("Archive → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "MOSS" }), true);
     await herTabSettled(cdp, 2);
 
     // 4. The Settings dialog over her tab, closed with Escape.
@@ -234,7 +234,7 @@ export async function tabFlashStep(ctx: ExampleCtx, session: string, launch?: (F
       return f.every((x) => !x.endsWith(":IFRAME")) ? f : undefined;
     }, async () => `her frames: ${(await framesNow()).join(", ") || "none"}`);
     lines.push(`away ${((Date.now() - left) / 1000).toFixed(1)} s (sleep after ${Math.round(away / 1000)} s): ${slept.join(", ") || "no frames"}`);
-    judge("the app's page, a minute later → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "Alpha" }, 2_500), true);
+    judge("the app's page, a minute later → her tab", await sampled(cdp, "the sidebar's Alpha row", { selector: STOCK_ROWS, text: "MOSS" }, 2_500), true);
     await herTabSettled(cdp, 2);
   } finally {
     await rpc.request("plugin.remove", { id: APP_ID }).catch(() => undefined);

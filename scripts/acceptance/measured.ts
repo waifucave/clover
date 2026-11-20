@@ -8,7 +8,7 @@ export const MEASURED_ON_MAC_ONLY = "MEASURED ON THE MAC ONLY";
 /** The rows (by the start of their names) that may be left to the Mac, with the reason the table prints. */
 export const MEASURED_ROWS: readonly { prefix: string; reason: string }[] = [
   {
-    prefix: "window: an idle app with Alpha's tab open stays cheap",
+    prefix: "window: an idle app with MOSS's tab open stays cheap",
     reason: "its bar is the main process's CPU share and the windows' messages a second over 15 s; a shared runner's load moves both several times over (the run that failed it counted 86 messages/s against a limit of 20 with 1.0/s on its own channels)",
   },
 ];

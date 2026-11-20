@@ -9,7 +9,7 @@
 // user-working mark on a made-up app; `computers.read` and `computers.control`). Kept apart from run.ts (which starts a run when loaded) so the
 // verdict can be unit-tested.
 
-export const API_AREAS_STEP = "the plugin API's served areas: a folder-installed plugin's tool reads its own log, the usage rows, Alpha's memory and the routines, runs its own command, takes the device's speech turn; MOSS's log, another plugin's command and the moss tree's keys are refused; it lists the commands, reads a memory file, reads a routine's runs, the plan readings and a usage watch, follows its own log, and takes, lists and releases a hold, signals an action, reads MOSS's windows and marks the user working; an own-process plugin reads its stored key with secrets.get";
+export const API_AREAS_STEP = "the plugin API's served areas: a folder-installed plugin's tool reads its own log, the usage rows, MOSS's memory and the routines, runs its own command, takes the device's speech turn; MOSS's log, another plugin's command and the moss tree's keys are refused; it lists the commands, reads a memory file, reads a routine's runs, the plan readings and a usage watch, follows its own log, and takes, lists and releases a hold, signals an action, reads MOSS's windows and marks the user working; an own-process plugin reads its stored key with secrets.get";
 
 /** The probe's answer, `acceptance-api-pong k=v …`, as pairs. */
 export function apiProbePairs(text: string): Record<string, string> {

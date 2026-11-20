@@ -13,13 +13,13 @@ import { cardsOf, ok, pluginOf, stepOf } from "./workshop-step";
 import { drawnInSettings, reloadsSettled } from "./window-open";
 import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 
-export const WORKSHOP_POINTS_STEP = "a bot builds a plugin that takes plugins: Alpha builds a plugin with a point (PluginNew, Write, PluginValidate, PluginInstall) and a second plugin that fills it; the first one's Settings section in the window shows no entry before the second's OK card is pressed, then its entry";
+export const WORKSHOP_POINTS_STEP = "a bot builds a plugin that takes plugins: MOSS builds a plugin with a point (PluginNew, Write, PluginValidate, PluginInstall) and a second plugin that fills it; the first one's Settings section in the window shows no entry before the second's OK card is pressed, then its entry";
 
 export const BOARD_ID = "ws-board";
 export const BOARD_NAME = "Workshop board";
 export const ITEM_ID = "ws-board-item";
 export const ITEM_NAME = "Workshop board item";
-export const ITEM_TITLE = "Hello from Alpha's second plugin";
+export const ITEM_TITLE = "Hello from MOSS's second plugin";
 export const BOARD_POINT = `${BOARD_ID}.items`;
 
 /** The first plugin's files: the `point` template's (what PluginNew gives). */

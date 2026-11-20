@@ -11,8 +11,8 @@
 import { resolve } from "node:path";
 import { clickTree, callTurn, fail, installFromPage, leave, openDetail, SIDEBAR_ITEMS, sleep, treeDocs, until, type ExampleCtx } from "./example-steps";
 
-export const CHILD_STEP = "a child plugin of a folder-installed plugin works on its own: its OK card names it, it runs, its tool is offered to Alpha and answers, its page opens from its own sidebar button and draws in a frame of its own layer, and the parent's detail on the Plugins page lists its tool";
-export const NOTIFY_STEP = "the core's updates reach the notifier plugins: a turn Alpha runs that the user didn't start ends, and the desktop notifier is asked to show her message (the headless app says it shows none, by its id); the user's own turn asks for none";
+export const CHILD_STEP = "a child plugin of a folder-installed plugin works on its own: its OK card names it, it runs, its tool is offered to MOSS and answers, its page opens from its own sidebar button and draws in a frame of its own layer, and the parent's detail on the Plugins page lists its tool";
+export const NOTIFY_STEP = "the core's updates reach the notifier plugins: a turn MOSS runs that the user didn't start ends, and the desktop notifier is asked to show her message (the headless app says it shows none, by its id); the user's own turn asks for none";
 
 const FIXTURE = resolve(import.meta.dir, "fixtures", "acceptance-kids");
 const PARENT = "acceptance-kids";

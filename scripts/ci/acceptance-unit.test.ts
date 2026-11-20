@@ -62,7 +62,7 @@ describe("the acceptance unit's verdict", () => {
   });
 
   test("a row left to the Mac is listed, not counted as a pass, and only the rows measured.ts names may be", () => {
-    const idle = TABLE.replace("| 2 | a model key           | PASS    |      1.0 s | -      | added", `| 2 | window: an idle app with Alpha's tab open stays cheap | PASS | 1.0 s | - | ${MEASURED_ON_MAC_ONLY}: a runner's load moves it`);
+    const idle = TABLE.replace("| 2 | a model key           | PASS    |      1.0 s | -      | added", `| 2 | window: an idle app with MOSS's tab open stays cheap | PASS | 1.0 s | - | ${MEASURED_ON_MAC_ONLY}: a runner's load moves it`);
     const v = judge({ exit: 0, table: idle, progress: OK_PROGRESS, logs: [] });
     expect(v.ok).toBe(true);
     expect({ rows: v.rows, passed: v.passed, macOnly: v.macOnly.map((m) => m.n) }).toEqual({ rows: 2, passed: 1, macOnly: [2] });

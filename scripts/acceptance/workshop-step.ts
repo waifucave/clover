@@ -31,7 +31,7 @@
 //    builder) is told in her conversation ("… stopped: … PluginStatus ws-greeter has the log."); she edits the throw
 //    back out, and the changed tree starts it again with no card: running, and its tool answers.
 // 8. The drop (row 3.8): Alpha writes a second plugin into her scratch and moves it into the plugins folder with one
-//    `Bash` `mv`, with no card; it lands found behind its OK card, which names her ("Built by Alpha…"); pressed, it
+//    `Bash` `mv`, with no card; it lands found behind its OK card, which names her ("Built by MOSS…"); pressed, it
 //    runs and its tool answers.
 // 9. A bot builds a bot (the owner's "can I tell Alpha to create another bot?"): there is no call that makes a bot, a
 //    bot is a plugin with a `bot` entry. Alpha takes `PluginNew`'s `bot` template, writes it with instructions of her
@@ -53,7 +53,7 @@ import { templateFiles } from "../../packages/plugin-sdk/src/templates/index";
 import { escape, fail, frames, installFromPage, leave, sleep, toSessionTab, treeDocs, until, type ExampleCtx } from "./example-steps";
 import { clickShown } from "./window-open";
 
-export const WORKSHOP_STEP = "the workshop: Alpha builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by Alpha…\"), pressed, and its tool answers; PluginStatus says running; Glossary loads it by id with its tool, and lists it to her as waiting for the OK while its card waits; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and Alpha is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers; a bot she makes the same way (a plugin from PluginNew's bot template, with her own instructions) lands behind its OK card naming her, and OK'd it is in bot.list and the sidebar under Bots, its tab opens and answers a turn with her instructions in its prompt; her edit of its instructions applies with no card at its next turn; removed, it leaves bot.list";
+export const WORKSHOP_STEP = "the workshop: MOSS builds a plugin in her own conversation at the default level: PluginNew, Write into her scratch and PluginValidate with no card; PluginInstall lands it found behind its OK card (\"Built by MOSS…\"), pressed, and its tool answers; PluginStatus says running; Glossary loads it by id with its tool, and lists it to her as waiting for the OK while its card waits; AppScreenshot draws the Plugins page wide and narrow in a window the user never sees, no card; an Edit in place applies about 2 s later with no card; an edit that adds a capability pauses it behind its OK card, and OK'd it runs with the grant; a request answered No keeps it off until edited back out; another bot can't read its status or edit it; a look at her tab while her card waits draws the card as placeholders, never a live card frame; made to crash, it stops and MOSS is told, and her fix starts it again; a plugin she moves into the plugins folder with her shell (the drop) lands found behind its OK card naming her, and OK'd its tool answers; a bot she makes the same way (a plugin from PluginNew's bot template, with her own instructions) lands behind its OK card naming her, and OK'd it is in bot.list and the sidebar under Bots, its tab opens and answers a turn with her instructions in its prompt; her edit of its instructions applies with no card at its next turn; removed, it leaves bot.list";
 
 /** The plugin Alpha builds: the SDK's tool template, its tool renamed so no other server's tool ends the same way. */
 export const WORKSHOP_ID = "ws-greeter";
@@ -63,7 +63,7 @@ export const PEER_ID = "acceptance-workshop-peer";
 const FIXTURES = resolve(import.meta.dir, "fixtures");
 
 /** The source line of a bot-built plugin's OK card (registry/folders.ts `builtByText`), for Alpha. */
-export const BUILT_BY_ALPHA = "Built by Alpha. Alpha can change its code later without asking, within what this card lists.";
+export const BUILT_BY_ALPHA = "Built by MOSS. MOSS can change its code later without asking, within what this card lists.";
 
 /** The files Alpha writes: the tool template's (what `PluginNew` gives), with its tool `hello` renamed. */
 export function workshopFiles(): Record<string, string> {
@@ -276,7 +276,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     hashAtOk = (await pluginOf(ctx, WORKSHOP_ID))?.treeHash ?? "";
     const g = await greet(ctx, session);
     if (!g.result.text.includes(answerFor(GREETING.first))) fail(`its tool answered "${g.result.text.slice(0, 200)}", not "${answerFor(GREETING.first)}"`);
-    done.push(`2 found; OK card "Built by Alpha…" pressed; running; tool answered`);
+    done.push(`2 found; OK card "Built by MOSS…" pressed; running; tool answered`);
   });
 
   // 3. Status.
@@ -520,7 +520,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     await until(`${DROP_ID} running after its OK`, 60_000, async () => ((await pluginOf(ctx, DROP_ID))?.state === "running" ? true : undefined));
     const g = await ok(ctx, session, DROP_TOOL, { name: "Acceptance" }, () => true);
     if (!g.result.text.includes(answerFor(GREETING.first))) fail(`its tool answered "${g.result.text.slice(0, 200)}", not "${answerFor(GREETING.first)}"`);
-    done.push(`8 drop: ${Object.keys(dropFiles()).length} Writes and one Bash mv with no card; found, OK card "Built by Alpha…" pressed; running; tool answered`);
+    done.push(`8 drop: ${Object.keys(dropFiles()).length} Writes and one Bash mv with no card; found, OK card "Built by MOSS…" pressed; running; tool answered`);
   }));
 
   // 9. A bot builds a bot: a plugin with a `bot` entry, made, installed and edited as her tool plugin was.
@@ -540,7 +540,7 @@ async function run(ctx: ExampleCtx, session: string): Promise<string> {
     const text = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
     if (!text.includes(BUILT_BY_ALPHA)) fail(`its OK card doesn't say "${BUILT_BY_ALPHA}" (card: ${text.slice(0, 500)})`);
     await ctx.pressCard("its OK card", (c) => c.id === card.id);
-    said.push(`PluginNew bot, ${Object.keys(botFiles()).length} Writes, PluginValidate, PluginInstall with no card; OK card "Built by Alpha…" pressed`);
+    said.push(`PluginNew bot, ${Object.keys(botFiles()).length} Writes, PluginValidate, PluginInstall with no card; OK card "Built by MOSS…" pressed`);
 
     // Its bot: a plugin with no code of its own is on once OK'd (running or enabled), and its bot comes with it.
     type BotRow = { id: string; mainSession?: string; model?: string };

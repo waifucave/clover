@@ -172,5 +172,5 @@ test("a reload that never came says how long the row waited and what the tree ha
 test("the row sits after the card-placing row, and its name says each step", () => {
   expect(FULL_STEPS.indexOf(WORKSHOP_STEP)).toBe(FULL_STEPS.indexOf(CARDS_STEP) + 1);
   for (const part of ["PluginNew", "PluginValidate", "PluginInstall", "PluginStatus", "Edit in place", "capability", "answered No", "another bot", "the drop", "bot template", "bot.list", "sidebar under Bots", "instructions"]) expect(WORKSHOP_STEP).toContain(part);
-  expect(BUILT_BY_ALPHA).toBe("Built by Alpha. Alpha can change its code later without asking, within what this card lists.");
+  expect(BUILT_BY_ALPHA).toBe("Built by MOSS. MOSS can change its code later without asking, within what this card lists.");
 });
