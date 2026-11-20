@@ -1,4 +1,4 @@
-// The default bot MOSS offers (spec §6.2, G9, item 102): Alpha, an ordinary bot that is engine data, not a plugin. She
+// The default bot MOSS offers (spec §6.2, G9, item 102): MOSS (named Alpha until 2026-11-20's ruling; her id stays `alpha`), an ordinary bot that is engine data, not a plugin. She
 // has the same tools and powers as any bot and is only the first one the person meets. Owner: lane MC.
 //
 // She comes in through the one-time move (`records.ts` `move`), as one more bot to move, so the move's journal settles
@@ -13,21 +13,25 @@
 // (§10, item 122; lane MC2).
 import { existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
-import type { BotMaker, Text } from "@waifucave/moss-protocol";
+import type { BotFace, BotMaker, Text } from "@waifucave/moss-protocol";
 import { botStateFile } from "./paths";
 import type { MoveInput } from "./records";
 import { UserLayerStore } from "./user-layer";
 
 /** Her id, the same as her plugin's was, so everything a home holds of her under it is hers. */
 export const DEFAULT_BOT_ID = "alpha";
-const DEFAULT_BOT_NAME: Text = "Alpha";
+export const DEFAULT_BOT_NAME: Text = "MOSS";
+
+/** Her face, pinned (the owner's ruling of 2026-11-20): the whole-tile bot in the kit's coral with round eyes, as the app's
+ *  icon draws her. Her temper is left to what the name gives. */
+export const DEFAULT_BOT_FACE: BotFace = { shape: "tile", color: "coral", eyes: "round" };
 
 /** The model her bundled plugin named, kept only for a home that already ran her (so her model doesn't change under the
- *  person at the upgrade, as the move keeps a bundled plugin's tag); a fresh home's Alpha runs on the person's own
+ *  person at the upgrade, as the move keeps a bundled plugin's tag); a fresh home's MOSS runs on the person's own
  *  default model until they pick one (item 124: a bot's model is the person's choice). */
 const PLUGIN_ERA_MODEL = { model: "anthropic/claude-sonnet-5-5", effort: "medium" } as const;
 
-export const DEFAULT_BOT_INSTRUCTIONS = `You are Alpha, the first bot people meet in MOSS. You live in one continuous conversation with the person you work with, the way a friend lives in a single text thread: there is no "new chat", and what you have been through together carries forward.
+export const DEFAULT_BOT_INSTRUCTIONS = `You are MOSS, the first bot people meet in the MOSS app. You live in one continuous conversation with the person you work with, the way a friend lives in a single text thread: there is no "new chat", and what you have been through together carries forward.
 
 ## Who you are
 
@@ -50,7 +54,7 @@ export const DEFAULT_BOT_INSTRUCTIONS = `You are Alpha, the first bot people mee
 - Be proactive about the small stuff and ask before anything that is hard to undo.
 - When you finish something, say briefly what changed and anything they should check.
 - Respect their time and attention: don't pad, don't repeat yourself, don't ask for what you could look up.
-- Keep things kind and safe for work. MOSS is for everyone 13 and up, and you keep it that way.
+- Keep things kind and safe for work. The MOSS app is for everyone 13 and up, and you keep it that way.
 
 ## Your helpers
 
@@ -58,7 +62,7 @@ export const DEFAULT_BOT_INSTRUCTIONS = `You are Alpha, the first bot people mee
 - **Reminders.** When they ask you to remind them of something, make a routine for it (the Routine tool) at the time they want; its result comes back into this conversation. Say when it will fire.
 `;
 
-export const DEFAULT_BOT_GREETING = "Hi, I'm Alpha. This is our one conversation: it keeps going from here, and I'll remember what matters along the way.\n\nI can work on your computers with you, keep an eye on things while you're away, and hand big jobs to coding agents. What should we start with?";
+export const DEFAULT_BOT_GREETING = "Hi, I'm MOSS. This is our one conversation: it keeps going from here, and I'll remember what matters along the way.\n\nI can work on your computers with you, keep an eye on things while you're away, and hand big jobs to coding agents. What should we start with?";
 
 /** Her starter memory: the index the memory rules expect, empty. */
 export const DEFAULT_BOT_MEMORY: Readonly<Record<string, string>> = {
@@ -85,7 +89,7 @@ export function defaultBotForMove(home: string): MoveInput {
   };
   const madeBy: BotMaker = { kind: "default" };
   return {
-    plugin: DEFAULT_BOT_ID, id: DEFAULT_BOT_ID, name: DEFAULT_BOT_NAME, instructions: DEFAULT_BOT_INSTRUCTIONS, greeting: DEFAULT_BOT_GREETING,
+    plugin: DEFAULT_BOT_ID, id: DEFAULT_BOT_ID, name: DEFAULT_BOT_NAME, instructions: DEFAULT_BOT_INSTRUCTIONS, greeting: DEFAULT_BOT_GREETING, face: DEFAULT_BOT_FACE,
     ...(ranHere(home) ? PLUGIN_ERA_MODEL : {}),
     ...(Object.keys(userLayer).length === 0 ? {} : { userLayer }),
     memoryFiles: DEFAULT_BOT_MEMORY,

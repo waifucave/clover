@@ -61,6 +61,7 @@ import type { ArchivedBot, BotFace, BotMaker, BotMoveJournal, BotPatch, BotRecor
 import { projectRecords } from "../sessions/wire";
 import { readJson as readJsonFile } from "../sessions/atomic-file";
 import { defaultBotForMove } from "./default-bot";
+import { refreshDefaultBot } from "./default-bot-refresh";
 import { moveInputs, pendingPluginBots } from "./move";
 import { readMarkFile, type BotRecordStore } from "./records";
 import type { BotSource } from "./source";
@@ -692,6 +693,8 @@ export class BotService {
       return;
     }
     for (const b of journal.bots) if (b.outcome === "failed") this.#warn(`the plugin bot ${b.id} wasn't moved: ${b.why}`);
+    // The default bot's rename, once, for a home that already held her under her earlier name (default-bot-refresh.ts).
+    if (this.#o.defaultBot !== false) await refreshDefaultBot({ home: this.#o.home, store, layers: this.#layers, now: () => this.#o.clock.now(), warn: (m) => this.#warn(m) });
     // A bot the move put straight into the archive (its plugin was off): its sessions, which the host picked up at its
     // start, are let go of with their files.
     const host = this.#o.host;

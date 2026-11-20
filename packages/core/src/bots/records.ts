@@ -75,6 +75,8 @@ export type MoveInput = PluginBotForMove & {
   memoryFiles?: Readonly<Record<string, string>>;
   /** Who the record says made it: the move from `plugin` unless given (the default bot: `{ kind: "default" }`). */
   madeBy?: BotMaker;
+  /** The face the record pins (the default bot's, `default-bot.ts`); none: the face the name gives. */
+  face?: BotFace;
   failed?: string;
   /** Its plugin was switched off, invalid or refused: moved straight into the archive. */
   archive?: true;
@@ -627,6 +629,7 @@ export class BotRecordStore implements BotRecords {
         ...(model !== undefined && MODEL_ID_RE.test(model) ? { model } : {}),
         ...(effort !== undefined && EFFORT_RE.test(effort) ? { effort } : {}),
         ...(greeting !== undefined && greeting !== "" ? { greeting: greeting.slice(0, GREETING_MAX_CHARS) } : {}),
+        ...(b.face === undefined ? {} : { face: b.face }),
       } satisfies BotRecord);
       const instructions = (layer.instructions ?? b.instructions).slice(0, INSTRUCTIONS_MAX_CHARS);
       this.#seed(b);

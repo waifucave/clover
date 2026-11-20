@@ -46,11 +46,11 @@ describe("the default bot", () => {
     expect(botSource({ MOSS_BOT_SOURCE: "plugins" })).toBe("plugins");
   });
 
-  test("a fresh home has Alpha at its first start: a record MOSS made, her greeting, her instructions, the person's default model", async () => {
+  test("a fresh home has MOSS at its first start: a record MOSS made, her greeting, her instructions, the person's default model", async () => {
     const home = tempDir();
     const b = await boot({ home, plugins: [], botSource: "records", defaultBot: true });
     const alpha = b.bots.records!.get("alpha")!;
-    expect(alpha).toMatchObject({ id: "alpha", name: "Alpha", madeBy: { kind: "default" }, greeting: DEFAULT_BOT_GREETING, mainSession: "b_alpha" });
+    expect(alpha).toMatchObject({ id: "alpha", name: "MOSS", face: { shape: "tile", color: "coral", eyes: "round" }, madeBy: { kind: "default" }, greeting: DEFAULT_BOT_GREETING, mainSession: "b_alpha" });
     // Item 124: the person's model until they pick one.
     expect(alpha.model).toBeUndefined();
     expect(readFileSync(instructionsFile(home, "alpha"), "utf8")).toBe(DEFAULT_BOT_INSTRUCTIONS);
@@ -108,7 +108,7 @@ describe("the default bot", () => {
     // After the upgrade: records at default, and the bundled tree has no plugin that brings her.
     const after = await boot({ home, clock, plugins: [], routines: { userTimeZone: () => "Europe/London", watchFiles: false }, botSource: DEFAULT_BOT_SOURCE, defaultBot: true });
     const alpha = after.bots.records!.get("alpha")!;
-    expect(alpha).toMatchObject({ id: "alpha", name: "Alpha", madeBy: { kind: "default" }, mainSession: "b_alpha" });
+    expect(alpha).toMatchObject({ id: "alpha", name: "MOSS", madeBy: { kind: "default" }, mainSession: "b_alpha" });
     // Her model as her plugin had it, so it doesn't change under the person.
     expect(alpha).toMatchObject({ model: "anthropic/claude-sonnet-5-5", effort: "medium" });
     expect(after.bots.records!.instructions("alpha")).toBe("You are Alpha, as the person rewrote you.");
