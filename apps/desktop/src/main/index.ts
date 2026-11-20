@@ -954,6 +954,9 @@ const FALLBACK_MAX_HEIGHT = 560;
  *  only), so a fallback that fired says which surface was late and at which step: its frames asked for, a button of
  *  its showing, both buttons showing. */
 const cardArrived = new Map<string, { at: number; seen: Set<string> }>();
+/** The engine's offer to copy an old install's home (a `change` card, `home-copy`), by id, while it waits: the setup
+ *  guide waits for it (it comes first). */
+const homeCopyCards = new Set<string>();
 function noteStep(cardId: string, windowId: number | undefined, step: "frames asked" | "a button visible"): void {
   const arrived = cardArrived.get(cardId);
   if (arrived === undefined) return;
@@ -1161,7 +1164,8 @@ function movePendingCards(): void {
 /** A card the core told the app of (`card_requested`), or one already waiting when the app connected (`card.list`): the
  *  store's copy, its fallback timer and its place, once. Its id and kind only in the log (no text): the acceptance run
  *  checks the app was told of each card it answers. */
-function cardArrivedNow(card: { id: string; kind: string }, waiting = false): void {
+function cardArrivedNow(card: { id: string; kind: string; change?: string }, waiting = false): void {
+  if (card.change === "home-copy") homeCopyCards.add(card.id);
   if (cardArrived.has(card.id)) return;
   sealed.fromCore(card);
   if (!sealed.isPending(card.id)) return;
@@ -1893,7 +1897,7 @@ async function maybeWelcome(client: DaemonClient): Promise<void> {
   }
   if (!guideOpens(state)) return;
   // The engine's offer to copy an old install's home comes first: the guide waits until it is answered.
-  const copyOffered = await client.request<{ cards: { change?: string }[] }>("card.list", {}).then((r) => r.cards.some((c) => c.change === "home-copy"), () => false);
+  const copyOffered = [...homeCopyCards].some((id) => cardArrived.has(id));
   if (copyOffered) {
     if (welcomeRetry === undefined) welcomeRetry = setTimeout(() => { welcomeRetry = undefined; if (pair.client !== undefined) void maybeWelcome(pair.client); }, 5_000);
     return;
