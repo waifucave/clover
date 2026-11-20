@@ -1,19 +1,19 @@
 {
   "manifest": 1,
-  "name": "Alpha's figure",
-  "description": "Alpha's figure for the avatar plugin: her 2D model, and a 3D one beside it. Both are placeholders drawn by code until her own art comes.",
+  "name": "MOSS's figure",
+  "description": "MOSS's figure for the avatar plugin: her 2D model, and a 3D one beside it. Both are placeholders drawn by code until her own art comes.",
   "contributes": {
     "moss.character.packs": [
       {
         "id": "alpha",
-        "name": "Alpha",
+        "name": "MOSS",
         "file": "live2d/alpha.model3.json",
         "format": "live2d",
         "license": "A placeholder made by code for this repository (Apache-2.0)"
       },
       {
         "id": "alpha-vrm",
-        "name": "Alpha (3D)",
+        "name": "MOSS (3D)",
         "file": "vrm/alpha.vrm",
         "format": "vrm",
         "license": "A placeholder made by code (VRM Public License 1.0)"

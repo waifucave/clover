@@ -1,4 +1,4 @@
-// Alpha's room tools (her `stage` MCP server, mcp__alpha-stage__*): her scene, her mood, her pinned notes and her
+// MOSS's room tools (her `stage` MCP server, mcp__alpha-stage__*): her scene, her mood, her pinned notes and her
 // celebration. Her figure's own tools (an expression, a motion, an outfit part) are the avatar plugin's
 // (moss/character's `figure` server), for every bot and session. Each one here changes only her own stage, the
 // document her tab draws, and nothing else: no file, no network, no message, no other plugin. That is what her
@@ -40,7 +40,7 @@ const OBSERVE_NOTE = "It only changes her own stage in her tab; nothing else is 
 const str = (description: string, max = 64) => ({ type: "string", minLength: 1, maxLength: max, description });
 
 export const STAGE_TOOLS: readonly ToolDef[] = [
-  tool("set_scene", "Change the scene", `Change the scene behind Alpha: her own (meadow, study, starry, rain) or one another plugin added (stage_status lists them). ${OBSERVE_NOTE}`,
+  tool("set_scene", "Change the scene", `Change the scene behind MOSS: her own (meadow, study, starry, rain) or one another plugin added (stage_status lists them). ${OBSERVE_NOTE}`,
     { type: "object", properties: { scene: str("The scene's id.", 32) }, required: ["scene"], additionalProperties: false }),
   tool("set_mood", "Set the mood", `Set the stage's mood, which its light and colour follow. ${OBSERVE_NOTE}`,
     { type: "object", properties: { mood: { type: "string", enum: [...MOODS] } }, required: ["mood"], additionalProperties: false }),
@@ -50,7 +50,7 @@ export const STAGE_TOOLS: readonly ToolDef[] = [
     { type: "object", properties: { handle: str("The note's handle (n1, n2, …), or \"all\".", 32) }, required: ["handle"], additionalProperties: false }),
   tool("celebrate", "Celebrate", `Celebrate on her stage (confetti and a happy look) when something worth it is done: a passing build, a finished task. Not for every turn. ${OBSERVE_NOTE}`,
     { type: "object", properties: {}, additionalProperties: false }),
-  tool("stage_status", "Check the stage", `Read Alpha's stage: the scene, mood, today's tally, what she wears, the scenes she has, the user's stage settings (nickname, reactions), and the notes pinned to her stage with their handles. ${PINNED_NOTE} It only reads.`,
+  tool("stage_status", "Check the stage", `Read MOSS's stage: the scene, mood, today's tally, what she wears, the scenes she has, the user's stage settings (nickname, reactions), and the notes pinned to her stage with their handles. ${PINNED_NOTE} It only reads.`,
     { type: "object", properties: {}, additionalProperties: false }, true),
 ];
 
@@ -98,7 +98,7 @@ export async function runStageTool(name: string, args: unknown, store: StageStor
       })}`, { kind: "status", label: "Stage", value: `${scene}, ${st.mood}`, swatch: MOOD_SWATCHES[st.mood] });
     }
     default:
-      return text(`Alpha has no tool ${name.slice(0, 64)}.`, true);
+      return text(`MOSS has no tool ${name.slice(0, 64)}.`, true);
   }
   const r = await store.change(change);
   return r.ok ? { content: [{ type: "text", text: r.said }], ...(r.shown === undefined ? {} : { structuredContent: r.shown }) } : text(r.said, true);

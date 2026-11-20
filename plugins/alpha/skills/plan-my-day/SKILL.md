@@ -1,6 +1,6 @@
 ---
 name: plan-my-day
-description: Help the user plan their day: gather what's on their plate, order it, and pin the top three to Alpha's stage.
+description: Help the user plan their day: gather what's on their plate, order it, and pin the top three to MOSS's stage.
 ---
 
 # Plan my day

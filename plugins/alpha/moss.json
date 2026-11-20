@@ -1,8 +1,8 @@
 {
   "manifest": 1,
   "id": "alpha",
-  "name": "Alpha",
-  "description": "Alpha's stage, scenes and helpers. Alpha herself is the default bot MOSS offers (engine data, not a plugin); her figure and scenes become a pack for the bundled avatar plugin.",
+  "name": "MOSS's stage",
+  "description": "The stage, scenes and helpers of MOSS, the default bot the MOSS app offers. She is engine data, not a plugin; her figure and scenes become a pack for the bundled avatar plugin.",
   "icon": "assets/portrait.svg",
   "version": "1.0.0",
   "scope": "own-bot",
@@ -34,8 +34,8 @@
           "additionalProperties": false
         },
         "doc": {
-          "en": "A scene Alpha can stand in: its id and its title. Her stage tool set_scene takes it, and her tab draws it.",
-          "ja": "アルファが立てるシーン。ステージのツール set_scene で使え、タブが描きます。"
+          "en": "A scene MOSS can stand in: its id and its title. Her stage tool set_scene takes it, and her tab draws it.",
+          "ja": "MOSSが立てるシーン。ステージのツール set_scene で使え、タブが描きます。"
         }
       }
     }
@@ -48,8 +48,8 @@
         "ja": "最初のシーン"
       },
       "description": {
-        "en": "The scene Alpha's stage starts in.",
-        "ja": "アルファのステージが始まるシーン。"
+        "en": "The scene MOSS's stage starts in.",
+        "ja": "MOSSのステージが始まるシーン。"
       },
       "options": [
         {
@@ -187,8 +187,8 @@
         "ja": "あなたの呼び名"
       },
       "description": {
-        "en": "The name Alpha uses for you. Empty: your name, once she knows it.",
-        "ja": "アルファがあなたを呼ぶ名前。空なら、知っていればあなたの名前。"
+        "en": "The name MOSS uses for you. Empty: your name, once she knows it.",
+        "ja": "MOSSがあなたを呼ぶ名前。空なら、知っていればあなたの名前。"
       },
       "default": "",
       "scope": "bot"
@@ -199,7 +199,7 @@
         "en": "Pinned note"
       },
       "description": {
-        "en": "A line Alpha keeps in view on her stage."
+        "en": "A line MOSS keeps in view on her stage."
       },
       "default": ""
     }
@@ -278,8 +278,8 @@
       {
         "name": "scene",
         "description": {
-          "en": "Change the scene behind Alpha.",
-          "ja": "アルファの背景のシーンを変えます。"
+          "en": "Change the scene behind MOSS.",
+          "ja": "MOSSの背景のシーンを変えます。"
         },
         "args": {
           "type": "object",
@@ -300,8 +300,8 @@
       {
         "name": "mood",
         "description": {
-          "en": "Set the mood of Alpha's stage.",
-          "ja": "アルファのステージの雰囲気を変えます。"
+          "en": "Set the mood of MOSS's stage.",
+          "ja": "MOSSのステージの雰囲気を変えます。"
         },
         "args": {
           "type": "object",
@@ -328,8 +328,8 @@
       {
         "name": "outfit",
         "description": {
-          "en": "Change Alpha's outfit (lilac-dress, navy-uniform, yellow-raincoat); on another avatar picked for her, turn one of its parts on or off.",
-          "ja": "アルファの衣装を替えます（lilac-dress、navy-uniform、yellow-raincoat）。別のアバターでは、そのパーツをオン・オフします。"
+          "en": "Change MOSS's outfit (lilac-dress, navy-uniform, yellow-raincoat); on another avatar picked for her, turn one of its parts on or off.",
+          "ja": "MOSSの衣装を替えます（lilac-dress、navy-uniform、yellow-raincoat）。別のアバターでは、そのパーツをオン・オフします。"
         },
         "args": {
           "type": "object",
