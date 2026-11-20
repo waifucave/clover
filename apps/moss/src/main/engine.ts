@@ -125,7 +125,7 @@ export class MossEngine {
   private summaries = new Map<string, BotSummary>();
   private activity = new Map<string, ActivityView>();
   /** The pending cards MOSS knows (ids, bots, kinds), and where the router put each. */
-  private cards = new Map<string, { id: string; bot?: string; kind: string }>();
+  private cards = new Map<string, { id: string; bot?: string; kind: string; change?: string }>();
   private placements = new Map<string, CardPlacement>();
   /** The cards a `card_placed` event placed on this connection (an event always wins over a `card.placement` answer,
    *  which may have been taken before it), and the cards resolved on it (a late answer never brings one back): MOSS
@@ -187,7 +187,9 @@ export class MossEngine {
       cards.push({ id: c.id, ...(c.bot !== undefined ? { bot: c.bot } : {}), kind: c.kind, place: p.kind });
     }
     const talk = "command" in this.talk ? { ready: true as const } : { ready: false as const, why: this.talk.why };
-    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.setupNow !== undefined ? { setup: this.setupNow } : {}), ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.releaseNotice !== undefined ? { notice: this.releaseNotice } : this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
+    // The engine's offer to copy an old install's home comes first: the setup guide waits while it is pending.
+    const copyOffered = [...this.cards.values()].some((c) => c.change === "home-copy" && this.sealed.isPending(c.id));
+    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.setupNow !== undefined && !copyOffered ? { setup: this.setupNow } : {}), ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.releaseNotice !== undefined ? { notice: this.releaseNotice } : this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
   }
 
   /** How many pending cards MOSS knows that the router hasn't placed yet (anywhere): the smoke run waits for none. */
@@ -390,9 +392,9 @@ export class MossEngine {
 
   private cardArrived(card: unknown): void {
     this.sealed.fromCore(card);
-    const c = card as { id?: unknown; bot?: unknown; kind?: unknown };
+    const c = card as { id?: unknown; bot?: unknown; kind?: unknown; change?: unknown };
     if (typeof c?.id !== "string") return;
-    this.cards.set(c.id, { id: c.id, ...(typeof c.bot === "string" ? { bot: c.bot } : {}), kind: typeof c.kind === "string" ? c.kind : "tool" });
+    this.cards.set(c.id, { id: c.id, ...(typeof c.bot === "string" ? { bot: c.bot } : {}), kind: typeof c.kind === "string" ? c.kind : "tool", ...(typeof c.change === "string" ? { change: c.change } : {}) });
   }
 
   /** The engine's notifications on MOSS's connection: core events and picture frames. */

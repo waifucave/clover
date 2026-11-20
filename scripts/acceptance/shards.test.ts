@@ -60,16 +60,16 @@ describe("the split", () => {
   });
 
   test("N shards: each parallel unit in one shard, the chain first in its own, the load spread", () => {
-    expect(planShards(1)).toEqual([["chain", "window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss"]]);
+    expect(planShards(1)).toEqual([["chain", "window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss", "setup"]]);
     for (const n of [2, 3, 4, 8]) {
       const plan = planShards(n);
       expect(plan.length).toBeLessThanOrEqual(n);
-      expect(plan.flat().sort()).toEqual(["acp", "addons", "archive", "arrivals", "browser", "builder-examples", "bundled-tools", "cards", "chain", "examples", "models", "moss", "plugin-app", "release", "reopen", "window-1", "window-2", "window-3", "workshop", "workshop-points"]);
+      expect(plan.flat().sort()).toEqual(["acp", "addons", "archive", "arrivals", "browser", "builder-examples", "bundled-tools", "cards", "chain", "examples", "models", "moss", "plugin-app", "release", "reopen", "setup", "window-1", "window-2", "window-3", "workshop", "workshop-points"]);
       // The chain, the long pole, alone in the first from 2 shards (anything beside it lengthens the run).
       expect(plan[0]).toEqual(["chain"]);
     }
     // With 2 shards the chain runs alone and the rest share the other.
-    expect(planShards(2)).toEqual([["chain"], ["window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss"]]);
+    expect(planShards(2)).toEqual([["chain"], ["window-1", "window-2", "window-3", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss", "setup"]]);
     expect(() => planShards(0)).toThrow();
   });
 
@@ -99,8 +99,8 @@ describe("the split", () => {
     expect(chainOwnRuns(asked)).toEqual(["moss", "host", "browser-host", "surface-copy-host"]);
     expect(chainOwnRuns(["chain", "host"])).toEqual(["host"]);
     expect(chainOwnRuns(["chain", "window-1"])).toEqual([]);
-    // A full run (no --units) runs moss alone, as it did.
-    expect(chainOwnRuns(undefined)).toEqual(["moss"]);
+    // A full run (no --units) runs moss, then lane SG's setup unit (a fresh home of its own too).
+    expect(chainOwnRuns(undefined)).toEqual(["moss", "setup"]);
     // Every ownHome unit is reachable through the list, so a new one cannot be skipped.
     for (const u of units().filter((x) => x.ownHome === true)) expect(chainOwnRuns([u.id, "chain"])).toEqual([u.id]);
     // run.ts has no other `ownHomeRun("moss")` shortcut that the chain path could stop at.
@@ -119,7 +119,7 @@ describe("the split", () => {
     }
     expect(homePlan(["main", "workshop", "plugin-app", "browser", "cards", "bundled-tools", "moss"]).ownRuns).toEqual(["moss"]);
     // Every shard plan: a shard holding moss and anything else runs moss as its own run (unitsRun uses homePlan).
-    for (const n of [1, 2, 3, 4]) for (const shard of planShards(n)) if (shard.includes("moss") && shard.length > 1) expect(homePlan(shard).ownRuns).toEqual(["moss"]);
+    for (const n of [1, 2, 3, 4]) for (const shard of planShards(n)) if (shard.includes("moss") && shard.length > 1) expect(homePlan(shard).ownRuns).toEqual(shard.includes("setup") ? ["moss", "setup"] : ["moss"]);
     // run.ts: moss's rows run on the run's home only when moss is the run's one unit; the full run and unitsRun hand it to
     // a run of its own (`--units moss`), never to the shared home's daemon.
     const run = readFileSync(join(import.meta.dir, "run.ts"), "utf8");
@@ -157,11 +157,11 @@ describe("the split", () => {
 describe("a packaged run's units (the try's test twin)", () => {
   test("every unit there is but the source-only host units, with main for the chain and the window", () => {
     const ids = packagedUnitIds();
-    expect(ids).toEqual(["main", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss", "cold", "idle"]);
+    expect(ids).toEqual(["main", "examples", "bundled-tools", "cards", "workshop", "reopen", "arrivals", "addons", "archive", "acp", "builder-examples", "workshop-points", "release", "plugin-app", "browser", "models", "moss", "setup", "cold", "idle"]);
     // Nothing is left out by accident: a unit a lane adds is in the packaged run unless it is named source-only.
     expect([...expandUnitIds(ids), ...SOURCE_ONLY_UNITS].sort()).toEqual(units().map((u) => u.id).sort());
-    // The packaged MOSS runs in a home of its own after the chain, as from source.
-    expect(chainOwnRuns(expandUnitIds(ids))).toEqual(["moss"]);
+    // The packaged MOSS runs in a home of its own after the chain, as from source; so does lane SG's setup unit.
+    expect(chainOwnRuns(expandUnitIds(ids))).toEqual(["moss", "setup"]);
   });
 
   test("the try names them: its packaged run is never the table from before the split (try 16 ran the rows that run elsewhere, and no release row)", () => {

@@ -1866,6 +1866,9 @@ async function openPage(page: CorePage): Promise<void> {
   if (win !== undefined) runtime.rootMessage(win.id, { type: "core-page", page });
 }
 
+/** A later look while the engine's home-copy offer waits for its answer. */
+let welcomeRetry: ReturnType<typeof setTimeout> | undefined;
+
 /** The setup guide opens by itself while the engine says this home isn't set up for a first reply (no provider, or no
  *  default model) and the person hasn't skipped it, in this app or in MOSS (`setup.state`, the engine's). */
 async function maybeWelcome(client: DaemonClient): Promise<void> {
@@ -1889,6 +1892,12 @@ async function maybeWelcome(client: DaemonClient): Promise<void> {
     state = { ready: false, dismissed: false };
   }
   if (!guideOpens(state)) return;
+  // The engine's offer to copy an old install's home comes first: the guide waits until it is answered.
+  const copyOffered = await client.request<{ cards: { change?: string }[] }>("card.list", {}).then((r) => r.cards.some((c) => c.change === "home-copy"), () => false);
+  if (copyOffered) {
+    if (welcomeRetry === undefined) welcomeRetry = setTimeout(() => { welcomeRetry = undefined; if (pair.client !== undefined) void maybeWelcome(pair.client); }, 5_000);
+    return;
+  }
   log("welcome: this home isn't set up for a first reply; the setup guide opens");
   await openPage("welcome");
 }
