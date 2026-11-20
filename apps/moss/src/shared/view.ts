@@ -61,9 +61,9 @@ export interface SetupRow {
   missing: ("provider" | "model")[];
   /** The providers the person added, by catalog id. */
   providers: string[];
-  default?: { model: string; source: "chosen" | "computed" };
-  /** Each added provider's recommended model, where the catalog names one. */
-  recommended?: Record<string, string>;
+  default?: { model: string; source: "chosen" | "computed"; effort?: string };
+  /** Each added provider's recommended default (its family's model and effort), where it has one. */
+  recommended?: Record<string, { model: string; effort?: string }>;
   dismissed: boolean;
 }
 

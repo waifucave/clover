@@ -1,21 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { SetupState } from "@waifucave/moss-protocol";
-import { recommendedModel } from "../src/default-model";
+import { defaultEffortFor, recommended, recommendedModel } from "../src/default-model";
 import { SetupService } from "../src/setup-state";
 
 const catalog = loadCatalog();
 
 function world(start: { stored?: string; present?: string[]; failRead?: boolean } = {}) {
-  const s = { stored: start.stored, present: new Set(start.present ?? []), dismissed: false, failRead: start.failRead === true, writes: [] as string[], events: [] as SetupState[] };
+  const s = { effort: undefined as string | undefined, stored: start.stored, present: new Set(start.present ?? []), dismissed: false, failRead: start.failRead === true, writes: [] as string[], events: [] as SetupState[] };
   const service = new SetupService({
     readPresent: async () => {
       if (s.failRead) throw new Error("locked");
       return new Set(s.present);
     },
     storedModel: () => s.stored,
-    recommend: (p) => recommendedModel(catalog, p),
-    writeModel: (m) => { s.stored = m; s.writes.push(m); },
+    storedEffort: () => s.effort,
+    recommend: (p) => recommended(catalog, p),
+    effortFor: (m) => defaultEffortFor(catalog, m),
+    writeModel: (m, e) => { s.stored = m; s.effort = e; s.writes.push(m); },
     dismissed: () => s.dismissed,
     writeDismissed: (d) => { s.dismissed = d; },
     offered: (m) => catalog.models.some((r) => r.key === m),
@@ -41,7 +43,8 @@ describe("SetupService", () => {
     const st = await service.refresh();
     const rec = recommendedModel(catalog, "anthropic")!;
     expect(s.writes).toEqual([rec]);
-    expect(st).toMatchObject({ ready: true, missing: [], providers: ["anthropic"], default: { model: rec, source: "chosen" } });
+    expect(st).toMatchObject({ ready: true, missing: [], providers: ["anthropic"], default: { model: rec, source: "chosen", effort: "medium" } });
+    expect(s.effort).toBe("medium");
     expect(s.events.at(-1)).toEqual(st);
   });
 
@@ -49,11 +52,13 @@ describe("SetupService", () => {
     const { s, service } = world({ present: ["anthropic", "openai"] });
     const st = await service.refresh();
     expect(st).toMatchObject({ ready: false, missing: ["model"] });
-    expect(st.recommended?.anthropic).toBe(recommendedModel(catalog, "anthropic")!);
+    expect(st.recommended?.anthropic).toEqual({ model: recommendedModel(catalog, "anthropic")!, effort: "medium" });
     await expect(service.setDefault("google/gemini-2.5-pro")).rejects.toThrow(/add google first/);
     const picked = await service.setDefault("openai/gpt-4.1");
     expect(picked).toMatchObject({ ready: true, default: { model: "openai/gpt-4.1", source: "chosen" } });
     expect(s.stored).toBe("openai/gpt-4.1");
+    // Not its family's default: no effort carried over.
+    expect(s.effort).toBeUndefined();
   });
 
   test("an older build's written default with no credential for it: a home with one other provider moves to that one's", async () => {

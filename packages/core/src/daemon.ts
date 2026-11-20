@@ -142,8 +142,8 @@ import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
 import { SetupService, setupMethods } from "./setup-state";
-import { recommendedModel } from "./default-model";
-import { loadSettings, saveSettings, setProviderModel, setupDismissedFrom, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { defaultEffortFor, recommended } from "./default-model";
+import { loadSettings, saveSettings, setupDismissedFrom, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -3424,8 +3424,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(await pluginAuth?.signedInProviders().catch(() => new Set<string>()) ?? []),
     ]),
     storedModel: () => settings?.provider?.model,
-    recommend: (provider) => recommendedModel(activeCatalog(), provider),
-    writeModel: (model) => writeSettings((s) => setProviderModel(s, model as ModelTag)),
+    storedEffort: () => settings?.provider?.reasoningEffort,
+    recommend: (provider) => recommended(activeCatalog(), provider),
+    effortFor: (model) => defaultEffortFor(activeCatalog(), model),
+    // The model and the effort written together: a new default never keeps the old one's effort.
+    writeModel: (model, effort) => writeSettings((s) => ({ ...s, provider: { model: model as ModelTag, ...(effort !== undefined ? { reasoningEffort: effort as NonNullable<Settings["provider"]>["reasoningEffort"] } : {}) } })),
     dismissed: () => setupDismissedFrom(settings),
     writeDismissed: (dismissed) => writeSettings((s) => ({ ...s, setup: { ...s.setup, dismissed } })),
     offered: (model) => catalogModelListings(activeCatalog(), new Set()).some((m) => m.id === model),
@@ -4943,6 +4946,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         agents: p.agents === false ? false : {
           socketPath: dirs.socketPath, spawn: (options) => embeddedSessions.spawn(options), doors: agentDoors,
           defaultModel: p.agents?.defaultModel ?? (() => liveModel?.() ?? ""),
+          ...(p.agents?.defaultModel === undefined ? { defaultEffort: () => setup.state().default?.effort } : {}),
           // The same provider fill as the bots': an agent's turn gets its provider and credential as a bot's does.
           fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
           ...(p.agents?.backends ? { backends: p.agents.backends } : {}),

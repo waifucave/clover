@@ -1,32 +1,43 @@
 import { describe, expect, test } from "bun:test";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
-import { effectiveDefault, NO_DEFAULT_MODEL_REASON, providerOfTag, recommendedModel, settledDefault, setupMissing } from "../src/default-model";
+import { defaultEffortFor, effectiveDefault, NO_DEFAULT_MODEL_REASON, providerOfTag, recommended, recommendedModel, settledDefault, setupMissing } from "../src/default-model";
+import { FAMILY_DEFAULTS } from "../src/runtime-sdk/model-plugins/family-defaults";
 
 const catalog = loadCatalog();
-const rec = (p: string) => recommendedModel(catalog, p);
+const rec = (p: string) => recommended(catalog, p);
+const recM = (p: string) => recommendedModel(catalog, p);
 
-describe("recommendedModel (from the catalog only)", () => {
-  test("a vendor's own family's first slot it serves", () => {
-    for (const p of ["anthropic", "codex-oauth", "openai", "google", "deepseek"]) {
-      const tag = rec(p);
-      expect(tag).toBeDefined();
-      expect(providerOfTag(tag!)).toBe(p);
-      const row = catalog.models.find((m) => m.key === tag)!;
-      const family = catalog.families!.find((f) => (f.vendorProviders ?? []).includes(p))!;
-      // It is one of the family's slots, and no slot before it is served by this provider.
-      const at = family.slots.findIndex((s) => s.canonicalModelId === row.canonicalModelId);
-      expect(at).toBeGreaterThanOrEqual(0);
+describe("the recommended default: the family's one default, as the provider serves it", () => {
+  test("the owner's: Claude Opus 5.5 at medium, GPT-6.2 Sol at medium", () => {
+    expect(rec("anthropic")).toEqual({ model: "anthropic/claude-opus-5-5", effort: "medium" });
+    expect(rec("console")?.effort).toBe("medium");
+    expect(catalog.models.find((m) => m.key === recM("console"))?.canonicalModelId).toBe("claude-opus-5.5");
+    for (const p of ["codex-oauth", "openai"]) {
+      expect(catalog.models.find((m) => m.key === recM(p))?.canonicalModelId).toBe("gpt-6.2-sol");
+      expect(rec(p)?.effort).toBe("medium");
     }
   });
-  test("the sol tier where the family has one (GPT), else the family's first slot (Claude)", () => {
-    expect(catalog.models.find((m) => m.key === rec("codex-oauth"))?.canonicalModelId).toBe(catalog.families!.find((f) => f.id === "gpt")!.slots.find((s) => s.name === "sol")!.canonicalModelId);
-    expect(catalog.models.find((m) => m.key === rec("anthropic"))?.canonicalModelId).toBe(catalog.families!.find((f) => f.id === "claude")!.slots[0]!.canonicalModelId);
+  test("every family default names a model the catalog has, and a family's vendors serve it or recommend nothing", () => {
+    for (const [family, def] of Object.entries(FAMILY_DEFAULTS)) {
+      expect(catalog.families!.some((f) => f.id === family)).toBe(true);
+      expect(catalog.models.some((m) => m.canonicalModelId === def.model)).toBe(true);
+    }
+  });
+  test("the effort is dropped for a row that doesn't take it", () => {
+    const r = rec("deepseek");
+    expect(r?.model).toBeDefined();
+    expect(r?.effort).toBeUndefined();
+  });
+  test("a picked model starts with its family's effort only when it is the family's default", () => {
+    expect(defaultEffortFor(catalog, recM("anthropic")!)).toBe("medium");
+    expect(defaultEffortFor(catalog, "anthropic/claude-sonnet-5-5")).toBeUndefined();
   });
   test("an aggregator that is no family's vendor recommends nothing", () => {
     const vendors = new Set(catalog.families!.flatMap((f) => f.vendorProviders ?? []));
     const aggregator = catalog.providers.find((p) => !vendors.has(p.id) && catalog.models.some((m) => m.providerId === p.id));
     expect(aggregator).toBeDefined();
     expect(rec(aggregator!.id)).toBeUndefined();
+    expect(rec("openrouter")).toBeUndefined();
   });
 });
 
@@ -37,7 +48,7 @@ describe("effectiveDefault", () => {
     expect(setupMissing(new Set(), {})).toEqual(["provider", "model"]);
   });
   test("one provider and nothing named: its recommended model, computed", () => {
-    expect(effectiveDefault(undefined, new Set(["anthropic"]), rec)).toEqual({ model: rec("anthropic")!, source: "computed" });
+    expect(effectiveDefault(undefined, new Set(["anthropic"]), rec)).toEqual({ model: recM("anthropic")!, source: "computed", effort: "medium" });
   });
   test("several providers and nothing named: none, the person picks", () => {
     const a = effectiveDefault(undefined, two, rec);
@@ -49,7 +60,7 @@ describe("effectiveDefault", () => {
   });
   test("an older build's written default with no credential for its provider counts as none", () => {
     expect(effectiveDefault("codex-oauth/gpt-5.6-sol", two, rec)).toEqual({});
-    expect(effectiveDefault("codex-oauth/gpt-5.6-sol", new Set(["anthropic"]), rec)).toEqual({ model: rec("anthropic")!, source: "computed" });
+    expect(effectiveDefault("codex-oauth/gpt-5.6-sol", new Set(["anthropic"]), rec)).toEqual({ model: recM("anthropic")!, source: "computed", effort: "medium" });
   });
   test("an aggregator alone recommends nothing: the person picks", () => {
     const vendors = new Set(catalog.families!.flatMap((f) => f.vendorProviders ?? []));
@@ -93,7 +104,7 @@ describe("the default over any sequence of changes", () => {
       const present = new Set<string>();
       const settle = () => {
         const w = settledDefault(stored, present, rec);
-        if (w !== undefined) stored = w;
+        if (w !== undefined) stored = w.model;
       };
       settle();
       for (let step = 0; step < 40; step++) {

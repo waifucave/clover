@@ -8,8 +8,9 @@
       "anthropic"
     ],
     "default": {
-      "model": "anthropic/claude-fable-5-2",
-      "source": "chosen"
+      "model": "anthropic/claude-opus-5-5",
+      "source": "chosen",
+      "effort": "medium"
     },
     "dismissed": false
   }

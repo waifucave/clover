@@ -104,6 +104,8 @@ export interface MossCodeDeps {
   fillProvider?(model: string, options: Options): void | Promise<void>;
   /** The model when the delegation names none (the user's default). */
   defaultModel(): string;
+  /** The effort written with the user's default model, for a session that names neither a model nor an effort. */
+  defaultEffort?(): string | undefined;
   /** The delegating bot's pause switch (lane D's gate), the one the manager holds ACP agents with. */
   pause?: AgentPauseGate;
   /** The session's in-process bridge, given by the manager for an in-process backend. */
@@ -373,7 +375,9 @@ export class MossCodeBackend implements AgentBackend {
           ? {}
           : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAUSED } }],
     }];
-    const base = deps.baseOptions({ model, ...(spec.effort === undefined ? {} : { effort: spec.effort }), cwd: spec.root });
+    // A session on the user's default model starts at the default's effort (the family's, written with it).
+    const effort = spec.effort ?? (spec.model === undefined ? deps.defaultEffort?.() : undefined);
+    const base = deps.baseOptions({ model, ...(effort === undefined ? {} : { effort }), cwd: spec.root });
     // The runtime's TaskStop and SendMessage would reach the host's other sessions through host messaging; an agent
     // reaches its bot through the bridge alone.
     if ((base as { hostMessaging?: unknown }).hostMessaging !== undefined) throw new ContractError("refused", "MOSS's coding agent wasn't started: its options carry host messaging");

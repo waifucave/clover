@@ -12,6 +12,11 @@ import type { ModelRow, ProviderRow, SetupRow } from "../../shared/view";
 
 export type SetupStep = "providers" | "model" | "done";
 
+/** A model as the guide names it: "Claude Opus 5.5 · medium" when it has an effort. */
+function withEffort(name: string, effort: string | undefined): string {
+  return effort === undefined || effort === "" ? name : `${name} · ${effort}`;
+}
+
 /** The guide's words (MOSS ships English; its other text is written in place the same way). */
 const WORDS = {
   step: (n: number) => `Step ${n} of 3`,
@@ -45,7 +50,7 @@ const WORDS = {
 
 export function SetupGuide(props: { setup: SetupRow | undefined; botName: string; initialStep?: SetupStep; onClose: () => void; onDone: () => void }) {
   const [step, setStep] = useState<SetupStep>(props.initialStep ?? "providers");
-  const [model, setModel] = useState<ModelRow | undefined>(undefined);
+  const [model, setModel] = useState<{ row: ModelRow; effort?: string } | undefined>(undefined);
   const [note, setNote] = useState<string | undefined>(undefined);
   useEffect(() => { if (props.initialStep !== undefined) setStep(props.initialStep); }, [props.initialStep]);
   const skip = async (): Promise<void> => {
@@ -58,8 +63,8 @@ export function SetupGuide(props: { setup: SetupRow | undefined; botName: string
       <section className="setup__card">
         <p className="setup__step muted small">{WORDS.step(n)}</p>
         {step === "providers" ? <Providers setup={props.setup} onNext={() => { setNote(undefined); setStep("model"); }} onSkip={() => void skip()} />
-          : step === "model" ? <Model setup={props.setup} onBack={() => setStep("providers")} onSkip={() => void skip()} onNext={(m) => { setModel(m); setNote(undefined); setStep("done"); }} />
-          : <Done model={model?.title ?? props.setup?.default?.model ?? ""} bot={props.botName} onBack={() => setStep("model")} onDone={props.onDone} />}
+          : step === "model" ? <Model setup={props.setup} onBack={() => setStep("providers")} onSkip={() => void skip()} onNext={(m, effort) => { setModel({ row: m, ...(effort !== undefined ? { effort } : {}) }); setNote(undefined); setStep("done"); }} />
+          : <Done model={withEffort(model?.row.title ?? props.setup?.default?.model ?? "", model !== undefined ? model.effort : props.setup?.default?.effort)} bot={props.botName} onBack={() => setStep("model")} onDone={props.onDone} />}
         {note !== undefined ? <p className="add__note" role="status">{note}</p> : null}
       </section>
     </div>
@@ -151,7 +156,7 @@ function Provider(props: { row: ProviderRow; open: boolean; onToggle: () => void
 }
 
 /** Step 2: the default model. One provider added: its model is already chosen, the picker a click away. Several: pick. */
-function Model(props: { setup: SetupRow | undefined; onBack: () => void; onSkip: () => void; onNext: (m: ModelRow) => void }) {
+function Model(props: { setup: SetupRow | undefined; onBack: () => void; onSkip: () => void; onNext: (m: ModelRow, effort: string | undefined) => void }) {
   const [models, setModels] = useState<ModelRow[] | undefined>(undefined);
   const [setup, setSetup] = useState<SetupRow | undefined>(props.setup);
   const [picking, setPicking] = useState(false);
@@ -163,7 +168,7 @@ function Model(props: { setup: SetupRow | undefined; onBack: () => void; onSkip:
       const st = "waiting" in s ? props.setup : s;
       setModels(ready);
       setSetup(st);
-      const first = st?.default?.model ?? (st?.providers ?? []).map((p) => st?.recommended?.[p]).find((x) => x !== undefined && ready.some((r) => r.id === x)) ?? ready[0]?.id ?? "";
+      const first = st?.default?.model ?? (st?.providers ?? []).map((p) => st?.recommended?.[p]?.model).find((x) => x !== undefined && ready.some((r) => r.id === x)) ?? ready[0]?.id ?? "";
       setValue(first);
     });
   }, []);
@@ -177,11 +182,13 @@ function Model(props: { setup: SetupRow | undefined; onBack: () => void; onSkip:
   const next = async (): Promise<void> => {
     const m = row(value);
     if (m === undefined) return;
+    let effort = setup?.default?.effort;
     if (value !== current) {
       const r = await bridge().setDefaultModel(value);
       if (!r.ok) { setWhy(r.why); return; }
+      effort = r.setup.default?.effort;
     }
-    props.onNext(m);
+    props.onNext(m, effort);
   };
   const picker = (
     <label className="setup__field">
@@ -202,7 +209,7 @@ function Model(props: { setup: SetupRow | undefined; onBack: () => void; onSkip:
       {models === undefined ? <p className="muted">{WORDS.loading}</p> : models.length === 0 ? <p className="muted">{WORDS.noModels}</p>
         : current !== undefined && !picking ? (
           <div className="setup__chosen" data-setup-default={current}>
-            <span><span className="muted">{WORDS.chosen} </span><strong>{row(current)?.title ?? current}</strong><span className="muted"> · {row(current)?.provider ?? current.slice(0, current.indexOf("/"))}</span></span>
+            <span><span className="muted">{WORDS.chosen} </span><strong>{withEffort(row(current)?.title ?? current, setup?.default?.effort)}</strong><span className="muted"> · {row(current)?.provider ?? current.slice(0, current.indexOf("/"))}</span></span>
             <button type="button" className="text-button" onClick={() => setPicking(true)} data-setup="change">{WORDS.change}</button>
           </div>
         ) : (

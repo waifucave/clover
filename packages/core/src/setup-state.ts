@@ -9,18 +9,21 @@
 // added later never takes it away. A read that fails keeps the last set, so a locked store never wipes anything.
 import { SESSIONS_METHODS, type SetupState } from "@waifucave/moss-protocol";
 import { ContractError } from "./contracts/common";
-import { effectiveDefault, hasProviderOf, settledDefault, setupMissing } from "./default-model";
+import { effectiveDefault, hasProviderOf, settledDefault, setupMissing, type Recommendation } from "./default-model";
 import { handler, type MethodHandler } from "./rpc/handler";
 
 export interface SetupDeps {
   /** The providers the person added now (a stored key or a plugin sign-in), by catalog provider id. */
   readPresent(): Promise<ReadonlySet<string>>;
-  /** The model the settings name as the default, if any. */
+  /** The model the settings name as the default, if any, and its effort. */
   storedModel(): string | undefined;
-  /** A provider's recommended model (the catalog's, `recommendedModel`). */
-  recommend(provider: string): string | undefined;
-  /** Writes the default model into the settings. */
-  writeModel(model: string): void;
+  storedEffort(): string | undefined;
+  /** A provider's recommended default (its family's, `recommended`). */
+  recommend(provider: string): Recommendation | undefined;
+  /** The effort a picked model starts with (its family's default effort when it is the family's default model). */
+  effortFor(model: string): string | undefined;
+  /** Writes the default model and its effort (absent: none) into the settings. */
+  writeModel(model: string, effort: string | undefined): void;
   dismissed(): boolean;
   writeDismissed(dismissed: boolean): void;
   /** Whether a model is one a picker offers (`models.list`'s rows), for `models.setDefault`. */
@@ -51,9 +54,9 @@ export class SetupService {
   }
 
   state(): SetupState {
-    const answer = effectiveDefault(this.deps.storedModel(), this.#present, (p) => this.deps.recommend(p));
+    const answer = effectiveDefault(this.deps.storedModel(), this.#present, (p) => this.deps.recommend(p), this.deps.storedEffort());
     const providers = [...this.#present].sort();
-    const recommended: Record<string, string> = {};
+    const recommended: Record<string, Recommendation> = {};
     for (const p of providers) {
       const r = this.deps.recommend(p);
       if (r !== undefined) recommended[p] = r;
@@ -63,7 +66,7 @@ export class SetupService {
       ready: missing.length === 0,
       missing,
       providers,
-      ...(answer.model !== undefined && answer.source !== undefined ? { default: { model: answer.model, source: answer.source } } : {}),
+      ...(answer.model !== undefined && answer.source !== undefined ? { default: { model: answer.model, source: answer.source, ...(answer.effort !== undefined ? { effort: answer.effort } : {}) } } : {}),
       ...(Object.keys(recommended).length > 0 ? { recommended } : {}),
       dismissed: this.deps.dismissed(),
     };
@@ -96,8 +99,8 @@ export class SetupService {
     const write = settledDefault(this.deps.storedModel(), this.#present, (p) => this.deps.recommend(p));
     if (write !== undefined) {
       try {
-        this.deps.writeModel(write);
-        this.deps.log(`[setup] the default model is now ${write}, the one provider's recommended model`);
+        this.deps.writeModel(write.model, write.effort);
+        this.deps.log(`[setup] the default model is now ${write.model}${write.effort !== undefined ? ` at ${write.effort}` : ""}, the one provider's recommended model`);
       } catch (err) {
         this.deps.log(`[setup] the default model wasn't written (${err instanceof Error ? err.name : typeof err})`);
       }
@@ -118,7 +121,7 @@ export class SetupService {
     await this.refresh();
     if (!this.deps.offered(model) && !model.startsWith("winter-test/")) throw new ContractError("invalid", `${model} isn't a model MOSS offers: pick another`);
     if (!hasProviderOf(model, this.#present)) throw new ContractError("invalid", `add ${model.slice(0, model.indexOf("/"))} first (a key or a sign-in), then pick its model`);
-    this.deps.writeModel(model);
+    this.deps.writeModel(model, this.deps.effortFor(model));
     this.#announce();
     return this.state();
   }

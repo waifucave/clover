@@ -2036,6 +2036,11 @@
                       "chosen",
                       "computed"
                     ]
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
                   }
                 },
                 "required": [
@@ -2052,9 +2057,23 @@
                   "maxLength": 128
                 },
                 "additionalProperties": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 200
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "effort": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  },
+                  "required": [
+                    "model"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "dismissed": {
@@ -2130,6 +2149,11 @@
                   "chosen",
                   "computed"
                 ]
+              },
+              "effort": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
               }
             },
             "required": [
@@ -2146,9 +2170,23 @@
               "maxLength": 128
             },
             "additionalProperties": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "effort": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "model"
+              ],
+              "additionalProperties": false
             }
           },
           "dismissed": {
@@ -2226,6 +2264,11 @@
                   "chosen",
                   "computed"
                 ]
+              },
+              "effort": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
               }
             },
             "required": [
@@ -2242,9 +2285,23 @@
               "maxLength": 128
             },
             "additionalProperties": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "effort": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "model"
+              ],
+              "additionalProperties": false
             }
           },
           "dismissed": {
@@ -3237,6 +3294,11 @@
                       "chosen",
                       "computed"
                     ]
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
                   }
                 },
                 "required": [
@@ -3252,9 +3314,22 @@
                   "maxLength": 128
                 },
                 "additionalProperties": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 200
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "effort": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  },
+                  "required": [
+                    "model"
+                  ]
                 }
               },
               "dismissed": {

@@ -122,7 +122,7 @@ export interface AgentsOptions {
   pause?: AgentPauseGate;
   /** MOSS's own coding agent (`moss-code`) on the embedded runtime: lane A's embedded-session seam
    *  (`embeddedSessionOptions`, `fillProvider`) and the user's default model. Without it the backend isn't offered. */
-  mossCode?: Pick<MossCodeDeps, "baseOptions" | "fillProvider" | "defaultModel" | "query">;
+  mossCode?: Pick<MossCodeDeps, "baseOptions" | "fillProvider" | "defaultModel" | "defaultEffort" | "query">;
   /** Agents on other computers (K-M3, remote.ts), over lane J's link: the transport, the computers' devices, who may
    *  call, and this computer's lease fence (#237). Without it, an agent runs only here. */
   peers?: Pick<AgentPeersOptions, "transport" | "computer" | "mayCall" | "fence">;

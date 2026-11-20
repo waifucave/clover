@@ -279,9 +279,10 @@ export const SetupState = z.object({
   providers: z.array(utf16(128, 1)).max(1_000),
   /** The default model now, if any: `chosen` when the settings name it (picked, or written by the engine for the one
    *  provider added), `computed` when it is the one provider's recommended model and not written yet. */
-  default: z.object({ model: utf16(200, 1), source: z.enum(["chosen", "computed"]) }).optional(),
-  /** Each added provider's recommended model, from the catalog, where it has one (the guide's pre-filled pick). */
-  recommended: z.record(utf16(128, 1), utf16(200, 1)).optional(),
+  default: z.object({ model: utf16(200, 1), source: z.enum(["chosen", "computed"]), effort: utf16(32, 1).optional() }).optional(),
+  /** Each added provider's recommended default, its family's (a model and its effort), where it has one (the guide's
+   *  pre-filled pick). */
+  recommended: z.record(utf16(128, 1), z.object({ model: utf16(200, 1), effort: utf16(32, 1).optional() })).optional(),
   /** The person skipped the guide: it doesn't open by itself again (it stays reachable from Settings). */
   dismissed: z.boolean(),
 });
@@ -613,7 +614,7 @@ const READERS = ["app", "cli", "remote", "web", "layer"] as const;
 export const SESSIONS_EVENTS = {
   setupChanged: defineEvent({
     type: "setup_changed", owner: "A", roles: ["app", "cli"], schema: SetupChangedEvent,
-    fixture: { type: "setup_changed", ts: 1781270000000, setup: { ready: true, missing: [], providers: ["anthropic"], default: { model: "anthropic/claude-fable-5-2", source: "chosen" }, dismissed: false } },
+    fixture: { type: "setup_changed", ts: 1781270000000, setup: { ready: true, missing: [], providers: ["anthropic"], default: { model: "anthropic/claude-opus-5-5", source: "chosen", effort: "medium" }, dismissed: false } },
     doc: "What the home's setup needs changed: a provider was added or removed, or the default model or the guide's dismissal changed.",
   }),
   botChanged: defineEvent({

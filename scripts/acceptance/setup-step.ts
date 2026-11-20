@@ -22,8 +22,11 @@ import type { FakeProvider } from "./fake-anthropic";
 import type { Status } from "./steps";
 
 export const SETUP_OPEN_STEP = "the setup guide on a fresh home (no provider, no default model): MOSS Code and MOSS each open it by themselves (the engine's setup.state says a provider and a model are missing); in MOSS, Skip for now leaves the app usable (a message to Alpha is answered with the plain sentence that leads to adding a provider, no provider called) and the engine keeps the skip for both apps; MOSS's Settings opens it again";
-export const SETUP_ONE_STEP = "the setup guide in MOSS Code: a key typed in the guide's own field adds the provider; its recommended model (the catalog's) is the default with nothing to pick, shown chosen in the guide's model step; Start lands on a new code session, and a code session with no model of its own gets its first reply on that default";
+export const SETUP_ONE_STEP = "the setup guide in MOSS Code: a key typed in the guide's own field adds the provider; its family's default (Claude Opus 5.5 at medium) is the default with nothing to pick, shown chosen with its effort in the guide's model step; Start lands on a new code session, and a code session with no model of its own gets its first reply on that default";
 export const SETUP_PICK_STEP = "two providers: a second one added leaves the default as it was; the picker in MOSS's guide (Change) sets the other provider's model as the default (the engine's setup.state), Talk to Alpha opens her conversation ready to type, and her next turn runs on the picked model";
+
+/** The owner's default for the Claude family, as Anthropic serves it. */
+export const CLAUDE_DEFAULT = "anthropic/claude-opus-5-5";
 
 export const SETUP_STEPS: readonly string[] = [SETUP_OPEN_STEP, SETUP_ONE_STEP, SETUP_PICK_STEP];
 
@@ -56,7 +59,7 @@ export interface SetupUnitCtx {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-interface SetupState { ready: boolean; missing: string[]; providers: string[]; default?: { model: string; source: string }; recommended?: Record<string, string>; dismissed: boolean }
+interface SetupState { ready: boolean; missing: string[]; providers: string[]; default?: { model: string; source: string; effort?: string }; recommended?: Record<string, { model: string; effort?: string }>; dismissed: boolean }
 
 /** One document of an app's window through its DevTools port: trusted clicks and typing, as a person's. */
 class Doc {
@@ -274,13 +277,17 @@ async function oneRow(s: Ctx): Promise<string> {
   await s.code.click(`[data-moss-save="${plugin}#0"]`);
   await s.code.waitFor("Anthropic signed in, in the guide", `!!document.querySelector('[data-moss-auth="${plugin}#0"] .moss-page__ok')`, 30_000);
   const st = await s.x.until("the engine's default from the one provider", 30_000, async () => { const x = await setupState(s.c); return x.ready ? x : undefined; }, 300);
-  const rec = st.recommended?.anthropic;
+  const rec = st.recommended?.anthropic?.model;
   if (rec === undefined) s.x.fail(`setup.state names no recommended model for anthropic: ${JSON.stringify(st)}`);
-  if (st.default?.model !== rec) s.x.fail(`the default is ${JSON.stringify(st.default)}, not Anthropic's recommended ${rec}`);
+  // The owner's Claude default: Opus 5.5 at medium.
+  if (rec !== CLAUDE_DEFAULT) s.x.fail(`Anthropic's recommended model is ${rec}, not ${CLAUDE_DEFAULT}`);
+  if (st.default?.model !== rec || st.default.effort !== "medium") s.x.fail(`the default is ${JSON.stringify(st.default)}, not Anthropic's recommended ${rec} at medium`);
   if (JSON.stringify(st.providers) !== JSON.stringify(["anthropic"])) s.x.fail(`setup.state's providers: ${JSON.stringify(st.providers)}`);
   await s.code.click("[data-moss-welcome=next]");
   const shown = await s.code.waitFor<string>("the guide's model step, the default shown chosen", `document.querySelector('${CODE_STEP("model")} [data-moss-default]')?.getAttribute('data-moss-default') ?? null`);
   if (shown !== rec) s.x.fail(`the guide shows ${shown} chosen, not ${rec}`);
+  const words = await s.code.eval<string>(`document.querySelector('${CODE_STEP("model")} [data-moss-default]')?.textContent ?? ''`);
+  if (!/Claude Opus 5\.5 · medium/.test(words)) s.x.fail(`the guide's model step says "${words}", not the model and its effort ("Claude Opus 5.5 · medium")`);
   const pictures = [...await codePicture(s, "2-model")];
   await s.code.click("[data-moss-welcome=next]");
   await s.code.waitFor("the guide's done step", `!!document.querySelector('${CODE_STEP("done")}')`);
@@ -307,7 +314,7 @@ async function oneRow(s: Ctx): Promise<string> {
   const upstream = rec!.slice(rec!.indexOf("/") + 1);
   if (!events.some((e) => e.type === "assistant_message" && (e.text ?? "").includes("ACCEPTANCE-REPLY-OK"))) s.x.fail(`the code session's first turn got no reply (${events.map((e) => e.type).join(", ")}${events.find((e) => e.type === "agent_error")?.message ? `: ${events.find((e) => e.type === "agent_error")!.message}` : ""})`);
   if (!mine.some((r) => r.model === upstream)) s.x.fail(`the turn didn't run on the default ${rec}: the fake saw ${[...new Set(mine.map((r) => r.model))].join(", ") || "no request"}`);
-  return `the key typed in MOSS Code's guide signed Anthropic in; setup.state: ready, default ${st.default!.model} (${st.default!.source}), the catalog's recommended model for anthropic; the guide's model step showed it chosen; Start landed on the shell's new code session; a code session with no model of its own got its reply on ${upstream}${pictures.length > 0 ? `; pictures: ${pictures.length}` : ""}`;
+  return `the key typed in MOSS Code's guide signed Anthropic in; setup.state: ready, default ${st.default!.model} at ${st.default!.effort} (${st.default!.source}), the Claude family's default; the guide's model step showed it chosen; Start landed on the shell's new code session; a code session with no model of its own got its reply on ${upstream}${pictures.length > 0 ? `; pictures: ${pictures.length}` : ""}`;
 }
 
 async function pickRow(s: Ctx): Promise<string> {

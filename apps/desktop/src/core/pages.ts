@@ -71,8 +71,8 @@ interface SetupView {
   ready: boolean;
   missing: ("provider" | "model")[];
   providers: string[];
-  default?: { model: string; source: "chosen" | "computed" };
-  recommended?: Record<string, string>;
+  default?: { model: string; source: "chosen" | "computed"; effort?: string };
+  recommended?: Record<string, { model: string; effort?: string }>;
   dismissed: boolean;
 }
 
@@ -86,6 +86,11 @@ interface PickView {
 /** The setup guide (§3.3, the owner's 2026-11-20 ruling): add a provider, then the default model (already chosen when
  *  one provider was added, a picker when several), then done, which lands on a new code session. Skippable at every
  *  step; the engine keeps what is set up and whether it was skipped, so finishing or skipping here holds for MOSS too. */
+/** A model as the guide names it: "Claude Opus 5.5 · medium" when it has an effort. */
+function withEffort(name: string, effort: string | undefined): string {
+  return effort === undefined || effort === "" ? name : `${name} · ${effort}`;
+}
+
 export async function showWelcome(host: HTMLElement, t: Translate, call: Call, done: () => void): Promise<void> {
   const total = 3;
   const skip = async () => {
@@ -230,15 +235,15 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
     }
     const current = setup.default?.model;
     // Pre-filled: the default there is, else the first added provider's recommended model; the person still says so.
-    const first = current ?? setup.providers.map((p) => setup.recommended?.[p]).find((x) => x !== undefined && named(x) !== undefined) ?? models[0]?.id;
+    const first = current ?? setup.providers.map((p) => setup.recommended?.[p]?.model).find((x) => x !== undefined && named(x) !== undefined) ?? models[0]?.id;
     if (first !== undefined) select.value = first;
     const pickerRow = el("label", { class: "moss-page__field" }, t("welcome.model-label"), select);
     const next = button(t("welcome.next"), async () => {
       const chosen = select.value;
       if (chosen === "") return;
       try {
-        if (chosen !== current) await call("welcome.setDefault", { model: chosen });
-        await doneStep(chosen, named(chosen));
+        const effort = chosen !== current ? ((await call("welcome.setDefault", { model: chosen })) as SetupView).default?.effort : setup.default?.effort;
+        await doneStep(chosen, named(chosen), effort);
       } catch (err) {
         page.status.textContent = t("welcome.failed", { error: message(err) });
       }
@@ -248,7 +253,7 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
       next.disabled = true;
     } else if (current !== undefined) {
       const m = named(current);
-      const line = el("p", { class: "moss-page__ok", "data-moss-default": current }, t("welcome.model-chosen", { model: m?.name ?? current, provider: m?.providerName ?? current.slice(0, current.indexOf("/")) }));
+      const line = el("p", { class: "moss-page__ok", "data-moss-default": current }, t("welcome.model-chosen", { model: withEffort(m?.name ?? current, setup.default?.effort), provider: m?.providerName ?? current.slice(0, current.indexOf("/")) }));
       pickerRow.hidden = true;
       const change = button(t("welcome.change"), () => {
         pickerRow.hidden = false;
@@ -263,10 +268,10 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
   };
 
   // Step 3: done: the window lands on a new code session.
-  const doneStep = async (model: string, m: PickView | undefined): Promise<void> => {
+  const doneStep = async (model: string, m: PickView | undefined, effort: string | undefined): Promise<void> => {
     const page = frame(host, t("welcome.done-title"), undefined, t);
     host.querySelector("section")?.setAttribute("data-moss-welcome-step", "done");
-    page.body.append(stepNote(3), el("p", {}, t("welcome.done-intro", { model: m?.name ?? model })));
+    page.body.append(stepNote(3), el("p", {}, t("welcome.done-intro", { model: withEffort(m?.name ?? model, effort) })));
     page.actions.append(
       button(t("welcome.back"), () => modelStep(), { "data-moss-welcome": "back" }),
       button(t("welcome.start-code"), async () => {

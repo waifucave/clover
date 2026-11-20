@@ -224,7 +224,7 @@ describe("the setup guide (2026-11-20)", () => {
   });
 
   test("with several providers the person picks; the pick goes to the engine and done lands in the default bot's conversation", async () => {
-    const two = { ready: false, missing: ["model"] as ("provider" | "model")[], providers: ["anthropic", "openai"], recommended: { anthropic: "anthropic/b", openai: "openai/a" }, dismissed: false };
+    const two = { ready: false, missing: ["model"] as ("provider" | "model")[], providers: ["anthropic", "openai"], recommended: { anthropic: { model: "anthropic/b", effort: "medium" }, openai: { model: "openai/a" } }, dismissed: false };
     const picked: string[] = [];
     const r = await withGuide(view({ setup: two }), {
       setupProviders: async () => [{ pluginId: "moss/model-anthropic", name: "Anthropic", auth: [{ index: 0, method: "api-key", state: "signed-in" }] }],
