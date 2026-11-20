@@ -147,6 +147,10 @@ export async function surfaceCopyStep(ctx: ExampleCtx, session: string): Promise
     // 4. One place at a time, as the bundled island does: the window in front, the copy lets go; the window back, it draws again.
     const times = (re: RegExp) => ctx.appLog().split("\n").filter((l) => re.test(l) && l.includes(card.id)).length;
     const seen = (re: RegExp) => times(re) > 0;
+    // The window's own program must have heard of the card and placed it on the island before the window comes to the front: on a
+    // runner it heard 1.2 s late (run 44819946153), so it first met the card with the window already in front and logged "shown in",
+    // never "moved to", though the card had been on the island. The move this row proves needs the card to have been there.
+    await until("the window's program to place the OK card on the island", 30_000, async () => (seen(/router: \S+ placed island/) ? true : undefined), async () => `the window's log of the card: ${ctx.appLog().split("\n").filter((l) => l.includes(card.id)).slice(-3).join(" | ") || "nothing"}`);
     setFront(true);
     await until("the OK card moved to the window's own card", 20_000, async () => (seen(/moved to the window's own card \(window foreground\)/) ? true : undefined));
     await until("the copy island to let go of the frames", 20_000, async () => ((await sealedFramesOf(ctx, MIRROR_ID.island, card.id)) === 0 ? true : undefined));
