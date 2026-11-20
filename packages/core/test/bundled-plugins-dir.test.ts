@@ -63,6 +63,26 @@ describe("the candidate folder, by layout", () => {
     expect(bundledPluginsDir("/nowhere/resources/daemon/moss-core", { manifest: SOME })).toBeUndefined();
   });
 
+  posixTest("a home reached through a link (macOS's /var → /private/var): the engine in <home>/bin/daemon still finds <home>/bin/plugins, and <home>/plugins is still never the bundled one", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "ei-bundled-home-")));
+    mkdirSync(join(dir, "real", "bin", "daemon"), { recursive: true });
+    writeFileSync(join(dir, "real", "bin", "daemon", "moss-core"), "");
+    symlinkSync(join(dir, "real"), join(dir, "named"));
+    // Started through the link (the home as named), its real path is under the real folder.
+    expect(bundledPluginsDir(join(dir, "named", "bin", "daemon", "moss-core"), { mossHome: join(dir, "named"), manifest: SOME })).toBe(join(dir, "real", "bin", "plugins"));
+    // Started by the real path with the home named through the link.
+    expect(bundledPluginsDir(join(dir, "real", "bin", "daemon", "moss-core"), { mossHome: join(dir, "named"), manifest: SOME })).toBe(join(dir, "real", "bin", "plugins"));
+    // Another home's engine under this home's name proves nothing.
+    mkdirSync(join(dir, "other", "bin", "daemon"), { recursive: true });
+    writeFileSync(join(dir, "other", "bin", "daemon", "moss-core"), "");
+    expect(bundledPluginsDir(join(dir, "other", "bin", "daemon", "moss-core"), { mossHome: join(dir, "named"), manifest: SOME })).toBeUndefined();
+    // The user's own plugins folder is never the bundled one, whichever way the home is named.
+    mkdirSync(join(dir, "real", "daemon"), { recursive: true });
+    writeFileSync(join(dir, "real", "daemon", "moss-core"), "");
+    expect(bundledPluginsDir(join(dir, "named", "daemon", "moss-core"), { mossHome: join(dir, "named"), manifest: SOME })).toBeUndefined();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test("this test process (bun, not a compiled core) carries no manifest, loaded or not", async () => {
     expect(bundledManifest().files).toEqual({});
     expect((await loadBundledManifest()).manifest.files).toEqual({});

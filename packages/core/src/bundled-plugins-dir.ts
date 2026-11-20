@@ -244,9 +244,13 @@ export function bundledPluginsDir(execPath: string, o: BundledPluginsDirOptions 
   if (basename(daemonDir) !== "daemon") return undefined;
   const parent = dirname(daemonDir);
   const dir = join(parent, "plugins");
-  const home = o.mossHome === undefined ? undefined : resolve(o.mossHome);
+  // The home in the form the binary's real path is in too: a home reached through a link (macOS's /var → /private/var, a home on
+  // another volume) has its engine's real path under the home's real path, which the home as named doesn't prefix.
+  const named = o.mossHome === undefined ? undefined : resolve(o.mossHome);
+  let home = named;
+  if (named !== undefined) { try { home = resolve((o.realpath ?? realpathSync)(named)); } catch { /* not there: as named */ } }
   // Never the user's own plugins folder.
-  if (home !== undefined && dir === join(home, "plugins")) return undefined;
-  if (home !== undefined && parent === join(home, "bin")) return dir;
+  if (home !== undefined && (dir === join(home, "plugins") || dir === join(named!, "plugins"))) return undefined;
+  if (home !== undefined && (parent === join(home, "bin") || parent === join(named!, "bin"))) return dir;
   return basename(parent).toLowerCase() === "resources" ? dir : undefined;
 }

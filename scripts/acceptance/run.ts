@@ -5844,10 +5844,15 @@ async function releaseSteps(app: { exe: string; args: string[] }): Promise<void>
       const daemon = await startDaemonProc({}, false, join(placed, "moss-core"));
       const c = (await appDriver()).client;
       try {
-        await signInKey(c);
-        const listed = await until("the character plugin's MCP server to list (the engine's `plugin MCP moss/character/figure` line)", 120_000, () => /\[plugins\] plugin MCP moss\/character\/figure: listed \d+ tool\(s\)[^\n]*/.exec(readLog(daemon.log))?.[0], 300);
+        // The plugins come up on the plugin Bun beside the engine: the listing and the model plugins are waited for before the key is entered.
+        const listed = await until("the character plugin's MCP server to list (the engine's `plugin MCP moss/character/figure` line)", 120_000, () => /\[plugins\] plugin MCP moss\/character\/figure: listed \d+ tool\(s\)[^\n]*/.exec(readLog(daemon.log))?.[0], 300).catch((err: unknown) => {
+          // What the engine's own log says of its plugins, for a failure to name its cause.
+          const said = readLog(join(home, "logs", "daemon.log")).split("\n").filter((l) => /plugin|worker|link|crash|sandbox|denied|exit/i.test(l)).slice(-14).map((l) => l.slice(0, 220)).join(" | ");
+          return fail(`${why(err)} (the engine's log: ${said.slice(0, 1500) || "nothing about plugins"})`);
+        });
         await modelPluginsUp();
         await sleep(2_000);
+        await signInKey(c);
         const log = readLog(daemon.log).slice(logFrom);
         for (const re of MISSING_BESIDE) { const m = re.exec(log); if (m !== null) fail(`the installed engine says: ${m[0].slice(0, 200)}`); }
         const session = await keyedCodeSession(c, "release-install");
