@@ -59,7 +59,7 @@ export function Face(props: { name: string; face?: BotFace; mood: Mood; size: nu
     if (faceMotion.calm !== undefined) handle.current?.set({ calm: faceMotion.calm });
   });
   // The name is said beside the face, so the canvas is decoration for a screen reader.
-  return <canvas ref={canvas} data-face={props.name} {...(f?.shape !== undefined ? { "data-shape": f.shape } : {})} {...(f?.color !== undefined ? { "data-color": f.color } : {})} {...(f?.eyes !== undefined ? { "data-eyes": f.eyes } : {})} aria-hidden="true" className={`face face--${props.surface ?? "list"}`} style={{ width: props.size, height: props.size }} />;
+  return <canvas ref={canvas} data-face={props.name} {...(f?.shape !== undefined ? { "data-pin-shape": f.shape } : {})} {...(f?.color !== undefined ? { "data-pin-color": f.color } : {})} {...(f?.eyes !== undefined ? { "data-pin-eyes": f.eyes } : {})} aria-hidden="true" className={`face face--${props.surface ?? "list"}`} style={{ width: props.size, height: props.size }} />;
 }
 
 /** The mood in words, beside every face: one short phrase. While a turn runs it is what the bot is doing, in the status

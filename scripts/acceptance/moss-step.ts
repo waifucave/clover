@@ -466,7 +466,7 @@ async function listRow(s: UnitState): Promise<string> {
   const row = await s.w.waitFor<{ name: string; mood: string; face: boolean; traits: string; n: number }>("MOSS's row in MOSS's list", `(() => {
     const r = document.querySelector('[data-bot-row="alpha"]');
     if (!r) return null;
-    return { name: r.querySelector('.row__name')?.textContent ?? '', mood: r.querySelector('.mood, .row__line')?.textContent ?? '', face: !!r.querySelector('canvas, svg, [data-face]'), traits: ['data-shape', 'data-color', 'data-eyes'].map((k) => r.querySelector('[data-face]')?.getAttribute(k) ?? '').join(','), n: document.querySelectorAll('[data-bot-row]').length };
+    return { name: r.querySelector('.row__name')?.textContent ?? '', mood: r.querySelector('.mood, .row__line')?.textContent ?? '', face: !!r.querySelector('canvas, svg, [data-face]'), traits: ['data-pin-shape', 'data-pin-color', 'data-pin-eyes'].map((k) => r.querySelector('[data-face]')?.getAttribute(k) ?? '').join(','), n: document.querySelectorAll('[data-bot-row]').length };
   })()`, 60_000);
   if (row.name !== nameOf(a.name)) s.x.fail(`MOSS's row is named "${row.name}", not "${nameOf(a.name)}"`);
   if (!row.face) s.x.fail("MOSS's row draws no face");
