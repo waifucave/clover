@@ -1424,7 +1424,9 @@ async function appGotCard(card: Card, log = join(logs, "app.log")): Promise<void
   // Or a card already waiting when the app connected: no `card_requested` comes for it, and the app makes it from its
   // own surface's first ask (`card: <id> first ask in <where> before it arrived (made)`, apps/desktop/src/main/index.ts).
   const made = new RegExp(`card: ${card.id} first ask in \\S+ before it arrived \\(made\\)`);
-  for (let i = 0; i < 50; i++) {
+  // 5 s, times the run's scale like every other wait (this one was fixed: a runner's app heard of cards 0.7 to 1.2 s late, and one
+  // that stalled for 15 s heard of them only after its restart, run 44824696229).
+  for (let i = 0; i < Math.round(scaled(5_000) / 100); i++) {
     if (existsSync(log) && (readLog(log).includes(line) || made.test(readLog(log)))) return;
     await Bun.sleep(100);
   }
