@@ -68,8 +68,8 @@ mac:
       arch: arm64
   category: public.app-category.productivity
   artifactName: MOSS-${version}-mac.${ext}
-  # A PLACEHOLDER icon (lane PK): the owner hasn't chosen MOSS's (spec item 110). build/icon-placeholder.svg, drawn from the
-  # living-bots kit's own rules and colours (one flat shape, one colour, two ink eyes), is its source; replace both when he does.
+  # MOSS's icon (the owner's choice, 2026-11-20): the default bot as the whole tile, in the living-bots kit's coral with two ink
+  # eyes. build/icon.svg is its source.
   icon: build/icon.icns
   identity: null
   notarize: false
