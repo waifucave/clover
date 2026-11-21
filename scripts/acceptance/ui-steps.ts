@@ -15,6 +15,7 @@ import type { MossClient } from "./client";
 import { BOT_PARTS_BOT, BOT_PARTS_CLIENT, BOT_PARTS_SETTINGS, BACKGROUND_IDS, FIELDS_IDS, MIC_IDS, OFFICE_ID, OFFICE_REFUSAL, writeBackground, writeBotParts, writeMicrophone, writeOfficePanels } from "./manifest-fields-step";
 import { ACTIVE_IDS, ACTIVE_NAMES, ACTIVE_POINT, ACTIVE_TITLE, activeWrong, writeActiveOne, type ActiveSeen } from "./active-one-step";
 import { FIGURE_PACK_STEP, FIGURE_REACTS_STEP, FIGURE_RENDERER_STEP, GENERAL_POINTS_STEP, figurePackStep, figureReactsStep, figureRendererStep, generalPointsStep, type FigureCtx } from "./figure-steps";
+import { linesSince } from "./log-since";
 import { scaled } from "./time-scale";
 import { MEASURED_ON_MAC_ONLY, MEASURED_ROWS, measuredOnMacOnly } from "./measured";
 
@@ -2200,9 +2201,9 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       await until("the code session's tab", 20_000, () => inTree<boolean>(cdp, `!!document.querySelector('${SESSION_TAB}')`), () => dumpFrames(cdp));
     }
     await sleep(6_000); // what opening her tab starts (her room's few ticks, the stage loading) is not idle
-    const from = ctx.appLog().length;
+    const logBefore = ctx.appLog();
     await sleep(IDLE_MS);
-    const raw = ctx.appLog().slice(from).split("\n").filter((l) => l.startsWith("ipc: ") || l.includes(" ipc: "));
+    const raw = linesSince(logBefore, ctx.appLog()).filter((l) => l.startsWith("ipc: ") || l.includes(" ipc: "));
     const lines = raw.flatMap((l) => { const p = parseIpcLine(l); return p === undefined ? [] : [p]; });
     if (lines.length < 2) fail(`the app said ${lines.length} ipc line(s) in ${IDLE_MS / 1000} s (it says one every 5 s when MOSS_IPC_STATS=1) [apps/desktop/src/main/ui/ipc-stats.ts]`);
     const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;

@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { callTurn, sleep, toSessionTab, until, type ExampleCtx } from "./example-steps";
 import { F5_IDS, f5Wrong, SURF_TOOL, writeF5, type F5Seen } from "./f5-step";
+import { linesSince } from "./log-since";
 import { islandCardHolds, islandDrawsOkCard, islandShooter, islandStripLine, islandStripLineShown, islandUsageText, settingsDrawnProblem, settingsUsageText, usageDrawnProblem } from "./usage-drawn";
 import { scaled } from "./time-scale";
 
@@ -320,9 +321,10 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     // The card on the island's top, the pointer on it: the window it sits in keeps the size it was given (a hovered card is drawn
     // a little grown, and was once read as a bigger room: the window followed, the pointer left, and the card flipped between
     // two heights, its buttons not showing at each turn), and its buttons show.
-    let logFrom = 0;
-    const held = await islandCardHolds(islandCdp, 5_000, () => { logFrom = ctx.appLog().length; });
-    const after = ctx.appLog().slice(logFrom).split("\n");
+    let logBefore = "";
+    const held = await islandCardHolds(islandCdp, 5_000, () => { logBefore = ctx.appLog(); });
+    // What the log gained since the pointer came (ctx.appLog() is two files joined: a length is no mark in it, log-since.ts).
+    const after = linesSince(logBefore, ctx.appLog());
     const resized = after.filter((l) => /surface: island bounds/.test(l));
     const hidden = after.filter((l) => /sealed: .* button:(approve|deny) not visible/.test(l));
     if (resized.length > 0) fail(`the island card's window was resized ${resized.length} time(s) while the pointer rested on the card (${resized.slice(0, 3).map((l) => l.replace(/^\S+\s+/, "")).join("; ")}); readings: ${held.states.map((x) => `[${x.at}ms ${x.sig}]`).join(" ")}`);

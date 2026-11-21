@@ -37,6 +37,7 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
   let cardId: string | undefined;
   let installed = false;
   let roleSet = false;
+  let frontSet = false;
   let settingsBefore: string | undefined;
   try {
     // The fixture is the Plugins page row's too: a row that stopped part-way must not leave it installed for this one.
@@ -73,7 +74,12 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
       await sleep(1_000);
       return undefined;
     }, async () => `plugin.review (peek) stayed unavailable after the reviewer role was set in settings.json: ${readFileSync(file, "utf8").replace(/\s+/g, " ").slice(0, 600)}`);
-    // The card's own page: the fallback window the app draws when no part shows the card.
+    // The card's own page: the app's own card, which the app draws when no part shows the card (the 2 s safety net) and at once
+    // for a card the window in front has no conversation to draw. The row asks for the second: the first came only when the
+    // island's frames happened to lose their buttons (the card re-drawn as the reviewer role arrived, ten seconds into try 16's
+    // run); with the role taken at once, as in try 17, the island showed both buttons and the page never came in 45 s.
+    ctx.setMainFront?.(true);
+    frontSet = ctx.setMainFront !== undefined;
     const url = `moss-sealed://card/${encodeURIComponent(card.id)}/own`;
     const page = await until("the card's own page", 45_000, async () => (await cdp.documents()).find((d) => d.url.startsWith(url)));
     const s = page.session;
@@ -122,6 +128,7 @@ export async function reviewStep(ctx: ExampleCtx, _session: string): Promise<str
     if (!still) fail("the Review answered the card");
     return `pressed on the card's own page, the report "${done.report.slice(0, 60).replace(/\s+/g, " ")}…" showed under "${HEAD_TEXT}", the note named ${view.model}, and the card stayed the same and waiting`;
   } finally {
+    if (frontSet) ctx.setMainFront?.(false);
     if (roleSet) { const file = join(ctx.home, "settings.json"); try { if (settingsBefore === undefined) rmSync(file, { force: true }); else writeFileSync(file, settingsBefore, { mode: 0o600 }); } catch { /* best effort */ } }
     if (cardId !== undefined) await ctx.denyCard(cardId).catch(() => undefined);
     if (installed) {
