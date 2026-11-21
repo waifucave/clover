@@ -353,7 +353,8 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     for (const role of ["titles.model", "reviewer.model", "pins.dream", "pins.cleaner"]) {
       const info = res.result.roles[role];
       expect(info.problem).toBeNull();
-      expect(info.model).toBe("codex-oauth/gpt-6.1-terra");
+      // Light-model ruling (2026-11-21): the three light jobs sit on the gpt family's light model (was terra for all four).
+      expect(info.model).toBe(role === "reviewer.model" ? "codex-oauth/gpt-6.1-terra" : "codex-oauth/gpt-6-luna");
       expect(info.permitted.length).toBeGreaterThan(1);
       const ids = info.permitted.map((p: any) => p.providerId);
       expect(ids).toContain("codex-oauth");
@@ -386,7 +387,8 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     const res = await c.request(METHODS.settingsModelRoles, {});
     for (const role of ["titles.model", "reviewer.model", "pins.dream", "pins.cleaner"]) {
       const info = res.result.roles[role];
-      expect(info.model).toBe("anthropic/claude-sonnet-5");
+      // Light-model ruling (2026-11-21): the three light jobs sit on Claude's light model; the reviewer on the user's own.
+      expect(info.model).toBe(role === "reviewer.model" ? "anthropic/claude-sonnet-5" : "anthropic/claude-haiku-5-5");
       expect(info.problem).toBeNull();
     }
     c.close();
@@ -487,7 +489,11 @@ describe("settings.modelRoles / settings.setModelRole", () => {
     // longer name a model on it, and codex-oauth/openai (which do have slots) have no key.
     const moved = await c.request(METHODS.settingsSetModelRole, { role: "provider.model", model: "anthropic/claude-opus-5" });
     expect(moved.error).toBeUndefined();
-    const info = moved.result.roles["titles.model"];
+    // Light-model ruling (2026-11-21): a light job takes the light model of a provider the person added (groq's gpt-oss
+    // family); the reviewer, a safety check, still has no model MOSS will choose.
+    expect(moved.result.roles["titles.model"].model).toBe("groq/openai/gpt-oss-20b");
+    expect(moved.result.roles["titles.model"].problem).toBeNull();
+    const info = moved.result.roles["reviewer.model"];
     expect(info.model).toBeNull();
     // `no-default-model`, NOT `no-internal-credential`: a credential exists, so "add a key" would be
     // both wrong and unactionable. The fix is a pin, and the detail names the provider.

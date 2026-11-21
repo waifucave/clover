@@ -35,3 +35,38 @@ export const FAMILY_DEFAULTS: Readonly<Record<string, FamilyDefault>> = {
   gemma: { model: "gemma-4-31b-it", effort: "medium" },
   "gpt-oss": { model: "gpt-oss-120b", effort: "medium" },
 };
+
+// Each model family's LIGHT model, beside its default and in the same shape (the owner, 2026-11-21: "a light model per
+// family"): the cheap, fast tier MOSS's own background jobs (conversation titles, memory tidying) run on, so a title is
+// not written by the person's strongest model. The same rule for every family, so a provider plugin's family gets one by
+// declaring it here, and no code names a plugin. The lane's picks, his to change:
+//   * a family whose catalog names a smaller tier takes it (Claude: Haiku 5.5, which the catalog carries beside its
+//     slot list; GPT: the `luna` slot; Gemini `lite`; DeepSeek `flash`; GLM and MiMo `flash`; Mistral `small`; Qwen `small`;
+//     Nova `micro`; gpt-oss `20b`);
+//   * a family with no cheaper tier (one model, or tiers that differ in speed or purpose, not size) has its default as
+//     its light model; the effort is what makes the job light there.
+// The effort is the one the job asks for when the person set none of its own; a row that doesn't list it drops it.
+// A family not listed (`o-series`, `other`) has no light model.
+export const FAMILY_LIGHT_MODELS: Readonly<Record<string, FamilyDefault>> = {
+  claude: { model: "claude-haiku-5.5", effort: "low" },
+  gpt: { model: "gpt-6-luna", effort: "low" },
+  gemini: { model: "gemini-3.1-flash-lite", effort: "low" },
+  deepseek: { model: "deepseek-flash", effort: "low" },
+  glm: { model: "glm-4.7-flash", effort: "low" },
+  mimo: { model: "mimo-v2.6-flash", effort: "low" },
+  mistral: { model: "mistral-small-latest", effort: "low" },
+  qwen: { model: "qwen3.6-27b", effort: "low" },
+  nova: { model: "amazon.nova-micro", effort: "low" },
+  "gpt-oss": { model: "gpt-oss-20b", effort: "low" },
+  // One tier, or tiers that differ in speed or purpose rather than size: the default is the light model.
+  grok: { model: "grok-4.6", effort: "low" },
+  kimi: { model: "kimi-k3.1-pro", effort: "low" },
+  minimax: { model: "minimax-m3", effort: "low" },
+  command: { model: "command-a-03-2025", effort: "low" },
+  llama: { model: "llama-4-scout-17b-16e-instruct", effort: "low" },
+  nemotron: { model: "nemotron-3-super-120b-a12b", effort: "low" },
+  ernie: { model: "ernie-5.1", effort: "low" },
+  hunyuan: { model: "hy4-preview", effort: "low" },
+  muse: { model: "muse-spark-1.3", effort: "low" },
+  gemma: { model: "gemma-4-31b-it", effort: "low" },
+};
