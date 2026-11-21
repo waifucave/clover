@@ -154,8 +154,14 @@ export function startRunnerLog(logs: string): () => void {
   const file = join(logs, "runner.log");
   const line = (): void => {
     const busiest = run("ps", ["-A", "-r", "-o", "pcpu=,comm="], 3_000).split("\n").slice(0, 3).map((l) => l.trim().replace(/\/[^\s]*\//g, "")).join(" | ");
+    // Free memory and the pages read from disk since boot (a jump in it between two lines: the machine was paging programs in).
+    const vm = process.platform === "darwin" ? run("vm_stat", [], 2_000) : "";
+    const free = /Pages free:\s+(\d+)/.exec(vm)?.[1];
+    const pageSize = Number(/page size of (\d+) bytes/.exec(vm)?.[1] ?? 16384);
+    const pageins = /Pageins:\s+(\d+)/.exec(vm)?.[1];
+    const memory = free === undefined ? "" : ` free ${Math.round((Number(free) * pageSize) / 2 ** 20)} MiB pageins ${pageins ?? "?"}`;
     const pressure = process.platform === "darwin" ? ` pressure ${run("sysctl", ["-n", "kern.memorystatus_vm_pressure_level"], 2_000)} swap ${run("sysctl", ["-n", "vm.swapusage"], 2_000).split("  ")[1] ?? "?"}` : "";
-    try { appendFileSync(file, `${new Date().toISOString()} load ${loadavg().map((x) => x.toFixed(1)).join(" ")}${pressure} busiest ${busiest}\n`); } catch { /* the folder is gone */ }
+    try { appendFileSync(file, `${new Date().toISOString()} load ${loadavg().map((x) => x.toFixed(1)).join(" ")}${memory}${pressure} busiest ${busiest}\n`); } catch { /* the folder is gone */ }
   };
   line();
   const t = setInterval(line, 10_000);

@@ -633,12 +633,17 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const sw = await cdp.centerOf(first.session, "[role=switch]", "needs you");
     if (sw === undefined) fail("no \"needs you\" switch in Notifications");
     await cdp.click(first.session, sw!.x, sw!.y);
+    // The switch flips when the click's write has gone through the daemon and back to the page: 1.5 s on a Mac, longer on a loaded runner
+    // (it failed here on three runner runs and passed on the Mac). It is read until it differs, up to 15 s times the scale; the claim, that it flipped and
+    // the daemon keeps what it shows, is the same.
     await sleep(1_500);
-    const flipped = await readSwitch();
+    let flipped = await readSwitch();
+    for (const end = Date.now() + scaled(15_000); flipped.on === first.on && Date.now() < end;) { await sleep(300); flipped = await readSwitch(); }
     if (flipped.on === first.on) fail(`the switch didn't flip (still ${first.on})`);
     // The daemon has it.
-    const stored = await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "moss/settings" });
-    const kept = stored.settings.find((s) => s.key === "notifications.needsYou")?.value;
+    const readKept = async (): Promise<unknown> => (await rpc.request<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: "moss/settings" })).settings.find((s) => s.key === "notifications.needsYou")?.value;
+    let kept = await readKept();
+    for (const end = Date.now() + scaled(10_000); kept !== flipped.on && Date.now() < end;) { await sleep(300); kept = await readKept(); }
     if (kept !== flipped.on) fail(`the daemon keeps notifications.needsYou = ${String(kept)}, the switch shows ${flipped.on}`);
     ctx.onSetting?.("notifications.needsYou", kept);
     // Leave Settings (the first sidebar item) and open it again.

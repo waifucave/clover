@@ -110,6 +110,10 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
   //    reaches it (its dev servers, SESSION_POLICY), as the filter's rule says.
   const before = fixture.seen.length;
   const loop = await browse(ctx, session, { verb: "navigate", url: fixture.loopbackUrl });
+  // A code session's tab that reaches it does so when the page's request lands, which the tool's own answer ("still loading") does not wait
+  // for on a loaded runner (run 44849759265: 25 s after the app started, load 39 on 3 cores): the request is waited for, 10 s times the scale.
+  // A bot's tab must be refused: nothing is waited for there, the check is that it did not arrive.
+  if (tabOwner.kind !== "bot") for (const end = Date.now() + scaled(10_000); fixture.seen.length <= before && Date.now() < end;) await sleep(100);
   const reached = fixture.seen.length > before;
   if (tabOwner.kind === "bot") {
     if (reached) fail(`a bot's tab reached the loopback address (${fixture.loopbackUrl}): ${loop.text.slice(0, 200)}`);
