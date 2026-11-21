@@ -271,7 +271,9 @@ export async function showWelcome(host: HTMLElement, t: Translate, call: Call, d
   const doneStep = async (model: string, m: PickView | undefined, effort: string | undefined): Promise<void> => {
     const page = frame(host, t("welcome.done-title"), undefined, t);
     host.querySelector("section")?.setAttribute("data-moss-welcome-step", "done");
-    page.body.append(stepNote(3), el("p", {}, t("welcome.done-intro", { model: withEffort(m?.name ?? model, effort) })));
+    // The model named as step 2 names it: name · effort (provider).
+    const said = withEffort(m?.name ?? model, effort);
+    page.body.append(stepNote(3), el("p", { "data-moss-done-model": `${said} (${m?.providerName ?? model.slice(0, model.indexOf("/"))})` }, t("welcome.done-intro", { model: said, provider: m?.providerName ?? model.slice(0, model.indexOf("/")) })));
     page.actions.append(
       button(t("welcome.back"), () => modelStep(), { "data-moss-welcome": "back" }),
       button(t("welcome.start-code"), async () => {

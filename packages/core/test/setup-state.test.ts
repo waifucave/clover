@@ -174,6 +174,45 @@ describe("SetupService", () => {
     expect(s.stored).toBe(recommendedModel(catalog, "anthropic")!);
   });
 
+  test("overlapping refreshes: one read at a time, one more read for those asked meanwhile, and an old read never settles", async () => {
+    // A home with no default: one provider read (old) would write its recommendation; two (new) mean the person picks.
+    const reads: { resolve: (r: { present: Set<string>; complete: boolean }) => void }[] = [];
+    const writes: string[] = [];
+    let stored: string | undefined;
+    const service = new SetupService({
+      readPresent: () => new Promise((resolve) => { reads.push({ resolve }); }),
+      storedModel: () => stored, storedEffort: () => undefined,
+      recommend: (p) => recommended(catalog, p), effortFor: (m) => defaultEffortFor(catalog, m),
+      writeModel: (m) => { stored = m; writes.push(m); }, clearModel: () => { stored = undefined; },
+      dismissed: () => false, writeDismissed: () => {}, offered: () => true, emit: () => {}, log: () => {},
+    });
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+    const first = service.refresh();
+    await tick();
+    // A second provider is added while the first read runs; two more refreshes are asked for it.
+    const second = service.refresh();
+    const third = service.refresh();
+    await tick();
+    expect(reads.length).toBe(1);
+    // The old read (one provider) resolves: a newer refresh was asked, so it doesn't settle.
+    reads[0]!.resolve({ present: new Set(["anthropic"]), complete: true });
+    await tick();
+    expect(writes).toEqual([]);
+    // ONE more read, for both waiters; it sees both providers and writes nothing (the person picks).
+    expect(reads.length).toBe(2);
+    reads[1]!.resolve({ present: new Set(["anthropic", "openai"]), complete: true });
+    const states = await Promise.all([first, second, third]);
+    expect(reads.length).toBe(2);
+    expect(writes).toEqual([]);
+    expect(states.at(-1)).toMatchObject({ ready: false, missing: ["model"], providers: ["anthropic", "openai"] });
+    // A lone refresh with nothing newer asked does settle.
+    const lone = service.refresh();
+    await tick();
+    reads[2]!.resolve({ present: new Set(["anthropic"]), complete: true });
+    await lone;
+    expect(writes).toEqual([recommendedModel(catalog, "anthropic")!]);
+  });
+
   test("skipping is remembered and can be undone", async () => {
     const { service } = world();
     expect(service.dismiss(true).dismissed).toBe(true);

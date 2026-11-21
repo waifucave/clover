@@ -71,7 +71,12 @@ export class SetupService {
   #read: ProvidersRead;
   #last: string | undefined;
   #lastIncomplete: string | undefined;
+  /** The read running now, if any: one at a time. */
   #reading: Promise<void> | undefined;
+  /** Refreshes asked so far, and the newest of them a finished read covers (each read covers every refresh asked
+   *  before it started). */
+  #asked = 0;
+  #covered = 0;
   /** Providers the person removed in this run, until a complete read settles the default for it (exception iii). */
   readonly #removed = new Set<string>();
 
@@ -126,20 +131,27 @@ export class SetupService {
     };
   }
 
-  /** Reads the providers again, settles the default and says so if anything changed. One read at a time; a refresh
-   *  asked while one runs waits for it and reads again, so it never misses the change it is for. */
+  /** Reads the providers again, settles the default and says so if anything changed. One read at a time: a refresh
+   *  asked while one runs waits for it, and then ONE more read runs for every refresh asked meanwhile; a read during
+   *  which a newer refresh was asked doesn't settle (its set may be old already), the newest read does. */
   async refresh(): Promise<SetupState> {
-    if (this.#reading !== undefined) await this.#reading.catch(() => undefined);
-    this.#reading = this.#readNow();
-    try {
-      await this.#reading;
-    } finally {
-      this.#reading = undefined;
+    const mine = ++this.#asked;
+    while (this.#covered < mine) {
+      if (this.#reading !== undefined) {
+        await this.#reading.catch(() => undefined);
+        continue;
+      }
+      const covers = this.#asked;
+      this.#reading = this.#readNow(covers).finally(() => {
+        this.#covered = Math.max(this.#covered, covers);
+        this.#reading = undefined;
+      });
+      await this.#reading.catch(() => undefined);
     }
     return this.state();
   }
 
-  async #readNow(): Promise<void> {
+  async #readNow(covers: number): Promise<void> {
     try {
       const read = await this.deps.readPresent();
       this.#read = { present: new Set(read.present), complete: read.complete, ...(read.keyless !== undefined ? { keyless: new Set(read.keyless) } : {}) };
@@ -151,6 +163,8 @@ export class SetupService {
       this.#read = { ...this.#read, complete: false };
       this.deps.log(`[setup] the providers weren't read (${err instanceof Error ? err.name : typeof err}); keeping the last set`);
     }
+    // A newer refresh was asked while this read ran: the read after this one settles, from the newer set.
+    if (this.#asked > covers) return;
     this.settle();
   }
 

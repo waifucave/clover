@@ -17,6 +17,16 @@ function withEffort(name: string, effort: string | undefined): string {
   return effort === undefined || effort === "" ? name : `${name} · ${effort}`;
 }
 
+/** A model named as the model step names it: "Claude Opus 5.5 · medium · Anthropic". */
+function named(name: string, effort: string | undefined, provider: string | undefined): string {
+  const m = withEffort(name, effort);
+  return provider === undefined || provider === "" ? m : `${m} · ${provider}`;
+}
+
+function providerOf(tag: string | undefined): string | undefined {
+  return tag === undefined || !tag.includes("/") ? undefined : tag.slice(0, tag.indexOf("/"));
+}
+
 /** The guide's words (MOSS ships English; its other text is written in place the same way). */
 const WORDS = {
   step: (n: number) => `Step ${n} of 3`,
@@ -64,7 +74,7 @@ export function SetupGuide(props: { setup: SetupRow | undefined; botName: string
         <p className="setup__step muted small">{WORDS.step(n)}</p>
         {step === "providers" ? <Providers setup={props.setup} onNext={() => { setNote(undefined); setStep("model"); }} onSkip={() => void skip()} />
           : step === "model" ? <Model setup={props.setup} onBack={() => setStep("providers")} onSkip={() => void skip()} onNext={(m, effort) => { setModel({ row: m, ...(effort !== undefined ? { effort } : {}) }); setNote(undefined); setStep("done"); }} />
-          : <Done model={withEffort(model?.row.title ?? props.setup?.default?.model ?? "", model !== undefined ? model.effort : props.setup?.default?.effort)} bot={props.botName} onBack={() => setStep("model")} onDone={props.onDone} />}
+          : <Done model={named(model?.row.title ?? props.setup?.default?.model ?? "", model !== undefined ? model.effort : props.setup?.default?.effort, model?.row.provider ?? providerOf(props.setup?.default?.model))} bot={props.botName} onBack={() => setStep("model")} onDone={props.onDone} />}
         {note !== undefined ? <p className="add__note" role="status">{note}</p> : null}
       </section>
     </div>
@@ -229,7 +239,7 @@ function Done(props: { model: string; bot: string; onBack: () => void; onDone: (
   return (
     <>
       <h1 id="setup-title">{WORDS.doneTitle}</h1>
-      <p>{WORDS.doneIntro(props.model, props.bot)}</p>
+      <p data-setup-done-model={props.model}>{WORDS.doneIntro(props.model, props.bot)}</p>
       <Actions onBack={props.onBack} next={{ label: WORDS.talk(props.bot), run: props.onDone, data: "start" }} />
     </>
   );

@@ -242,6 +242,27 @@ describe("the setup guide (2026-11-20)", () => {
     r.unmount();
   });
 
+  test("two providers, the default shown at step 2: done names the same model, effort and provider, and nothing is re-stored", async () => {
+    const set = { ready: true, missing: [] as ("provider" | "model")[], providers: ["anthropic", "deepseek-anthropic"], default: { model: "anthropic/claude-opus-5-5", source: "chosen" as const, effort: "medium" }, dismissed: false };
+    const stored: string[] = [];
+    const r = await withGuide(view({ setup: { ...set, ready: false } }), {
+      setupProviders: async () => [{ pluginId: "moss/model-anthropic", name: "Anthropic", auth: [{ index: 0, method: "api-key", state: "signed-in" }] }],
+      setup: async () => set,
+      models: async () => [{ id: "anthropic/claude-opus-5-5", title: "Claude Opus 5.5", provider: "Anthropic", ready: true }, { id: "deepseek-anthropic/deepseek-v4-pro", title: "DeepSeek V4 Pro", provider: "DeepSeek (Anthropic dialect)", ready: true }],
+      setDefaultModel: async (m) => { stored.push(m); return { ok: true, setup: set }; },
+    });
+    await act(async () => { (r.container.querySelector("[data-setup=next]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 20)); });
+    const chosen = r.container.querySelector("[data-setup-step=model] .setup__chosen")!;
+    const muted = chosen.querySelectorAll("span.muted");
+    const step2 = `${chosen.querySelector("strong")!.textContent}${muted[muted.length - 1]!.textContent}`;
+    expect(step2).toBe("Claude Opus 5.5 · medium · Anthropic");
+    await act(async () => { (r.container.querySelector("[data-setup=next]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 20)); });
+    expect(r.container.querySelector("[data-setup-done-model]")?.getAttribute("data-setup-done-model")).toBe(step2);
+    expect(r.container.querySelector("[data-setup-step=done]")?.textContent).toContain(step2);
+    expect(stored).toEqual([]);
+    r.unmount();
+  });
+
   test("with several providers the person picks; the pick goes to the engine and done lands in the default bot's conversation", async () => {
     const two = { ready: false, missing: ["model"] as ("provider" | "model")[], providers: ["anthropic", "openai"], recommended: { anthropic: { model: "anthropic/b", effort: "medium" }, openai: { model: "openai/a" } }, dismissed: false };
     const picked: string[] = [];
@@ -260,7 +281,7 @@ describe("the setup guide (2026-11-20)", () => {
     await act(async () => { select.value = "openai/a"; select.dispatchEvent(new Event("change", { bubbles: true })); });
     await act(async () => { (r.container.querySelector("[data-setup=next]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 20)); });
     expect(picked).toEqual(["openai/a"]);
-    expect(r.container.querySelector("[data-setup-step=done]")?.textContent).toContain("A answers Juniper's first message");
+    expect(r.container.querySelector("[data-setup-step=done]")?.textContent).toContain("A · OpenAI answers Juniper's first message");
     await act(async () => { (r.container.querySelector("[data-setup=start]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 80)); });
     expect(r.container.querySelector("[data-setup-step]")).toBeNull();
     r.unmount();

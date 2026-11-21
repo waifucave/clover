@@ -294,6 +294,9 @@ async function oneRow(s: Ctx): Promise<string> {
   const pictures = [...await codePicture(s, "2-model")];
   await s.code.click("[data-moss-welcome=next]");
   await s.code.waitFor("the guide's done step", `!!document.querySelector('${CODE_STEP("done")}')`);
+  // The done step names the model as step 2 did: name · effort (provider).
+  const codeDone = await s.code.eval<string>(`document.querySelector('${CODE_STEP("done")} [data-moss-done-model]')?.getAttribute('data-moss-done-model') ?? ''`);
+  if (codeDone === "" || !words.includes(codeDone)) s.x.fail(`MOSS Code's done step names "${codeDone}", not the model step 2 showed ("${words}")`);
   pictures.push(...await codePicture(s, "3-done"));
   await s.code.click("[data-moss-welcome=start]");
   await s.code.waitFor("the guide closed", `!document.querySelector('[data-moss-welcome-step]')`);
@@ -336,6 +339,17 @@ async function pickRow(s: Ctx): Promise<string> {
   await s.moss.click("[data-setup=next]");
   await s.moss.waitFor("MOSS's model step, the default shown chosen", `document.querySelector('${MOSS_STEP("model")} [data-setup-default]')?.getAttribute('data-setup-default') ?? null`);
   const pictures = [...await mossPicture(s, "2-model")];
+  // Step 2 as shown ("Claude Opus 5.5 · medium · Anthropic"), Next with it unchanged, and the done step names the same
+  // model the same way; the picture of step 3 comes from here, so the set reads as one walk-through. Then Back.
+  const step2 = await s.moss.eval<string>(`(() => { const c = document.querySelector('${MOSS_STEP("model")} .setup__chosen'); if (!c) return ''; const p = c.querySelectorAll('span.muted'); return (c.querySelector('strong')?.textContent ?? '') + (p[p.length - 1]?.textContent ?? ''); })()`);
+  await s.moss.click("[data-setup=next]");
+  const done1 = await s.moss.waitFor<string>("MOSS's done step with the model step 2 showed", `document.querySelector('${MOSS_STEP("done")} [data-setup-done-model]')?.getAttribute('data-setup-done-model') ?? null`);
+  if (step2 === "" || done1 !== step2) s.x.fail(`MOSS's done step names "${done1}", step 2 showed "${step2}"`);
+  const kept = await setupState(s.c);
+  if (kept.default?.model !== before.default?.model || kept.default?.effort !== before.default?.effort) s.x.fail(`Next with the shown default changed it: ${JSON.stringify(kept.default)} (was ${JSON.stringify(before.default)})`);
+  pictures.push(...await mossPicture(s, "3-done"));
+  await s.moss.click("[data-setup=back]");
+  await s.moss.waitFor("MOSS's model step again", `!!document.querySelector('${MOSS_STEP("model")} [data-setup-default]')`);
   await s.moss.click("[data-setup=change]");
   await s.moss.waitFor("the guide's picker", "!!document.querySelector('[data-setup-model-picker]')");
   pictures.push(...await mossPicture(s, "2-model-picker"));
@@ -348,9 +362,13 @@ async function pickRow(s: Ctx): Promise<string> {
   for (const type of ["keyDown", "keyUp"]) await s.moss.cdp.send("Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }, await s.moss.session()).catch(() => undefined);
   await s.moss.click("[data-setup=next]");
   await s.moss.waitFor("MOSS's done step", `!!document.querySelector('${MOSS_STEP("done")}')`);
-  pictures.push(...await mossPicture(s, "3-done"));
   const picked = await setupState(s.c);
   if (picked.default?.model !== SECOND_MODEL || picked.default.source !== "chosen") s.x.fail(`after the pick setup.state's default is ${JSON.stringify(picked.default)}, not ${SECOND_MODEL} chosen`);
+  // The done step names the pick as the picker listed it, its effort (as stored) and its provider.
+  const pickedTitle = await s.moss.eval<string>(`[...document.querySelectorAll('option')].find((o) => o.value === ${JSON.stringify(SECOND_MODEL)})?.textContent ?? ''`).catch(() => "");
+  const done2 = await s.moss.eval<string>(`document.querySelector('${MOSS_STEP("done")} [data-setup-done-model]')?.getAttribute('data-setup-done-model') ?? ''`);
+  const effortSaid = picked.default.effort !== undefined ? ` · ${picked.default.effort}` : "";
+  if (!done2.includes(effortSaid) || (picked.default.effort === undefined && /· (low|medium|high|xhigh|max) ·/.test(done2)) || (pickedTitle !== "" && !done2.startsWith(pickedTitle))) s.x.fail(`MOSS's done step names "${done2}" for the pick ${SECOND_MODEL} (stored effort ${picked.default.effort ?? "none"})`);
   await s.moss.click("[data-setup=start]");
   await s.moss.waitFor("the MOSS guide closed, the default bot's conversation open", `!document.querySelector('[data-setup-step]') && document.querySelector('main.conversation')?.getAttribute('aria-label') === "MOSS's conversation"`);
   const focused = await s.moss.waitFor<boolean>("the composer ready to type", "document.activeElement?.closest('[data-composer]') !== null && document.activeElement?.tagName === 'TEXTAREA'", 10_000).catch(() => false);

@@ -84,7 +84,7 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "moss.core.welcome.use": "Use this model",
   "moss.core.welcome.model-saved": "Saved.",
   "moss.core.welcome.done-title": "You're set up",
-  "moss.core.welcome.done-intro": "{model} answers your first message. You can change it, or add providers, in Settings at any time.",
+  "moss.core.welcome.done-intro": "{model} ({provider}) answers your first message. You can change it, or add providers, in Settings at any time.",
   "moss.core.welcome.start-code": "Start a session",
   "moss.core.welcome.two-factor": "Your account is the key to every computer you add, so turn on two-factor sign-in for it.",
 
