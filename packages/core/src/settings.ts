@@ -870,9 +870,8 @@ export const Settings = z.object({
 export type Settings = z.infer<typeof Settings>;
 
 /** WS-20 (review round 1, GUARD): the catalog providerId the daemon's SINGLE internal-calls
- *  `Provider` instance is actually bound to — `splitTag(settings.provider.model).providerId`, with
- *  the same `DEFAULT_PROVIDER` fallback `pinsFor` itself uses for a settings file with no
- *  `provider.model` at all. Extracted so `pinsFor`'s own `ownProvider` derivation and
+ *  `Provider` instance is actually bound to — `splitTag(settings.provider.model).providerId`, or
+ *  undefined when the settings name no `provider.model` (there is no fixed default provider). Extracted so `pinsFor`'s own `ownProvider` derivation and
  *  `providers/manager.ts`'s `internalModelFor` guard (dreamer/cleaner/research's own internal-
  *  Provider calls) read the identical "which provider is this daemon actually bound to" answer —
  *  they must never independently rederive it and risk disagreeing. */
@@ -888,8 +887,8 @@ export function ownProviderFor(settings: Settings | null | undefined): string | 
  *  provider the user actually configured rather than an unrelated one. When that provider does
  *  NOT serve the pinned slot (e.g. `deepseek`, which has no `terra`/`luna` row), the default falls
  *  back to `openai` — the api-key vendor every gpt-5.6 slot is guaranteed to serve — never a
- *  fabricated tag, and never a throw: a settings file with no `provider.model` at all still gets a
- *  real answer via `DEFAULT_PROVIDER`. An explicit `settings.pins.<slot>` entry always wins over
+ *  fabricated tag, and never a throw: a settings file with no `provider.model` gets its explicit pins
+ *  or the unstated tag (there is no fixed default provider; the setup service computes the default). An explicit `settings.pins.<slot>` entry always wins over
  *  every default, per slot independently. */
 export function pinsFor(settings: Settings | null | undefined): {
   dispatch: ModelTag; dream: ModelTag; cleaner: ModelTag; research: ModelTag; researchFallback: ModelTag;
