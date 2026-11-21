@@ -3576,7 +3576,7 @@ async function helloApp(name: string, extra: Record<string, unknown>): Promise<{
 /** Whether the run may say hello as the `app` role to the packaged core: a test-marked core that carries the harness's
  *  own app-peer seam (`MOSS_TEST_APP_PEER_PID`, packages/core/src/platform/peer-signature.ts `withTestHarnessPeer`: the
  *  one pid the run started the core with) takes the run's `app` hello as the source daemon's `appPeer` does. An earlier
- *  build has none, and the moss unit there drives as the CLI. Only the moss unit asks for it (`mossRun`). */
+ *  build has none, and the moss unit there drives as the CLI. The moss and setup units ask for it (`mossRun`, `setupRun`). */
 const harnessIsApp = () => target === "packaged" && packagedCoreSays("MOSS_TEST_APP_PEER_PID");
 
 /** The moss unit's own connection: MOSS's surface, so nothing of MOSS Code's says hello on its home. A packaged core takes an
@@ -3644,7 +3644,9 @@ async function setupRun(app: { exe: string; args: string[] }): Promise<void> {
   writeFileSync(front, "front");
   await setupUnit({
     root, logs, userHome, fake: fake!, dummyKey,
-    driver: async () => (await appDriver()).client,
+    // The `app` role, as from source: on a packaged core through its test seam when it has one (the card row asks the
+    // router for a card's place, card.placement, which the cli role may not), else the CLI as the packaged chain does.
+    driver: async () => (harnessIsApp() ? await helloApp("moss-acceptance", {}) : await appDriver()).client,
     startCodeApp: (port, appearance) => startChild("setup-code-app", app.exe, [...app.args, "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${port}`], {
       ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_APPEARANCE_FILE: appearance, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }),
     }),
