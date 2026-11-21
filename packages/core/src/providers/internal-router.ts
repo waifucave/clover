@@ -31,6 +31,7 @@ import {
   effortToSpendForRole,
   explicitInternalRolePin,
   internalRoleEffectiveTag,
+  internalRoleLight,
   internalRoleNoTagReason,
   type InternalJobRole,
   type Settings,
@@ -41,7 +42,7 @@ import { INTERNAL_JOBS_LOGIN_HINT } from "./internal-login-hint";
 import type { InternalProviderView } from "./internal-view";
 import { QuotaManager, withQuota } from "./quota";
 import type { SubscriptionQuotaSource } from "./role-health";
-import type { Provider } from "./types";
+import type { Provider, ProviderEvent } from "./types";
 import { isRetiredCatalogTag } from "./catalog-role-problems";
 
 /** The role union and its membership test live in `settings.ts` (`INTERNAL_JOB_ROLES`) beside the pure
@@ -194,6 +195,36 @@ function providerDisplayName(providerId: string): string {
   return loadCatalog().providers.find((p) => p.id === providerId)?.displayName ?? providerId;
 }
 
+/** Whether a provider's error event says the requested model isn't one this account or endpoint serves (a 404 on the model,
+ *  the vendor's own `model_not_found`): the one failure a light call recovers from by running on the default. */
+export function modelNotOffered(e: Extract<ProviderEvent, { type: "error" }>): boolean {
+  if (e.code !== "bad_request") return false;
+  if (e.providerCode !== undefined && /model.*(not_found|not_supported|unavailable|not_available)|not_found_error|invalid_model/i.test(e.providerCode)) return true;
+  return /\bmodel\b.*(not found|not exist|not available|not supported|unavailable|unknown|invalid)|(not found|unknown|invalid).*\bmodel\b|\b404\b/i.test(e.message);
+}
+
+/** The light call, with the default call behind it: when the provider says the light model isn't one it serves, before
+ *  anything came back, the same request runs on the default (model and effort of its own, on its own provider). */
+function withDefaultFallback(light: InternalCall, fallback: InternalCall): InternalCall {
+  const provider: Provider = {
+    id: light.provider.id,
+    models: () => light.provider.models(),
+    async *streamTurn(req) {
+      let yielded = false;
+      let notOffered = false;
+      for await (const e of light.provider.streamTurn(req)) {
+        if (!yielded && e.type === "error" && modelNotOffered(e)) { notOffered = true; break; }
+        yielded = true;
+        yield e;
+      }
+      if (!notOffered) return;
+      const { reasoningEffort: _dropped, ...rest } = req;
+      yield* fallback.provider.streamTurn({ ...rest, model: fallback.model, ...(fallback.effort === undefined ? {} : { reasoningEffort: fallback.effort }) });
+    },
+  };
+  return { ...light, provider };
+}
+
 export function createInternalRouter(deps: {
   view: InternalProviderView;
   secrets: SecretStore;
@@ -248,7 +279,7 @@ export function createInternalRouter(deps: {
 
   /** Resolve ONE already-chosen tag. Split out of `resolve` so the reviewer's pin fallback can ask the
    *  same question twice — once for the pin, once for the default — with no second spelling of the rules. */
-  const resolveTag = (role: InternalRole, settings: Settings | null | undefined, tag: ModelTag): InternalCall | InternalRefusal => {
+  const resolveTag = (role: InternalRole, settings: Settings | null | undefined, tag: ModelTag, lightEffort?: string): InternalCall | InternalRefusal => {
     let providerId: string;
     let model: string;
     try {
@@ -278,7 +309,8 @@ export function createInternalRouter(deps: {
     if (provider === null) {
       return { reason: "provider-unsupported", detail: `${providerDisplayName(providerId)} can't be used for MOSS's own jobs yet`, tag };
     }
-    const wanted = effortToSpendForRole(settings, role, tag, CONSUMER_EFFORT[role], { neverEscalate: true });
+    // A light call with no effort of the job's own asks for the family's light effort; a stored one still wins.
+    const wanted = effortToSpendForRole(settings, role, tag, CONSUMER_EFFORT[role] ?? lightEffort, { neverEscalate: true });
     const effort = internalWireEffortFor(tag, wanted);
     return { provider, model: wireModelIdFor(providerId, model), tag, providerId, quota: quotaFor(providerId), ...(effort === undefined ? {} : { effort }) };
   };
@@ -310,8 +342,22 @@ export function createInternalRouter(deps: {
     },
     effectiveTag,
     resolve(role, settings, opts) {
-      const tag = effectiveTag(role, settings);
+      let tag = effectiveTag(role, settings);
       if (tag === null) return noTagRefusal(role, settings);
+      // THE LIGHT MODEL (the owner, 2026-11-21): a light job with no pin of its own runs on its family's light model.
+      // The default rule's answer is what it falls back to, whether the light call is refused here or the provider
+      // turns out not to offer the model: a job never fails for want of the light model.
+      const light = explicitInternalRolePin(settings, role) === undefined ? internalRoleLight(settings, role, deps.view.snapshot()) : undefined;
+      if (light !== undefined && light.choice.tag === tag) {
+        const lightCall = resolveTag(role, settings, tag, light.choice.effort);
+        const defaultTag = internalRoleEffectiveTag(settings, role, deps.view.snapshot(), { ignoreLight: true });
+        const defaultCall = defaultTag === null || defaultTag === tag ? undefined : resolveTag(role, settings, defaultTag);
+        if (!isInternalRefusal(lightCall)) {
+          return defaultCall === undefined || isInternalRefusal(defaultCall) ? lightCall : withDefaultFallback(lightCall, defaultCall);
+        }
+        if (defaultTag === null) return lightCall;
+        tag = defaultTag;
+      }
       const first = resolveTag(role, settings, tag);
       if (!isInternalRefusal(first)) return first;
       // THE REVIEWER'S PIN FALLBACK (user ruling — see `ResolveOptions`). Only for a refusal about the PIN

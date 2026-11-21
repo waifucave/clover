@@ -143,7 +143,7 @@ import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
 import { readProviders, SetupService, setupMethods } from "./setup-state";
 import { defaultEffortFor, recommended } from "./default-model";
-import { clearProviderModel, loadSettings, saveSettings, setupDismissedFrom, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { clearProviderModel, loadSettings, saveSettings, describeInternalJobModels, setupDismissedFrom, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -1490,7 +1490,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // jobs can run on, or — when none — exactly why and what would fix it. The SAME sentence
     // `view.refresh()` prints on a later change (`InternalProviderView.summary`), never a second
     // spelling of the same fact, and never a credential value.
-    console.error(internalView.summary());
+    // One line: those providers, and which model each job runs on and why (the light model of a family, the owner's
+    // ruling 2026-11-21).
+    console.error(`${internalView.summary()}; ${describeInternalJobModels(settings, internalView.snapshot())}`);
   }
 
   /**

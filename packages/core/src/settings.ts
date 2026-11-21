@@ -5,6 +5,7 @@ import { advanceAuthorityRevision } from "./authority-revision";
 import { legacyImportOn } from "./migration/legacy-imports";
 import { z } from "zod";
 import { activeCatalog, activeCatalogGeneration } from "./runtime-sdk/model-plugins/catalog-source";
+import { familyOfModel, lightFamiliesOf, lightModelOn, type LightChoice } from "./runtime-sdk/model-plugins/light-model";
 import { ensureGlobalGitignore, MOSS_PERSONAL_IGNORES } from "./global-gitignore";
 import { consoleProfileCredentialFile } from "./runtime-sdk/anthropic-paths";
 import { canonicalModelTag, facingNameToTag, isModelTag, splitTag, UNSTATED_TAG, MOSS_TEST_PREFIX, type ModelTag } from "./runtime-sdk/model-tag";
@@ -2380,6 +2381,72 @@ export function internalRoleDefaultTagFor(
 }
 
 /**
+ * The jobs that run on a family's LIGHT model (`FAMILY_LIGHT_MODELS`; the owner, 2026-11-21: "a light model per family"):
+ * titles, memory tidying (the dreamer) and the session cleaner. NOT `reviewer.model`, which is the bash safety reviewer AND
+ * the plugin Review: the first decides whether a command may run without asking, the second advises on running code a
+ * stranger wrote, and a smaller model would make either a weaker check on the person; both stay on what they used
+ * (the default rule below), unless the person pinned a model for them.
+ */
+export const LIGHT_MODEL_ROLES: readonly InternalJobRole[] = ["titles.model", "pins.dream", "pins.cleaner"];
+
+export type LightSource = "default-family" | "other-provider";
+
+/**
+ * The light model a light role runs on, in this order (the explicit pin is the caller's, before this):
+ *  1. the default model's family on the provider the default is on, when that provider is eligible and credentialed: that
+ *     family's light model as the provider serves it. When the provider's catalog doesn't carry it (an OAuth sign-in's or
+ *     a plan's), or the default is in no family: `undefined`, which is the default rule, never another provider. A
+ *     provider that carries it in the catalog but whose endpoint (the person's own, or an account's) then says it
+ *     doesn't serve it is the router's to catch: that call runs on the default (`withDefaultFallback`);
+ *  2. when the default's provider can't serve these jobs (not signed in, removed, ineligible, or no default at all): the
+ *     first credentialed provider, in `internalProviderPreferenceOrder`, that serves a family's light model.
+ * `undefined` with no snapshot (a caller that threads none is unchanged) and for a role that isn't a light one.
+ */
+export function internalRoleLight(
+  settings: Settings | null | undefined,
+  role: InternalJobRole,
+  snapshot?: InternalProviderSnapshot,
+): { choice: LightChoice; source: LightSource } | undefined {
+  if (snapshot === undefined || !LIGHT_MODEL_ROLES.includes(role)) return undefined;
+  const catalog = activeCatalog();
+  const eligible = internalEligibleProviderIds();
+  const own = ownProviderFor(settings);
+  const model = settings?.provider?.model;
+  if (own !== undefined && model !== undefined && eligible.has(own) && snapshot.credentialed.has(own)) {
+    const family = familyOfModel(catalog, own, model);
+    const choice = family === undefined ? undefined : lightModelOn(catalog, own, family);
+    return choice === undefined ? undefined : { choice, source: "default-family" };
+  }
+  for (const id of internalProviderPreferenceOrder()) {
+    if (!snapshot.credentialed.has(id)) continue;
+    for (const family of lightFamiliesOf(catalog, id)) {
+      const choice = lightModelOn(catalog, id, family);
+      if (choice !== undefined) return { choice, source: "other-provider" };
+    }
+  }
+  return undefined;
+}
+
+/** The part of the start-up line that says which model each internal job runs on and why (no secrets: model tags and reasons only). */
+export function describeInternalJobModels(settings: Settings | null | undefined, snapshot: InternalProviderSnapshot): string {
+  const label: Readonly<Record<InternalJobRole, string>> = { "titles.model": "titles", "pins.dream": "the dreamer", "pins.cleaner": "the cleaner", "reviewer.model": "the bash safety reviewer and the plugin Review" };
+  const parts: string[] = [];
+  for (const role of ["titles.model", "pins.dream", "pins.cleaner", "reviewer.model"] as const) {
+    const tag = internalRoleEffectiveTag(settings, role, snapshot);
+    let why: string;
+    if (explicitInternalRolePin(settings, role) !== undefined) why = "set in settings";
+    else if (tag === null) why = "no model to run on yet";
+    else if (role === "reviewer.model") why = "a check that guards you keeps the stronger model";
+    else {
+      const light = internalRoleLight(settings, role, snapshot);
+      why = light === undefined ? "the default rule: no light model is offered here" : light.source === "default-family" ? `the light model of the default's ${light.choice.family} family` : `the light model of the ${light.choice.family} family (the default's provider can't serve these jobs)`;
+    }
+    parts.push(`${label[role]} on ${tag ?? "nothing"} (${why})`);
+  }
+  return parts.join("; ");
+}
+
+/**
  * THE ONE effective-model rule for an internal-jobs role — the explicit pin, else the preferred
  * credentialed provider's default row. `null` ONLY when the role has no pin and nothing is credentialed
  * (there is then no model to report and no job to run).
@@ -2399,11 +2466,17 @@ export function internalRoleEffectiveTag(
   snapshot?: InternalProviderSnapshot,
   /** `ignoreExplicitPin`: answer as if the role had NO pin — the reviewer's pin fallback (user ruling
    *  2026-09-19, `providers/internal-router.ts`'s `ResolveOptions`) asks exactly this question when a
-   *  pinned reviewer's own tag turns out to be unrunnable. No other caller passes it. */
-  opts?: { ignoreExplicitPin?: boolean },
+   *  pinned reviewer's own tag turns out to be unrunnable. No other caller passes it.
+   *  `ignoreLight`: answer without the light model (`internalRoleLight`): the router asks it for the default a light
+   *  call falls back to. */
+  opts?: { ignoreExplicitPin?: boolean; ignoreLight?: boolean },
 ): ModelTag | null {
   const explicit = opts?.ignoreExplicitPin === true ? undefined : explicitInternalRolePin(settings, role);
   if (explicit !== undefined) return explicit;
+  if (opts?.ignoreLight !== true) {
+    const light = internalRoleLight(settings, role, snapshot);
+    if (light !== undefined) return light.choice.tag as ModelTag;
+  }
   const preferred = preferredInternalProviderFor(settings, snapshot);
   if (preferred === undefined) return null;
   return internalRoleDefaultTagFor(settings, preferred, INTERNAL_ROLE_SLOT[role]) ?? null;
