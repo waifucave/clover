@@ -1181,6 +1181,13 @@ jobs:
         with:
           bun-version-file: .bun-version
 
+      # A hosted macOS runner is a fresh VM with 3 cores that stays at a load of 20 to 60 for its first twenty minutes: Spotlight
+      # (mds_stores, mdworker) indexing the new disk, the OS's own agents, Metal shader compiles. The apps then answer late (the daemon
+      # ends an app that does not answer `app.ping` for 15 s; runs 44846484104, 44824696229, 44851355486), so indexing is turned off before the run
+      # starts. `runner.log` in the unit's artifact says what the machine was doing every 10 s (scripts/acceptance/stall-watch.ts).
+      - name: Turn Spotlight indexing off
+        run: sudo mdutil -a -i off || true
+
       # The Electron binary the app runs on (electron's install.js downloads it, which bun's install does not run): restored
       # here, and saved after the run even when a row failed (the cache action's own post step saves only a passing job).
       - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
