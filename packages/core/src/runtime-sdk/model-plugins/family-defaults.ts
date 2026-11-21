@@ -45,7 +45,8 @@ export const FAMILY_DEFAULTS: Readonly<Record<string, FamilyDefault>> = {
 //     Nova `micro`; gpt-oss `20b`);
 //   * a family with no cheaper tier (one model, or tiers that differ in speed or purpose, not size) has its default as
 //     its light model; the effort is what makes the job light there.
-// The effort is the one the job asks for when the person set none of its own; a row that doesn't list it drops it.
+// The effort is the one a job that has none of its own asks for (titles; the dreamer and the cleaner keep theirs) when the
+// person set none for it; a row that doesn't list it drops it.
 // A family not listed (`o-series`, `other`) has no light model.
 export const FAMILY_LIGHT_MODELS: Readonly<Record<string, FamilyDefault>> = {
   claude: { model: "claude-haiku-5.5", effort: "low" },

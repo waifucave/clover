@@ -17,9 +17,6 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import { Cdp } from "./cdp";
-import { TITLE_INSTRUCTION } from "../../packages/core/src/agent/titles";
-import { activeCatalog } from "../../packages/core/src/runtime-sdk/model-plugins/catalog-source";
-import { lightModelOn } from "../../packages/core/src/runtime-sdk/model-plugins/light-model";
 import type { MossClient } from "./client";
 import type { FakeProvider } from "./fake-anthropic";
 import type { Status } from "./steps";
@@ -32,11 +29,7 @@ export const SETUP_PICK_STEP = "two providers: a second one added leaves the def
 export const CLAUDE_DEFAULT = "anthropic/claude-opus-5-5";
 
 export const SETUP_CARD_STEP = "a card raised while MOSS's guide is open: the guide (which covers the window) steps aside, the approval card is drawn on top in MOSS's window and a real press on its Approve answers it, and the guide is back, at the step it was on, once no card waits";
-// Lane LM (the owner, 2026-11-21: "a light model per family"): on the one-provider home the first turn ran on Claude's
-// default; its conversation title, a background job, is asked of Claude's light model.
-export const SETUP_LIGHT_STEP = "the light model: on that home with one Anthropic key, the conversation title MOSS writes in the background is asked of Claude's light model (Haiku 5.5) while the turn itself ran on the default (Opus 5.5)";
-// The light row is the last of the list (the pictures keep their numbers) and runs right after the one-provider row.
-export const SETUP_STEPS: readonly string[] = [SETUP_OPEN_STEP, SETUP_ONE_STEP, SETUP_PICK_STEP, SETUP_CARD_STEP, SETUP_LIGHT_STEP];
+export const SETUP_STEPS: readonly string[] = [SETUP_OPEN_STEP, SETUP_ONE_STEP, SETUP_PICK_STEP, SETUP_CARD_STEP];
 
 /** The second provider: one more on the Anthropic wire, pointed at the run's fake (`providers.<id>.baseUrl`). */
 export const SECOND_PROVIDER = "deepseek-anthropic";
@@ -205,7 +198,6 @@ export async function setupUnit(x: SetupUnitCtx): Promise<void> {
     const s: Ctx = { x, c, code, moss, renders, appearance, codeLog: codeApp.log, mossLog: mossApp.log };
     await row(SETUP_OPEN_STEP, () => openRow(s));
     await row(SETUP_ONE_STEP, () => oneRow(s));
-    await row(SETUP_LIGHT_STEP, () => lightRow(s));
     await row(SETUP_PICK_STEP, () => pickRow(s));
     await row(SETUP_CARD_STEP, () => cardRow(s));
   } catch (err) {
@@ -226,8 +218,6 @@ interface Ctx {
   appearance: string;
   codeLog: string;
   mossLog: string;
-  /** The one-provider row's first turn: where its requests start in the fake's list, and the model it ran on. */
-  turn?: { since: number; upstream: string };
 }
 
 const CODE_STEP = (step: string) => `[data-moss-welcome-step=${step}]`;
@@ -330,25 +320,7 @@ async function oneRow(s: Ctx): Promise<string> {
   const upstream = rec!.slice(rec!.indexOf("/") + 1);
   if (!events.some((e) => e.type === "assistant_message" && (e.text ?? "").includes("ACCEPTANCE-REPLY-OK"))) s.x.fail(`the code session's first turn got no reply (${events.map((e) => e.type).join(", ")}${events.find((e) => e.type === "agent_error")?.message ? `: ${events.find((e) => e.type === "agent_error")!.message}` : ""})`);
   if (!mine.some((r) => r.model === upstream)) s.x.fail(`the turn didn't run on the default ${rec}: the fake saw ${[...new Set(mine.map((r) => r.model))].join(", ") || "no request"}`);
-  s.turn = { since: asked, upstream };
   return `the key typed in MOSS Code's guide signed Anthropic in; setup.state: ready, default ${st.default!.model} at ${st.default!.effort} (${st.default!.source}), the Claude family's default; the guide's model step showed it chosen; Start landed on the shell's new code session; a code session with no model of its own got its reply on ${upstream}${pictures.length > 0 ? `; pictures: ${pictures.length}` : ""}`;
-}
-
-async function lightRow(s: Ctx): Promise<string> {
-  if (s.turn === undefined) s.x.fail("the one-provider row didn't run, so there is no first turn to read the title's request against");
-  const { since, upstream } = s.turn!;
-  const light = lightModelOn(activeCatalog(), "anthropic", "claude");
-  if (light === undefined) s.x.fail("the catalog has no light model for Claude on anthropic");
-  const lightWire = light!.tag.slice(light!.tag.indexOf("/") + 1);
-  const wire = (activeCatalog().models.find((m) => m.key === light!.tag) as { upstreamId?: string } | undefined)?.upstreamId ?? lightWire;
-  // The title job's request carries the title instruction; the turn's carries the session's own prompt.
-  const isTitle = (r: { path: string; body?: unknown }) => r.path.endsWith("/messages") && JSON.stringify(r.body ?? "").includes(TITLE_INSTRUCTION);
-  const title = await s.x.until("the title job's request to the fake", 60_000, async () => s.x.fake.requests.slice(since).find(isTitle), 500);
-  if (title.model !== wire) s.x.fail(`the title was asked of ${String(title.model)}, not Claude's light model ${wire}`);
-  if (wire === upstream) s.x.fail(`the light model (${wire}) is the default (${upstream}): the row proves nothing`);
-  const turns = s.x.fake.requests.slice(since).filter((r) => r.path.endsWith("/messages") && !isTitle(r));
-  if (turns.length === 0 || turns.some((r) => r.model !== upstream)) s.x.fail(`the turn's own requests were not all on the default ${upstream}: ${[...new Set(turns.map((r) => r.model))].join(", ") || "none"}`);
-  return `on the one-Anthropic-key home the title's request named ${wire} (Claude's light model) while the turn's ${turns.length} request(s) named ${upstream}, the default`;
 }
 
 async function pickRow(s: Ctx): Promise<string> {

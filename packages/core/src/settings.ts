@@ -2427,7 +2427,7 @@ export function internalRoleLight(
   return undefined;
 }
 
-/** The start-up line: which model each internal job runs on and why (no secrets: model tags and reasons only). */
+/** The part of the start-up line that says which model each internal job runs on and why (no secrets: model tags and reasons only). */
 export function describeInternalJobModels(settings: Settings | null | undefined, snapshot: InternalProviderSnapshot): string {
   const label: Readonly<Record<InternalJobRole, string>> = { "titles.model": "titles", "pins.dream": "the dreamer", "pins.cleaner": "the cleaner", "reviewer.model": "the bash safety reviewer and the plugin Review" };
   const parts: string[] = [];
@@ -2443,7 +2443,7 @@ export function describeInternalJobModels(settings: Settings | null | undefined,
     }
     parts.push(`${label[role]} on ${tag ?? "nothing"} (${why})`);
   }
-  return `internal-provider: ${parts.join("; ")}`;
+  return parts.join("; ");
 }
 
 /**

@@ -516,7 +516,8 @@ describe("codex-oauth and openai still work over their own loopback fakes", () =
 
 describe("a user-entered providers.<id>.baseUrl", () => {
   test("keeps MOSS's historically unrestricted BYO-endpoint behaviour — a loopback override streams", async () => {
-    const model = "gpt-6.1-terra";
+    // Light-model ruling (2026-11-21): the title on this default (terra) runs on the gpt family's light model, luna.
+    const model = "gpt-6-luna";
     const fake = await openaiResponsesFake.startOpenAiResponsesFake({
       scenarios: { [model]: [openaiResponsesFake.responsesStream({ text: ["Local Title"] })] },
     });
@@ -525,7 +526,8 @@ describe("a user-entered providers.<id>.baseUrl", () => {
       await writeCredentialMaterial(secrets, CREDENTIAL_MATERIAL_NAMES.openai, { kind: "api-key", key: "sk-openai" });
       // NO `testBackendUrl`: the loopback url arrives the way a real user's does, through settings.
       const router = await routerFor(secrets);
-      const call = router.resolve("titles.model", settingsWith(`openai/${model}`, { providers: { openai: { baseUrl: fake.url } } }));
+      const call = router.resolve("titles.model", settingsWith("openai/gpt-6.1-terra", { providers: { openai: { baseUrl: fake.url } } }));
+      if (!isInternalRefusal(call)) expect(call.model).toBe(model);
       if (isInternalRefusal(call)) throw new Error(`refused: ${call.reason} ${call.detail}`);
       const out: string[] = [];
       for await (const ev of call.provider.streamTurn({ model: call.model, instructions: "t", input: [{ type: "message", role: "user", content: "hi" }], tools: [] })) {

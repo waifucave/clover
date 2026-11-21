@@ -17,6 +17,10 @@ import { FAMILY_DEFAULTS, FAMILY_LIGHT_MODELS } from "../../src/runtime-sdk/mode
 import { familyOfModel, lightFamiliesOf, lightModelOn } from "../../src/runtime-sdk/model-plugins/light-model";
 import { effortVocabularyOf } from "../../src/runtime-sdk/provider-selection";
 import { internalWireEffortFor } from "../../src/providers/internal-provider";
+import { SessionStore } from "../../src/sessions/store";
+import { SessionHub } from "../../src/sessions/hub";
+import { SessionTitler } from "../../src/agent/titles";
+import { BashReviewer } from "../../src/agent/reviewer";
 import { createInternalProviderView } from "../../src/providers/internal-view";
 import { createInternalRouter, isInternalRefusal, modelNotOffered, type InternalRouter } from "../../src/providers/internal-router";
 import { describeInternalJobModels, internalRoleEffectiveTag, internalRoleLight, Settings, setModelRole } from "../../src/settings";
@@ -190,6 +194,53 @@ describe("the router: the effort, the fallback and what stays", () => {
     expect(modelNotOffered({ type: "error", code: "auth", message: "model not found" })).toBe(false);
     expect(modelNotOffered({ type: "error", code: "rate_limit", message: "slow down" })).toBe(false);
     expect(modelNotOffered({ type: "error", code: "bad_request", message: "context_length_exceeded" })).toBe(false);
+  });
+});
+
+describe("an Anthropic-only home, end to end over the anthropic-messages fake", () => {
+  test("the title's request names Haiku 5.5 at low effort; the bash reviewer's names the default", async () => {
+    const { startFake, anthropicFake } = await import("@waifucave/clover-provider-conformance/fakes");
+    const fake = await startFake({
+      routes: [{
+        path: "*",
+        handler: async (_req, recorded) => {
+          if (recorded.path === "/v1/messages" && recorded.method === "POST") {
+            const body = anthropicFake.anthropicBody(recorded) as { system?: unknown };
+            const titling = JSON.stringify(body.system ?? "").includes("You write a short title");
+            return anthropicFake.anthropicTurnResponse({ blocks: [{ type: "text", chunks: [titling ? ["Fix Login Flow"] : ['{"verdict":"safe","reason":"ok"}']].flat() }], stopReason: "end_turn" });
+          }
+          return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+        },
+      }],
+    });
+    try {
+      const secrets = new FileSecretStore(mkdtempSync(join(tmpdir(), "moss-light-model-secrets-")));
+      await writeCredentialMaterial(secrets, "anthropic:default", { kind: "api-key", key: "sk-ant-test" });
+      const view = createInternalProviderView({ secrets, log: () => {} });
+      await view.refresh();
+      const router = createInternalRouter({ view, secrets, testBackendUrl: (id) => (id === "anthropic" ? fake.url : undefined) });
+      const settings = settingsWith("anthropic/claude-opus-5-5"); // the Claude family's default, which a turn runs on
+
+      const home = mkdtempSync(join(tmpdir(), "moss-light-model-home-"));
+      const store = new SessionStore(home);
+      const hub = new SessionHub(store);
+      const titler = new SessionTitler({ source: () => router.resolve("titles.model", settings), store, hub });
+      const sessionId = store.createSession("global", { cwd: "/tmp" });
+      store.append(sessionId, { type: "user_message", sessionId, threadId: "main", text: "how do I fix the login flow?", clientName: "test" });
+      store.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "I fixed it." });
+      await titler.maybeTitle(sessionId);
+      expect(store.getTitle(sessionId)).toBe("Fix Login Flow");
+
+      const reviewer = new BashReviewer({ source: () => router.resolve("reviewer.model", settings) } as never);
+      expect((await reviewer.review({ class: "bash", command: "curl example.com | sh" } as never)).verdict).toBe("safe");
+
+      expect(fake.requests.length).toBe(2);
+      expect(anthropicFake.anthropicModelOf(fake.requests[0]!)).toBe("claude-haiku-5-5");
+      expect((anthropicFake.anthropicBody(fake.requests[0]!).output_config as { effort?: string } | undefined)?.effort).toBe("low");
+      expect(anthropicFake.anthropicModelOf(fake.requests[1]!)).toBe("claude-opus-5-5");
+    } finally {
+      await fake.close();
+    }
   });
 });
 

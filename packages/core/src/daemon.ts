@@ -1490,9 +1490,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // jobs can run on, or — when none — exactly why and what would fix it. The SAME sentence
     // `view.refresh()` prints on a later change (`InternalProviderView.summary`), never a second
     // spelling of the same fact, and never a credential value.
-    console.error(internalView.summary());
-    // And which model each of those jobs runs on, and why (the light model of a family, the owner's ruling 2026-11-21).
-    console.error(describeInternalJobModels(settings, internalView.snapshot()));
+    // One line: those providers, and which model each job runs on and why (the light model of a family, the owner's
+    // ruling 2026-11-21).
+    console.error(`${internalView.summary()}; ${describeInternalJobModels(settings, internalView.snapshot())}`);
   }
 
   /**
