@@ -3432,13 +3432,16 @@ async function main(): Promise<void> {
   }
 
   // Stage 2 (recorded at the end): the bot's sandboxed shell at "ask for risky actions".
-  shellOutcome = botSession === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await shellTurns(c, botSession);
+  // A body whose row is in no table of this run (elsewhere.ts) does not run, nor print a result: the stage-2/3 turns, the
+  // ordinary-folder step and the Agent step below.
+  if (runs(unitOf(SHELL_STEP))) shellOutcome = botSession === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await shellTurns(c, botSession);
   // Stage 3 (recorded at the end): a command outside the sandbox, behind its own card.
-  if (STEPS.includes(OUTSIDE_STEP)) outsideOutcome = botSession === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await outsideTurns(c, botSession);
+  if (STEPS.includes(OUTSIDE_STEP) && runs(unitOf(OUTSIDE_STEP))) outsideOutcome = botSession === undefined || !turnsWork ? { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" } : await outsideTurns(c, botSession);
 
   // Step 7: at "ask for risky actions" (§9.1): a write to an ordinary folder (Downloads) lands with no card; a write to a
   // sensitive place (a dot-folder in the home) raises an approval card, the app's yes is pressed, then the file lands.
-  if (botSession === undefined || !turnsWork) record(7, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  if (!runs(unitOf(FULL_STEPS[6]!))) { /* its row runs elsewhere */ }
+  else if (botSession === undefined || !turnsWork) record(7, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
   else {
     try {
       const before = fake.requests.length;
@@ -3483,7 +3486,7 @@ async function main(): Promise<void> {
   }
 
   if (shardUnits === undefined) await stageStep(c, botSession, turnsWork);
-  await agentStep(c, botSession, turnsWork);
+  if (runs(unitOf(AGENT_STEP))) await agentStep(c, botSession, turnsWork);
 
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
@@ -3505,8 +3508,8 @@ async function main(): Promise<void> {
   if (STEPS.includes(OAUTH_SIGN_IN_STEP) && runs("models")) record(STEPS.indexOf(OAUTH_SIGN_IN_STEP) + 1, oauthOutcome?.status ?? "BLOCKED", oauthOutcome?.detail ?? "the oauth-pkce sign-in didn't run");
   if (STEPS.includes(THIRD_PARTY_MODEL_STEP) && runs("models")) record(STEPS.indexOf(THIRD_PARTY_MODEL_STEP) + 1, thirdPartyOutcome?.status ?? "BLOCKED", thirdPartyOutcome?.detail ?? "the third-party model turn didn't run");
   if (STEPS.includes(CODE_ADAPTER_STEP) && runs("models")) record(STEPS.indexOf(CODE_ADAPTER_STEP) + 1, codeAdapterOutcome?.status ?? "BLOCKED", codeAdapterOutcome?.detail ?? "the code-adapter turn didn't run");
-  if (STEPS.includes(SHELL_STEP)) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
-  if (STEPS.includes(OUTSIDE_STEP)) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
+  if (STEPS.includes(SHELL_STEP) && runs(unitOf(SHELL_STEP))) record(STEPS.indexOf(SHELL_STEP) + 1, shellOutcome?.status ?? "BLOCKED", shellOutcome?.detail ?? "the shell turns didn't run");
+  if (STEPS.includes(OUTSIDE_STEP) && runs(unitOf(OUTSIDE_STEP))) record(STEPS.indexOf(OUTSIDE_STEP) + 1, outsideOutcome?.status ?? "BLOCKED", outsideOutcome?.detail ?? "the outside-the-sandbox turns didn't run");
   // The release rows when the run names their unit (a full run with no --units never ran them): in the order a run
   // without the chain gives them (otherUnitsRun), before the cold start.
   if (shardUnits?.includes("release")) await releaseSteps(app);
