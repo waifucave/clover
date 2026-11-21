@@ -14,9 +14,9 @@ export interface NewSessionAgent {
   installed: boolean;
 }
 
-/** The agents `agent.backends` lists, for this computer (`self`), MOSS's own first. */
-export function agentsHere(backends: readonly { id: string; name: unknown; computers: readonly { computer: string; installed: boolean }[] }[], here: string | undefined): NewSessionAgent[] {
-  const list = backends.map((b) => ({
+/** The agents `agent.backends` lists, for this computer (`self`), MOSS's own first. A backend that says a person can't start it (`userStartable: false`, MOSS's own subagents) is left out. */
+export function agentsHere(backends: readonly { id: string; name: unknown; userStartable?: boolean; computers: readonly { computer: string; installed: boolean }[] }[], here: string | undefined): NewSessionAgent[] {
+  const list = backends.filter((b) => b.userStartable !== false).map((b) => ({
     id: b.id,
     name: plain(b.name as never) || b.id,
     installed: b.computers.some((c) => c.installed && (here === undefined || c.computer === here)),

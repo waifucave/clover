@@ -1082,6 +1082,20 @@ describe("the agent methods", () => {
     void WELL_BEHAVED_QUIRKS;
   });
 
+  test("a backend that says a person can't start it (userStartable: false) is listed as such and refused to a person's agent.start; the others list as startable", async () => {
+    const w = make({ script: [[{ say: "x" }]] });
+    const inner = Object.assign(Object.create(w.backend) as typeof w.backend, { id: "inner", userStartable: false as const });
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend, inner], computer: "Studio", localDevice: () => "a".repeat(32) });
+    const user = { caller: { kind: "user" as const, client: "app" as const } };
+    const { backends } = (await methods["agent.backends"]!({}, user)) as { backends: { id: string; userStartable: boolean }[] };
+    expect(backends.map((b) => [b.id, b.userStartable])).toEqual([["fake", true], ["inner", false]]);
+    const refused = await methods["agent.start"]!({ backend: "inner", computer: "Studio", root: "home/Studio/project1" }, user).catch((e: unknown) => e);
+    expect(isContractError(refused, "refused")).toBe(true);
+    // The one that doesn't say, starts as before.
+    const { session } = (await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, user)) as { session: string };
+    expect(w.host.get(session)).toMatchObject({ kind: "coding" });
+  });
+
   test("agent.start with a plugin's agent definition: its words go before the user's, the session names it; one that reaches no code session is refused", async () => {
     const w = make({ script: [[{ say: "Tidied." }]] });
     const asked: { name: string; backend: string }[] = [];

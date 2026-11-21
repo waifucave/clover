@@ -18,7 +18,7 @@
 // forward from the session's start, a page at a time by its `cursor`, so an old session opens at its start and the
 // next page comes as the reader nears the end (the view's `onLoadLater`), until the whole session is shown.
 import { plain } from "./local";
-import { Spot, SpotHints, useApprovals, useCore, usePluginApi, useSpotEntries, useTokens } from "@waifucave/moss-plugin-sdk/ui";
+import { Spot, SpotHints, useApprovals, useBackendNames, useCore, usePluginApi, useSpotEntries, useTokens } from "@waifucave/moss-plugin-sdk/ui";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
 import type { AgentStatus } from "./agents";
 import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./ConversationView";
@@ -212,7 +212,9 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
     });
   }, [core, archived, props.session]);
 
-  const { names, here } = useNames(api);
+  const nameOf = useBackendNames();
+  const { names, here } = useNames(api, nameOf);
+  const shownStatus = useMemo(() => Object.fromEntries(Object.entries(agentStatus).map(([id, s]) => [id, s.backend === undefined ? s : { ...s, backend: nameOf(s.backend) ?? s.backend }])), [agentStatus, nameOf]);
   // This session's pending cards, as the card door says (never in the followed stream): drawn in place, after what the
   // session's own records project. Kept while the list says the same, so the transcript isn't projected again per render.
   const approvals = useApprovals();
@@ -221,7 +223,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
     () => (cardsKey === "" ? [] : (JSON.parse(cardsKey) as { issuedAt?: number }[]).map((card) => ({ type: "card_pending", card, ...(typeof card.issuedAt === "number" ? { ts: card.issuedAt } : {}) }))),
     [cardsKey],
   );
-  const { items, turn } = useMemo(() => project([...events, ...cardEvents], { name: (kind, id) => names[`${kind}:${id}`] }), [events, cardEvents, names]);
+  const { items, turn } = useMemo(() => project([...events, ...cardEvents], { name: (kind, id) => names[`${kind}:${id}`], backend: (id) => nameOf(id) }), [events, cardEvents, names, nameOf]);
   // The view's clock (day labels, deadlines): read again when the transcript changed or the shared clock moved, never at every
   // render of this entry. A `Date.now()` in the props would be new each render, and the view would build its timeline and
   // draw every message again for it (the cost grows with the conversation: an owner's has hundreds).
@@ -260,7 +262,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
         {...(archived ? { initialFollow: false, hasLater: later !== undefined, onLoadLater: loadLater } : {})}
         {...(here ? { device: here } : {})}
         renderers={RENDERERS}
-        agentStatus={agentStatus}
+        agentStatus={shownStatus}
         renderToolResult={(call, standard): ReactNode => (
           <Inner name="tool.result" spotKey={call.name} props={{ ...at, tool: call.name, item: call, ctx: {} }} fallback={standard} />
         )}
@@ -279,7 +281,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
 }
 
 /** Display names for the agents and devices a transcript mentions, by `<kind>:<id>` (a bot's is its id: bots are MOSS's to show). */
-function useNames(api: ReturnType<typeof usePluginApi>): { names: Record<string, string>; here?: { id: string; name: string } } {
+function useNames(api: ReturnType<typeof usePluginApi>, backendName: (backend: string | undefined) => string | undefined): { names: Record<string, string>; here?: { id: string; name: string } } {
   const [names, setNames] = useState<{ names: Record<string, string>; here?: { id: string; name: string } }>({ names: {} });
   useEffect(() => {
     let live = true;
@@ -289,7 +291,7 @@ function useNames(api: ReturnType<typeof usePluginApi>): { names: Record<string,
     ]).then(([sessions, devices]) => {
       if (!live) return;
       const out: Record<string, string> = {};
-      for (const s of sessions) out[`agent:${s.id}`] = s.backend ?? s.title ?? s.id;
+      for (const s of sessions) out[`agent:${s.id}`] = backendName(s.backend) ?? s.title ?? s.id;
       for (const d of devices) out[`device:${d.id}`] = d.name;
       const here = devices.find((d) => d.isThis);
       setNames({ names: out, ...(here ? { here: { id: here.id, name: here.name } } : {}) });
@@ -297,6 +299,6 @@ function useNames(api: ReturnType<typeof usePluginApi>): { names: Record<string,
     return () => {
       live = false;
     };
-  }, [api]);
+  }, [api, backendName]);
   return names;
 }

@@ -25,6 +25,8 @@ export interface Projection {
 export interface ProjectOptions {
   /** A display name for a bot, an agent or a plugin by id; the id when absent. */
   name?: (kind: "bot" | "agent" | "plugin" | "device", id: string) => string | undefined;
+  /** An agent backend's display name by id; the id when absent. */
+  backend?: (id: string) => string | undefined;
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
@@ -270,7 +272,8 @@ export function project(events: readonly CoreEvent[], options: ProjectOptions = 
       }
       case "agent_finished": {
         const agent = str(e.agent) ?? "agent";
-        const backend = str(e.backend);
+        const rawBackend = str(e.backend);
+        const backend = rawBackend === undefined ? undefined : options.backend?.(rawBackend) ?? rawBackend;
         const reason = str(e.stopReason);
         add({
           id: `f${key}`, kind: "task-notification", at,

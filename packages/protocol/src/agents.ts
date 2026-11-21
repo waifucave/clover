@@ -36,6 +36,8 @@ export const AgentBackendView = z.object({
   pluginId: AnyPluginId,
   protocol: z.enum(["acp", "cloud"]),
   placement: z.enum(["local", "cloud"]),
+  /** Whether a person can open a session with it (`agent.start`). False for a backend only a turn's own subagents use. */
+  userStartable: z.boolean().default(true),
   /** Per computer: installed, its version, sandboxed there, and the marks that apply there. */
   computers: z.array(z.object({
     computer: ComputerName,

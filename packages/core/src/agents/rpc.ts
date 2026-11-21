@@ -58,6 +58,7 @@ export function agentMethods(o: AgentMethodsOptions): Record<string, AgentMethod
           // own API. Local backends, the in-process ones included, are ACP.
           protocol: b.quirks.placement === "cloud" && Object.keys(b.quirks.launch.command).length === 0 ? "cloud" : "acp",
           placement: b.quirks.placement,
+          userStartable: b.userStartable !== false,
           computers: [{
             computer: o.computer, installed: d.installed, sandboxed: d.sandboxed, marks: [...marks],
             ...(d.version === undefined ? {} : { version: d.version.slice(0, 64) }),
@@ -73,6 +74,7 @@ export function agentMethods(o: AgentMethodsOptions): Record<string, AgentMethod
     [AGENTS_METHODS.agentStart.name]: async (raw, ctx) => {
       const p = parse(AGENTS_METHODS.agentStart, raw);
       if (ctx.caller.kind !== "user") throw new ContractError("refused", "only the user starts a coding session");
+      if (o.backends().find((b) => b.id === p.backend)?.userStartable === false) throw new ContractError("refused", `${p.backend.slice(0, 64)} is not an agent a person opens a session with`);
       const def = p.definition === undefined ? undefined : o.definition?.(p.definition, p.backend);
       if (p.definition !== undefined && def === undefined) throw new ContractError("not_found", `no agent definition ${p.definition.slice(0, 120)} reaches a code session on ${p.backend.slice(0, 64)} (Glossary lists them as <plugin>:<id>)`);
       const brief = p.prompt ?? "";

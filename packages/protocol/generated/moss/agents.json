@@ -69,6 +69,10 @@
                     "cloud"
                   ]
                 },
+                "userStartable": {
+                  "default": true,
+                  "type": "boolean"
+                },
                 "computers": {
                   "maxItems": 256,
                   "type": "array",
@@ -122,6 +126,7 @@
                 "pluginId",
                 "protocol",
                 "placement",
+                "userStartable",
                 "computers"
               ],
               "additionalProperties": false

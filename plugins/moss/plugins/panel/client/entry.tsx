@@ -6,7 +6,7 @@
 // have no plugin-API call yet: the `moss` layer reads them from the core (provisional methods, `session.changes`
 // and the rest, for lanes A and D to settle).
 import type { ComputerView, PluginApi, SessionView as Session } from "@waifucave/moss-plugin-sdk";
-import { type CoreClient, useCore, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
+import { type CoreClient, useBackendNames, useCore, usePluginApi } from "@waifucave/moss-plugin-sdk/ui";
 import { useEffect, useState } from "react";
 import { SessionView } from "./SessionView";
 import type { SessionAgentStatus, SessionKind, SessionViewProps } from "./types";
@@ -99,6 +99,7 @@ export interface ColumnProps {
 export function SessionColumn({ props }: { props: ColumnProps }) {
   const api = usePluginApi();
   const core = useCore();
+  const nameOf = useBackendNames();
   const kind = props.sessionKind ?? "coding";
   const data = useColumn(api, core, props.session, kind === "coding");
   const s = data.session;
@@ -117,7 +118,7 @@ export function SessionColumn({ props }: { props: ColumnProps }) {
   return (
     <SessionView
       kind={kind}
-      agents={data.agents.map((a) => ({ id: a.id, title: a.title ?? a.backend ?? a.id, backend: a.backend ?? "", status: agentState(a) }))}
+      agents={data.agents.map((a) => ({ id: a.id, title: a.title ?? nameOf(a.backend) ?? a.id, backend: nameOf(a.backend) ?? "", status: agentState(a) }))}
       {...(props.onOpenAgent ? { onOpenAgent: props.onOpenAgent } : {})}
       environment={environment}
       {...(data.context ? { context: contextOf(data.context)! } : {})}

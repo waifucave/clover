@@ -216,6 +216,8 @@ export interface AgentBackend {
   /** Its `agentBackends` entry's id. */
   readonly id: string;
   readonly pluginId: string;
+  /** False for a backend only a turn or a bot uses (its own subagents): `agent.backends` says so, a person's `agent.start` is refused, and the New session list leaves it out. Absent means true. */
+  readonly userStartable?: boolean;
   readonly quirks: AgentQuirks;
   detect(): Promise<AgentDetection>;
   start(spec: AgentStartSpec): Promise<AgentSession>;

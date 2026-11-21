@@ -89,6 +89,13 @@ describe("project", () => {
     expect((project([ev("turn_started"), ev("turn_completed", { stopReason: "aborted" })]).items.at(-1) as { retry?: true } | undefined)?.retry).toBeUndefined();
   });
 
+  test("a finished agent's backend is shown by its display name when the projection is given the names, and by its id otherwise", () => {
+    const events = [ev("agent_finished", { agent: "agent-1", backend: "moss-code", stopReason: "end_turn", text: "Done." })];
+    expect(project(events, { backend: (id) => ({ "moss-code": "MOSS's coding agent" } as Record<string, string>)[id] }).items[0]).toMatchObject({ task: { backend: "MOSS's coding agent" } });
+    expect(project(events, { backend: () => undefined }).items[0]).toMatchObject({ task: { backend: "moss-code" } });
+    expect(project(events).items[0]).toMatchObject({ task: { backend: "moss-code" } });
+  });
+
   test("questions, reports from bots, agents and plugins, finished agents, routines and notes", () => {
     const p = project([
       ev("question_asked", { callId: "q1", questions: [{ question: "Which?", header: "Pick", options: [{ label: "A" }, { label: "B", description: "the second" }], multiSelect: false }] }),

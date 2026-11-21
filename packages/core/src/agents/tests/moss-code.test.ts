@@ -14,6 +14,7 @@ import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runt
 import { darwinTest } from "../../../test/helpers/darwin-only";
 import { botChildFor } from "../bot-child";
 import { MOSS_CODE_ID, MossCodeBackend, type MossCodeDeps } from "../moss-code/backend";
+import { IN_PROCESS_BACKEND_ID, inProcessAgentBackend } from "../../runtime-sdk/turn-loop/subagent-backend";
 import { agentMethods } from "../rpc";
 import { waitFor, World, type WorldOptions } from "./world";
 
@@ -184,7 +185,15 @@ describeWithEmbeddedRuntime("MOSS's coding agent over ACP", (spawn) => {
     const methods = agentMethods({ manager: w.manager, backends: () => [new MossCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.mossHome, spawn), sandboxReady: SANDBOX_READY })], computer: "Studio", localDevice: () => "a".repeat(32) });
     const view = (await methods["agent.backends"]!({}, { caller: { kind: "user", client: "app" } })) as { backends: Record<string, unknown>[] };
     expect(view.backends[0]).toMatchObject({ id: MOSS_CODE_ID, name: "MOSS's coding agent", protocol: "acp", placement: "local", computers: [{ installed: true, sandboxed: true, marks: [] }] });
+    expect(view.backends[0]).toMatchObject({ userStartable: true });
     expect(existsSync(w.mossHome)).toBe(true);
+  });
+  test("the in-process subagent backend is named, and says a person can't start it", async () => {
+    const w = make(spawn);
+    const inner = inProcessAgentBackend({ home: w.mossHome, spawn, defaultModel: () => MODEL, pauseGateFor: () => ({ mayAct: () => true }), sandboxReady: () => true });
+    const methods = agentMethods({ manager: w.manager, backends: () => [inner], computer: "Studio", localDevice: () => "a".repeat(32) });
+    const view = (await methods["agent.backends"]!({}, { caller: { kind: "user", client: "app" } })) as { backends: Record<string, unknown>[] };
+    expect(view.backends[0]).toMatchObject({ id: IN_PROCESS_BACKEND_ID, name: "MOSS subagent (in-process)", userStartable: false });
   });
   test("the MOSS home is out of its reach: a direct Read, a Read through a link from the root, and Bash cat of what it holds are denied", async () => {
     const w = make(spawn);

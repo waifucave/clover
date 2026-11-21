@@ -174,6 +174,7 @@ describe("the page that starts a session (spec §9.4)", () => {
       { id: "codex", name: "Codex", computers: [{ computer: "Studio", installed: true }] },
       { id: "gemini", name: "Gemini", computers: [{ computer: "Studio", installed: false }] },
       { id: "moss-code", name: "MOSS", computers: [{ computer: "Studio", installed: true }] },
+      { id: "moss", name: "MOSS subagent", userStartable: false, computers: [{ computer: "Studio", installed: true }] },
     ];
     expect(agentsHere(backends, "Studio")).toEqual([
       { id: "moss-code", name: "MOSS", installed: true }, { id: "codex", name: "Codex", installed: true }, { id: "gemini", name: "Gemini", installed: false },
@@ -198,6 +199,22 @@ describe("the page that starts a session (spec §9.4)", () => {
     expect(core.calls.find((c) => c.method === "ui.pick")?.params).toEqual({ kind: "folder", use: "agent.start" });
     expect(core.calls.find((c) => c.method === "agent.start")?.params).toEqual({ backend: "codex", root: "pick-1" });
     expect(stubText("sidebar")).toContain('{"route":"agent","params":{"session":"code-new"}}');
+  });
+
+  test("a session's tab names its agent by the backend's display name, not its id, and falls back to the id for a backend with no name", async () => {
+    await mount({ route: { route: "agent", params: { session: "code-0" } } }, [], SESSIONS, undefined, {}, {
+      "agent.backends": () => ({ backends: [{ id: "moss-code", name: "MOSS's coding agent", computers: [] }] }),
+    });
+    await act(() => settle(20));
+    expect(stubText("conversation")).toContain("MOSS's coding agent");
+    expect(stubText("conversation")).not.toContain('"name":"moss-code"');
+    expect(stubText("composer")).toContain('"name":"MOSS\'s coding agent"');
+    cleanup();
+    await mount({ route: { route: "agent", params: { session: "code-1" } } }, [], SESSIONS, undefined, {}, {
+      "agent.backends": () => ({ backends: [{ id: "moss-code", name: "MOSS's coding agent", computers: [] }] }),
+    });
+    await act(() => settle(20));
+    expect(stubText("conversation")).toContain('"name":"Codex"');
   });
 
   test("a refusal (no folder of this computer's home, say) shows its reason and starts nothing", async () => {
