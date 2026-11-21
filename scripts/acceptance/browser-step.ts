@@ -318,6 +318,9 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
     if (!existsSync(join(tabFolder, "client", "index.tsx"))) fail("the third-party tab fixture is missing");
     await ctx.rpc.request("plugin.install", { source: { from: "folder", path: tabFolder } }, 60_000);
     const okCard = await until("the third-party tab's OK card", 60_000, async () => (await ctx.rpc.request<{ cards: { id: string; kind: string; pluginId?: string }[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === tabId));
+    // A failure in what follows leaves the OK card waiting on the island, and every later row of the run then meets it (try 17: rows 91,
+    // 92 and 66 failed behind this one): it is denied, and the window let go, before the failure goes on.
+    try {
     // The card on the island's top, the pointer on it: the window it sits in keeps the size it was given (a hovered card is drawn
     // a little grown, and was once read as a bigger room: the window followed, the pointer left, and the card flipped between
     // two heights, its buttons not showing at each turn), and its buttons show.
@@ -344,6 +347,11 @@ export async function browserStep(ctx: ExampleCtx, session: string, fixture: Bro
       await until("the OK card moved back to the island", 20_000, async () => (seen(/moved to the island \(window not foreground\)/) ? true : undefined));
       await until("the island drew the OK card again", 30_000, async () => ((await islandDrawsOkCard(islandCdp)) ? true : undefined));
       lines.push("one place at a time: with the window in front the OK card left the island for the app's own card, and with it back the island drew it again");
+    }
+    } catch (err) {
+      ctx.setMainFront?.(false);
+      await ctx.denyCard(okCard.id).catch(() => undefined);
+      throw err;
     }
     const okText = JSON.stringify((await ctx.rpc.request<{ card: unknown }>("card.get", { id: okCard.id })).card);
     await ctx.pressCard("the third-party tab's OK card", (c) => c.id === okCard.id);
