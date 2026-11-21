@@ -392,9 +392,14 @@ async function topmostAt(s: Ctx, selector: string): Promise<{ on: boolean; cover
   return s.moss.eval<{ on: boolean; cover: string }>(`((sel) => {
     const e = document.querySelector(sel);
     if (!e) return { on: false, cover: 'not drawn' };
+    // In view first, as the person scrolls to it: a card below the fold is at no point of the window yet.
+    e.scrollIntoView({ block: 'nearest' });
     const r = e.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > innerHeight) return { on: false, cover: 'out of view' };
     if (r.width === 0 || r.height === 0) return { on: false, cover: 'no size' };
-    const t = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 40));
+    // The middle of the part of it the window shows (a card taller than the window shows only a part).
+    const top = Math.max(r.top, 0), bottom = Math.min(r.bottom, innerHeight);
+    const t = document.elementFromPoint(r.left + r.width / 2, top + (bottom - top) / 2);
     const on = !!t && (t === e || e.contains(t));
     return { on, cover: t ? (t.closest('[class]')?.className || t.tagName) : 'nothing' };
   })(${JSON.stringify(selector)})`);
