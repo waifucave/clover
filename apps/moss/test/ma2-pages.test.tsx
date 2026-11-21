@@ -77,6 +77,7 @@ async function setup(opts: { longTalk?: { bot: string; messages: number } } = {}
     setLevel: (c, l) => engine.setLevel(c, l), setPermission: (s, t, p) => engine.setPermission(s, t, p),
     signIn: (p, i, k) => engine.signIn(p, i, k), signOut: (p, i) => engine.signOut(p, i),
     botRecord: (id) => engine.botRecord(id), editBot: (id, patch) => engine.editBot(id, patch), models: () => engine.models(),
+    setup: () => engine.setup(), setupProviders: () => engine.setupProviders(), openTerms: async () => false, setDefaultModel: (m) => engine.setDefaultModel(m), skipSetup: () => engine.skipSetup(),
     archiveBot: (id) => engine.archiveBot(id), archivedBots: () => engine.archivedBots(), restoreBot: (id) => engine.restoreBot(id), retry: (b) => engine.retry(b), pictureInput: () => {},
   };
   const used: string[] = [];

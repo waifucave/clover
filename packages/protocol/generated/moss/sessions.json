@@ -1969,6 +1969,372 @@
         "additionalProperties": false
       }
     },
+    "models.setDefault": {
+      "doc": "Sets the person's default model (what a bot or a session with no model of its own runs on): a model `models.list` offers whose provider the person added. Kept until they pick another or remove its provider (the setup guide, 2026-11-20).",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "setup": {
+            "type": "object",
+            "properties": {
+              "ready": {
+                "type": "boolean"
+              },
+              "missing": {
+                "maxItems": 2,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "provider",
+                    "model",
+                    "default-provider"
+                  ]
+                }
+              },
+              "providers": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "default": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "chosen",
+                      "computed"
+                    ]
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  }
+                },
+                "required": [
+                  "model",
+                  "source"
+                ],
+                "additionalProperties": false
+              },
+              "signedOut": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "recommended": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "effort": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  },
+                  "required": [
+                    "model"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "dismissed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "ready",
+              "missing",
+              "providers",
+              "dismissed"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "setup"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "setup.state": {
+      "doc": "Whether this home is set up for a first working reply: the providers added, the default model and what is missing. The apps' setup guide opens by itself while it isn't, unless dismissed.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "missing": {
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "provider",
+                "model",
+                "default-provider"
+              ]
+            }
+          },
+          "providers": {
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "default": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "chosen",
+                  "computed"
+                ]
+              },
+              "effort": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              }
+            },
+            "required": [
+              "model",
+              "source"
+            ],
+            "additionalProperties": false
+          },
+          "signedOut": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "recommended": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "effort": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "model"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "dismissed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready",
+          "missing",
+          "providers",
+          "dismissed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "setup.dismiss": {
+      "doc": "The person skipped the setup guide (`dismissed: true`: it no longer opens by itself, in either app), or asked for it back.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "dismissed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "dismissed"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "missing": {
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "provider",
+                "model",
+                "default-provider"
+              ]
+            }
+          },
+          "providers": {
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "default": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "chosen",
+                  "computed"
+                ]
+              },
+              "effort": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              }
+            },
+            "required": [
+              "model",
+              "source"
+            ],
+            "additionalProperties": false
+          },
+          "signedOut": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "recommended": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "effort": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "model"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "dismissed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready",
+          "missing",
+          "providers",
+          "dismissed"
+        ],
+        "additionalProperties": false
+      }
+    },
     "session.compact": {
       "doc": "Compacts now: the conversation becomes a summary and the prompt's harness blocks are rebuilt (a cache miss). A conversation inside the compaction's retention window is refused as having nothing to compact; an instructions edit doesn't need it, since it reaches the next turn (§5.6).",
       "owner": "D",
@@ -2885,6 +3251,130 @@
     }
   },
   "events": {
+    "setup_changed": {
+      "doc": "What the home's setup needs changed: a provider was added or removed, or the default model or the guide's dismissal changed.",
+      "owner": "A",
+      "scope": "core",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "setup_changed"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "setup": {
+            "type": "object",
+            "properties": {
+              "ready": {
+                "type": "boolean"
+              },
+              "missing": {
+                "maxItems": 2,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "provider",
+                    "model",
+                    "default-provider"
+                  ]
+                }
+              },
+              "providers": {
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "default": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "chosen",
+                      "computed"
+                    ]
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  }
+                },
+                "required": [
+                  "model",
+                  "source"
+                ]
+              },
+              "signedOut": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "recommended": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "effort": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    }
+                  },
+                  "required": [
+                    "model"
+                  ]
+                }
+              },
+              "dismissed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "ready",
+              "missing",
+              "providers",
+              "dismissed"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "ts",
+          "setup"
+        ]
+      }
+    },
     "bot_changed": {
       "doc": "A bot's settings or state changed.",
       "owner": "D",

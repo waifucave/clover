@@ -103,6 +103,7 @@ import { BUILDER_EXAMPLES_STEP, builderExamplesStep } from "./builder-examples-s
 import { WORKSHOP_POINTS_STEP, workshopPointsStep } from "./workshop-points-step";
 import { callText, WORKSHOP_STEP, workshopStep } from "./workshop-step";
 import { BOT_RECORDS_ENV, BOT_RECORDS_STEP, botRecordsWrong } from "./bot-records-step";
+import { SECOND_PROVIDER, SETUP_STEPS, setupUnit } from "./setup-step";
 import { MOSS_ENV, MOSS_STEPS, mossListsArchived, mossShowsOldConversation, mossUnit, seedLongConversation, type MossUnitCtx } from "./moss-step";
 import { botMoveUpgradeCheck } from "./bot-move-upgrade-step";
 import { ROUTINE_NAME, ROUTINE_SCHEDULE, routineTag, scheduledRunWrong, SCHEDULED_ROUTINE_STEP, type RunSeen } from "./routine-schedule-step";
@@ -772,6 +773,8 @@ function writeSettings(fakeUrl: string): void {
   // An earlier build's settings (an upgrade, a cold home) are kept: only the endpoints move to this run's fakes.
   writeFileSync(file, settingsWithFake(existsSync(file) ? readFileSync(file, "utf8") : undefined, fakeUrl, {
     ...(gemini === undefined ? {} : { google: gemini.url }),
+    // The setup unit's second provider, on the Anthropic wire: the fake too (no key for it exists until that row adds one).
+    [SECOND_PROVIDER]: fakeUrl,
     ...Object.fromEntries(OPENAI_WIRE_PROVIDERS.filter((p) => openAiWires.has(p.provider)).map((p) => [p.provider, `${openAiWires.get(p.provider)!.fake.url}${p.basePath}`])),
   }), { mode: 0o600 });
 }
@@ -3621,6 +3624,39 @@ async function mossRun(fresh: boolean): Promise<void> {
   void daemon;
 }
 
+/** The `setup` unit (lane SG, setup-step.ts): its own fresh home and engine (the bots as engine data, as MOSS's), no key,
+ *  then MOSS Code and MOSS from source, headless, each driven through its DevTools port. */
+async function setupRun(app: { exe: string; args: string[] }): Promise<void> {
+  if (target !== "source" && mossBundle === undefined) {
+    for (const name of SETUP_STEPS) record(stepNumber(FULL_STEPS, name), "BLOCKED", "a packaged run takes the build's MOSS with --moss-app <MOSS.app> (scripts/try/run.sh passes it)");
+    return;
+  }
+  try {
+    await startDaemonProc({ ...MOSS_ENV, ...(harnessIsApp() ? { MOSS_TEST_APP_PEER_PID: String(process.pid) } : {}) });
+  } catch (err) {
+    SETUP_STEPS.forEach((name, i) => record(stepNumber(FULL_STEPS, name), i === 0 ? statusOf(err) : "BLOCKED", i === 0 ? `the setup unit's daemon: ${why(err)}` : "setup failed"));
+    return;
+  }
+  const front = join(root, "setup-moss-front");
+  writeFileSync(front, "front");
+  await setupUnit({
+    root, logs, userHome, fake: fake!, dummyKey,
+    driver: async () => (await appDriver()).client,
+    startCodeApp: (port, appearance) => startChild("setup-code-app", app.exe, [...app.args, "--moss-headless", "--use-mock-keychain", `--remote-debugging-port=${port}`], {
+      ...baseEnv(), MOSS_DAEMON_BIN: stubBin, MOSS_TEST_APPEARANCE_FILE: appearance, ...(target === "source" ? { MOSS_DEV_DEBUG: "1" } : { MOSS_TEST_DEBUG: "1" }),
+    }),
+    startMossApp: (port) => {
+      const built = mossApp();
+      return startChild("setup-moss-app", built.exe, [...built.args, "--mute-audio", "--moss-headless", `--remote-debugging-port=${port}`], {
+        ...baseEnv(), MOSS_USER_DATA: join(root, "setup-moss-user-data"), MOSS_TEST_DEBUG: "1", MOSS_TEST_ANSWER_KEY: join(root, "setup-moss-answer-key"), MOSS_TEST_MAIN_FRONT_FILE: front,
+      });
+    },
+    freePort, endChild: (p) => endChild(p), alive, readLog, until, fail,
+    record: (name, status, detail) => record(stepNumber(FULL_STEPS, name), status, detail),
+    statusOf, why,
+  });
+}
+
 /** The bots-as-engine-data row (bot-records-step.ts): the daemon before it ended, one started with records as the bots'
  *  source on the same home (`fresh`: a home of its own, so the key is signed in first), then the clause over the app's
  *  methods with no app (its card answered over RPC). */
@@ -3841,6 +3877,8 @@ async function unitsRun(app: { exe: string; args: string[] }, allIds: readonly U
   // The moss unit alone: its daemon is the home's first, with the records as the bots' source. Beside other units it is a
   // run of its own after them (shards.ts `homePlan`, `ownHome`): its own temp home, never the one they used.
   if (allIds.length === 1 && allIds[0] === "moss") return mossRun(true);
+  // The setup unit alone: a fresh home with no provider and no default model, both apps over it.
+  if (allIds.length === 1 && allIds[0] === "setup") return setupRun(app);
   const plan = homePlan(allIds);
   if (plan.shared.length > 0) await otherUnitsRun(app, plan.shared);
   for (const id of plan.ownRuns) await ownHomeRun(id);
@@ -6065,6 +6103,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   }
   // The copy's upgrade: the key did not come over (it stays in the old install's Keychain service), the notice named
   // it, and it works once entered again.
+  let afterKey: number | undefined;
   if (copyUpgrade) {
     try {
       if (keyWhy !== "") fail(`models.list: ${keyWhy}`);
@@ -6077,12 +6116,34 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
       if (entry === undefined) fail(`plugin.auth.list ${plugin} has no api-key entry`);
       const signed = await c.request<{ state: string }>("plugin.auth.signIn", { id: plugin, index: entry!.index, key: dummyKey });
       if (signed.state !== "signed-in") fail(`plugin.auth.signIn left ${plugin} ${signed.state}`);
+      afterKey = readLog(appLog).length;
       const after = await c.request<{ models: { signedIn: boolean }[] }>("models.list", {});
       signedIn = after.models.filter((m) => JSON.stringify(m).includes("anthropic") && m.signedIn).length;
       if (signedIn === 0) fail("plugin.auth.signIn said signed-in, but models.list shows no Anthropic model signed in");
       record(stepNo("the old run's model key does not come over"), "PASS", `not signed in on the copied home; the notice said "${named!.slice(0, 160)}"; entered again: ${signedIn} Anthropic models signed in`);
     } catch (err) {
       record(stepNo("the old run's model key does not come over"), statusOf(err), why(err));
+    }
+  }
+  // Lane SG: the copied home works once its key is in again, so it is set up: the engine's setup.state is ready, and the
+  // app never opened the setup guide over it after the key (an old app's "done" note becomes the engine's skip).
+  if (copyUpgrade) {
+    const name = "the upgraded home is set up once its key is in again";
+    try {
+      const st = await until("setup.state ready on the upgraded home", 30_000, async () => {
+        const x = await c.request<{ ready: boolean; missing: string[]; providers: string[]; default?: { model: string; source: string }; dismissed: boolean }>("setup.state", {});
+        return x.ready ? x : undefined;
+      }, 500);
+      if (!st.providers.includes("anthropic")) fail(`setup.state's providers don't include the key's: ${JSON.stringify(st.providers)}`);
+      if (st.default === undefined || !st.default.model.startsWith("anthropic/")) fail(`the default model isn't the key's provider's: ${JSON.stringify(st.default)}`);
+      if (afterKey === undefined) fail("the key wasn't entered again (the row before)");
+      await sleep(2_000);
+      const guide = (from: number) => readLog(appLog).slice(from).split("\n").filter((l) => /the setup guide opens/.test(l)).length;
+      if (guide(afterKey!) > 0) fail("the app opened the setup guide on the upgraded home after its key was in");
+      const before = guide(logFrom);
+      record(stepNo(name), "PASS", `setup.state: ready, default ${st.default!.model} (${st.default!.source}), providers ${st.providers.join(", ")}${st.dismissed ? ", the old app's done note carried over as the engine's skip" : ""}; the app opened the guide ${before === 0 ? "never" : "only before the key was in again (not set up then)"}`);
+    } catch (err) {
+      record(stepNo(name), statusOf(err), why(err));
     }
   }
 

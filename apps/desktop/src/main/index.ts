@@ -39,7 +39,7 @@ import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } f
 import { daemonEndpoint, dial as dialDaemon, RpcCallError, type DaemonClient } from "./protocol/client";
 import { FileGrants, answersFor } from "./ui/file-grants";
 import { OptionalCalls } from "./pair/optional-calls";
-import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
+import { anyReady, guideOpens, guideStepsAside, listProviders, pageCall, type CorePage } from "./core-pages";
 import type { KeyTarget } from "./ui/tree-calls";
 import { AnswerKey, KeyRegistration, fileVault, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
@@ -954,6 +954,9 @@ const FALLBACK_MAX_HEIGHT = 560;
  *  only), so a fallback that fired says which surface was late and at which step: its frames asked for, a button of
  *  its showing, both buttons showing. */
 const cardArrived = new Map<string, { at: number; seen: Set<string> }>();
+/** The engine's offer to copy an old install's home (a `change` card, `home-copy`), by id, while it waits: the setup
+ *  guide waits for it (it comes first). */
+const homeCopyCards = new Set<string>();
 function noteStep(cardId: string, windowId: number | undefined, step: "frames asked" | "a button visible"): void {
   const arrived = cardArrived.get(cardId);
   if (arrived === undefined) return;
@@ -1109,6 +1112,7 @@ function enginePlaced(cardId: string, place: CardPlacement, from: "event" | "sna
   if (!fallbackHere(cardId)) { if (fallbacks.has(cardId)) { disarmFallback(cardId); heldOffFallbacks.add(cardId); } }
   else if (heldOffFallbacks.delete(cardId) && sealed.isPending(cardId)) void armFallback(cardId);
   if (cardPlaces.has(cardId)) placeCardNow(cardId);
+  tellGuideAside();
   // The surfaces hear it only when the island's hold changes (their `mainFront`): a message on every placement made the
   // island measure itself again under the pointer.
   if (was !== islandHoldsCard()) {
@@ -1161,7 +1165,8 @@ function movePendingCards(): void {
 /** A card the core told the app of (`card_requested`), or one already waiting when the app connected (`card.list`): the
  *  store's copy, its fallback timer and its place, once. Its id and kind only in the log (no text): the acceptance run
  *  checks the app was told of each card it answers. */
-function cardArrivedNow(card: { id: string; kind: string }, waiting = false): void {
+function cardArrivedNow(card: { id: string; kind: string; change?: string }, waiting = false): void {
+  if (card.change === "home-copy") { homeCopyCards.add(card.id); queueMicrotask(tellGuideAside); }
   if (cardArrived.has(card.id)) return;
   sealed.fromCore(card);
   if (!sealed.isPending(card.id)) return;
@@ -1202,12 +1207,25 @@ const stoodDown = new Set<string>();
 /** Every surface follows the stacking rule again (a card came, was answered, or its own card showed or went). */
 function restack(): void {
   for (const s of surfaces.values()) applyVisibility(s);
+  tellGuideAside();
   // lane HS (the reviewer's S): decided again at the earliest expiry, when a card stops being pending with no event.
   clearTimeout(expiryRestack);
   const next = sealed.nextExpiry();
   if (next !== undefined) { expiryRestack = setTimeout(restack, Math.min(Math.max(0, next - Date.now()) + 50, 2 ** 31 - 1)); expiryRestack.unref?.(); }
 }
 let expiryRestack: ReturnType<typeof setTimeout> | undefined;
+/** The setup guide steps aside while a card waits in this window (or the old home's copy does), and is back after. */
+let guideAsideNow = false;
+function tellGuideAside(): void {
+  if (program !== "code") return;
+  const aside = guideStepsAside({
+    places: enginePlaces.entries(), pending: (id) => sealed.isPending(id), program,
+    copyWaits: [...homeCopyCards].some((id) => cardArrived.has(id)),
+  });
+  if (aside === guideAsideNow) return;
+  guideAsideNow = aside;
+  if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "core-page-aside", aside });
+}
 let surfacesTimer: ReturnType<typeof setTimeout> | undefined;
 let lastSurfaces = "";
 function scheduleSurfacesReport(): void {
@@ -1546,6 +1564,7 @@ function makePair(): Pair {
         cardArrived.delete(parsed.data.id);
         cardPlaces.delete(parsed.data.id);
         windowDraws.delete(parsed.data.id);
+        tellGuideAside();
         // A replacement of this desktop's answer key waits on its card: on the yes, the app keeps the new key.
         const client = pair.client;
         if (client !== undefined && signedDevice !== undefined && answerKeyValue?.pendingCard === parsed.data.id) {
@@ -1830,6 +1849,8 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
 let corePage: CorePage | null = null;
 /** The plugin and key the key dialog is for, set only by the door's `ui.secret`; gone when the page closes. */
 let keyTarget: { target: KeyTarget; session: string; shown?: boolean } | undefined;
+/** Where an app before the engine kept the guide's setup (2026-11-20) noted it done or skipped: carried over once, as the
+ *  engine's own `setup.dismiss`, then removed. */
 const welcomeFlag = () => join(app.getPath("userData"), "welcome-done");
 
 const pageDeps = {
@@ -1840,13 +1861,9 @@ const pageDeps = {
     if (headless) log(`open: would open a page in the browser (${new URL(url).host})`);
     else await shell.openExternal(url);
   },
+  // The guide finished: the window lands on the coding side, a new code session when there's none (the shell's own act).
   welcomeDone: () => {
-    try {
-      mkdirSync(dirname(welcomeFlag()), { recursive: true });
-      writeFileSync(welcomeFlag(), `${new Date().toISOString()}\n`);
-    } catch (err) {
-      log(`welcome: couldn't note it's done: ${why(err)}`);
-    }
+    if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootPartMessage(mainWindow.id, { type: "shell-act", act: { kind: "go", target: { side: "code" } } });
   },
   page: () => corePage,
   closePage: () => {
@@ -1866,19 +1883,42 @@ async function openPage(page: CorePage): Promise<void> {
   corePage = page;
   const win = await openMainWindow();
   if (win !== undefined) runtime.rootMessage(win.id, { type: "core-page", page });
+  if (win !== undefined) runtime.rootMessage(win.id, { type: "core-page-aside", aside: guideAsideNow });
 }
 
-/** The welcome guide opens by itself on a start with no model provider signed in, until it is done or skipped. */
+/** A later look while the engine's home-copy offer waits for its answer. */
+let welcomeRetry: ReturnType<typeof setTimeout> | undefined;
+
+/** The setup guide opens by itself while the engine says this home isn't set up for a first reply (no provider, or no
+ *  default model) and the person hasn't skipped it, in this app or in MOSS (`setup.state`, the engine's). */
 async function maybeWelcome(client: DaemonClient): Promise<void> {
-  if (runtime.safeMode || corePage !== null || existsSync(welcomeFlag())) return;
+  if (runtime.safeMode || corePage !== null) return;
+  let state: { ready: boolean; dismissed: boolean } | undefined;
   try {
-    const providers = await listProviders(client, runtime.language);
-    if (anyReady(providers)) return;
+    state = await client.request<{ ready: boolean; dismissed: boolean }>("setup.state", {});
+    // An app before the engine held this noted the guide done or skipped in its own folder: the engine's now.
+    if (existsSync(welcomeFlag())) {
+      if (!state.ready && !state.dismissed) state = await client.request<{ ready: boolean; dismissed: boolean }>("setup.dismiss", { dismissed: true });
+      try { rmSync(welcomeFlag(), { force: true }); } catch { /* it is only read once more */ }
+    }
   } catch {
-    // A daemon that can't list them (an older one, the fake): no guide.
+    // An older engine (no `setup.state`): the rule it had, no provider signed in; a daemon that can't list them, no guide.
+    if (existsSync(welcomeFlag())) return;
+    try {
+      if (anyReady(await listProviders(client, runtime.language))) return;
+    } catch {
+      return;
+    }
+    state = { ready: false, dismissed: false };
+  }
+  if (!guideOpens(state)) return;
+  // The engine's offer to copy an old install's home comes first: the guide waits until it is answered.
+  const copyOffered = [...homeCopyCards].some((id) => cardArrived.has(id));
+  if (copyOffered) {
+    if (welcomeRetry === undefined) welcomeRetry = setTimeout(() => { welcomeRetry = undefined; if (pair.client !== undefined) void maybeWelcome(pair.client); }, 5_000);
     return;
   }
-  log("welcome: no model provider is signed in; the guide opens");
+  log("welcome: this home isn't set up for a first reply; the setup guide opens");
   await openPage("welcome");
 }
 
@@ -3251,6 +3291,8 @@ function setMenu(): void {
         { role: "about" },
         { type: "separator" },
         { label: "Settings…", accelerator: "Command+,", click: () => void show({ kind: "settings" }) },
+        // The setup guide again, whenever the person wants it (core, like the guide itself).
+        { label: translate(runtime.coreStrings(), "moss.core.welcome.menu"), click: () => void openPage("welcome") },
         { type: "separator" },
         { role: "hide" },
         { role: "hideOthers" },

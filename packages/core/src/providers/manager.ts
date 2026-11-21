@@ -65,6 +65,8 @@ function statMtimeOrZero(path: string): number {
  *  BARE modelId half of `settings.provider.model`'s tag, verbatim (see `liveModel`'s doc comment
  *  above for why no rewrite/fallback happens here any more). */
 function resolveSelection(settings: Settings, providerId: string): LiveModelSelection {
+  // No default model yet: an empty model, which the internal provider's callers already treat as nothing to run.
+  if (settings.provider === undefined) return { model: "", providerId };
   const { model, reasoningEffort } = settings.provider;
   return { model: splitTag(model).modelId, providerId, ...(reasoningEffort ? { reasoningEffort } : {}) };
 }
@@ -147,6 +149,8 @@ export async function createProvider(
    */
   existingQuota?: QuotaManager,
 ): Promise<ActiveProvider | null> {
+  // No default model yet (a fresh home): no internal provider to bind; the internal-jobs router runs MOSS's own jobs.
+  if (settings.provider === undefined) return null;
   const providerId = splitTag(settings.provider.model).providerId;
   if (!(INTERNAL_PROVIDER_IDS as readonly string[]).includes(providerId)) return null;
   const quota = existingQuota ?? new QuotaManager();
@@ -174,7 +178,7 @@ export async function createProvider(
     inner = createOpenAiCompatibleRuntimeProvider(secrets, providerBaseUrlFor(settings, providerId) ?? "");
   }
   const liveModel = buildLiveModelResolver(settings, settingsPath, providerId);
-  return { provider: withQuota(inner, quota), model: splitTag(settings.provider.model).modelId, quota, liveModel };
+  return { provider: withQuota(inner, quota), model: splitTag(settings.provider!.model).modelId, quota, liveModel };
 }
 
 /**
@@ -280,7 +284,8 @@ export async function createRebindableProvider(settings: Settings, secrets: Secr
   const active = await createProvider(settings, secrets, settingsPath);
   if (active === null) return null;
   const swappable = new SwappableProvider(active.provider);
-  let boundProviderId = splitTag(settings.provider.model).providerId;
+  // `createProvider` answered null above for a home with no default model, so there is one here.
+  let boundProviderId = splitTag(settings.provider!.model).providerId;
   const self: RebindableProvider = {
     provider: swappable,
     model: active.liveModel().model,
@@ -289,6 +294,7 @@ export async function createRebindableProvider(settings: Settings, secrets: Secr
     async refresh(nextSettings, nextSecrets, nextSettingsPath) {
       let nextProviderId: string;
       try {
+        if (nextSettings.provider === undefined) return false; // the default taken away: keep the handle as it is
         nextProviderId = splitTag(nextSettings.provider.model).providerId;
       } catch {
         return false; // malformed tag — Settings.parse would already have refused this file; never rebind on it

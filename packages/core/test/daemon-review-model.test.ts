@@ -2,6 +2,8 @@
 // 2026-11-13): the reviewer role names a model whose provider is signed in → they run on it, default model or not; the
 // role unset → the user's default model; neither → "No model is set for reviews…". The settings file is changed while
 // the daemon runs, as Settings › Models does, and each answer is the live one (`plugin.review { peek }`).
+import { loadCatalog } from "@waifucave/clover-provider-catalog";
+import { recommendedModel } from "../src/default-model";
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -105,11 +107,13 @@ test("the reviewer role names a signed-in provider's model: Review runs on it th
   // The bundled tree (178 model plugins and the rest) staged as a source run stages it: the registry's watches on its
   // folders are what delayed the settings file's own event (14f's second table: past 30 s).
   const h = await home("codex-oauth/gpt-5.6-sol", true);
-  // Before the role is set: MOSS chooses no model on Anthropic by itself, and the default is elsewhere.
-  expect(await h.peek()).toMatchObject({ state: "unavailable", why: REVIEW_NO_MODEL });
+  // Before the role is set: the older build's Codex default has no key here, so the one provider's recommended model is
+  // the default (2026-11-20, default-model.ts), and Review runs on that.
+  const rec = recommendedModel(loadCatalog(), "anthropic")!;
+  expect(await h.peekUntil((v) => v.state !== "unavailable")).toMatchObject({ state: "idle", model: rec });
   const t0 = Date.now();
   h.settings({ reviewer: { model: "anthropic/claude-sonnet-5-5" } });
-  expect(await h.peekUntil((v) => v.state !== "unavailable")).toMatchObject({ state: "idle", model: "anthropic/claude-sonnet-5-5" });
+  expect(await h.peekUntil((v) => v.model === "anthropic/claude-sonnet-5-5")).toMatchObject({ state: "idle", model: "anthropic/claude-sonnet-5-5" });
   // The settings watcher's stat look takes it within its second, whatever the file event does.
   expect(Date.now() - t0).toBeLessThan(5_000);
   h.app.close();
@@ -121,8 +125,10 @@ test("the role unset: Review runs on the user's default model", async () => {
   h.app.close();
 });
 
-test("neither a role nor a default it can run on: Review says no model is set", async () => {
+test("an older build's written default with no key for it: Review runs on the one provider's recommended model, not on it", async () => {
+  // 2026-11-20 (default-model.ts): before, this home had no default it could run on and Review said so; now the default
+  // named on disk counts as none (no Codex sign-in) and the one provider's recommended model takes its place.
   const h = await home("codex-oauth/gpt-5.6-sol");
-  expect(await h.peek()).toMatchObject({ state: "unavailable", why: REVIEW_NO_MODEL });
+  expect(await h.peekUntil((v) => v.state !== "unavailable")).toMatchObject({ state: "idle", model: recommendedModel(loadCatalog(), "anthropic")! });
   h.app.close();
 });

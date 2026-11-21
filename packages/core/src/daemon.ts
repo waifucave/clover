@@ -141,7 +141,9 @@ import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
-import { loadSettings, saveSettings, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { readProviders, SetupService, setupMethods } from "./setup-state";
+import { defaultEffortFor, recommended } from "./default-model";
+import { clearProviderModel, loadSettings, saveSettings, setupDismissedFrom, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -250,7 +252,7 @@ import { DOWNLOAD_LIMITS, httpsFetch, INDEX_FETCH_TIMEOUT_MS } from "./registry/
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential, evictSessionsForModelCatalog } from "./runtime-sdk/credentials";
 import { activeCatalog, installedModelPlugins, modelProviderKey, onModelCatalogChange } from "./runtime-sdk/model-plugins";
-import { contributedProviders, modelOffer, modelsMethods } from "./runtime-sdk/models-list";
+import { catalogModelListings, contributedProviders, modelOffer, modelsMethods } from "./runtime-sdk/models-list";
 import { coldResumeRunHomeFor, createMossSessionDrivers, sessionPermissionClassFor, type MossLegDeps, type MossSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -2240,7 +2242,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // gap. See `RebindableProvider`'s own doc comment in providers/manager.ts.
   const titlesModel = (): string | undefined => {
     const m = settings?.titles?.model;
-    return m === undefined ? undefined : internalModelFor(m, { providerId: agentProvider?.live?.().providerId ?? ownProviderFor(settings) }, "titles.model");
+    return m === undefined ? undefined : internalModelFor(m, { providerId: agentProvider?.live?.().providerId ?? ownProviderFor(settings) ?? "" }, "titles.model");
   };
   // 2026-09-18: the role's stored effort (`settings.roleEfforts["titles.model"]`), a getter off the
   // SAME live `settings` binding and the SAME bound selection `titlesModel` reads — so it is hot, and
@@ -2248,7 +2250,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // bound provider's live model). Shared with the reviewer below; `internalRoleEffortFor`'s own doc
   // has the rule. `agentProvider.model` is the fallback only for a test double with no `live`.
   const boundSelection = (): { providerId: string; model: string } => ({
-    providerId: agentProvider?.live?.().providerId ?? ownProviderFor(settings),
+    providerId: agentProvider?.live?.().providerId ?? ownProviderFor(settings) ?? "",
     model: agentProvider?.live?.().model ?? agentProvider?.model ?? "",
   });
   const titlesEffort = (): string | undefined => internalRoleEffortFor(settings, "titles.model", settings?.titles?.model, boundSelection());
@@ -2331,7 +2333,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // comment) applies here too — the same `agentProvider?.live?.()` reasoning, not repeated verbatim.
   const reviewerModel = (): string | undefined => {
     const m = settings?.reviewer?.model;
-    return m === undefined ? undefined : internalModelFor(m, { providerId: agentProvider?.live?.().providerId ?? ownProviderFor(settings) }, "reviewer.model");
+    return m === undefined ? undefined : internalModelFor(m, { providerId: agentProvider?.live?.().providerId ?? ownProviderFor(settings) ?? "" }, "reviewer.model");
   };
   // The effort half, exactly as `titlesEffort` above (same getter shape, same fall-through rule).
   const reviewerEffort = (): string | undefined => internalRoleEffortFor(settings, "reviewer.model", settings?.reviewer?.model, boundSelection());
@@ -3347,7 +3349,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // boot (`agentProvider: null`, `runtime-state/probe.ts`) still reports `null` here, which is the
   // distinction the field was actually carrying.
   const providerInfo = internalRouter && settings
-    ? { id: providerIdFromSettingsTag(settings) ?? "none", model: settings.provider.model }
+    ? { id: providerIdFromSettingsTag(settings) ?? "none", model: settings.provider?.model ?? "" }
     : null;
 
   // Chat Slice D task 3 (`sync.config`): the phone's "default model" bootstrap value, re-resolved
@@ -3373,6 +3375,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const liveSelection = internalRouter && settings
     ? () => {
         const s = settings!;
+        // No default model yet: an empty one, which every reader of `liveModel` takes as none.
+        if (s.provider === undefined) return { model: "", providerId: "" };
         const effort = s.provider.reasoningEffort;
         return { model: splitTag(s.provider.model).modelId, providerId: splitTag(s.provider.model).providerId, ...(effort === undefined ? {} : { reasoningEffort: effort }) };
       }
@@ -3397,7 +3401,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // 2026-09-19: the internal-jobs roles no longer have a single "bound" provider — `permitted` and the
   // per-role `model` come from `internalRouter.view`'s snapshot (threaded separately). This stays only
   // as the pre-router fallback every `modelRoleInfo` caller without a snapshot still reads.
-  const boundProviderId = () => ownProviderFor(settings);
+  const boundProviderId = () => ownProviderFor(settings) ?? "";
   // WS-20: `liveModel()` is a TAG — composed from the hot `liveSelection().providerId` (the CATALOG
   // providerId, boot-bound like everything else about provider identity, but read off
   // `LiveModelSelection` itself rather than `Provider.id` above, which is NOT always a real catalog
@@ -3407,8 +3411,36 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // boundary's own split in the other direction. Falls back to `liveProvider()` only when the
   // injected `live()` resolver predates `providerId` (a test double that hasn't been updated) —
   // every real boot path (`createProvider`'s own `liveModel`) always supplies it.
+  // The setup guide's engine half (2026-11-20, `setup-state.ts`): the providers the person added, the default model
+  // computed from them, and whether they skipped the guide. `liveModel` below is ITS default: the named model while its
+  // provider is one the person has, else the one provider's recommended model, else none ("") — never the old fixed
+  // default, and never a provider the person doesn't have.
+  const writeSettings = (change: (s: Settings) => Settings): void => {
+    const next = change(loadSettings(dirs.settingsPath));
+    saveSettings(dirs.settingsPath, next);
+    settings = liveSettingsView(next);
+    advanceAuthorityRevision(mossHome);
+  };
+  const setup = new SetupService({
+    seed: presentProviders,
+    // Complete only once the plugins' sign-ins can be read (the registry open, the model plugins started), that read
+    // worked, and no slot's probe failed: only a complete read may change the default on disk (setup-state.ts).
+    readPresent: () => readProviders({ presence: () => credentialPresenceFrom(secrets), auth: () => pluginAuth }),
+    storedModel: () => settings?.provider?.model,
+    storedEffort: () => settings?.provider?.reasoningEffort,
+    recommend: (provider) => recommended(activeCatalog(), provider),
+    effortFor: (model) => defaultEffortFor(activeCatalog(), model),
+    // The model and the effort written together: a new default never keeps the old one's effort.
+    writeModel: (model, effort) => writeSettings((s) => ({ ...s, provider: { model: model as ModelTag, ...(effort !== undefined ? { reasoningEffort: effort as NonNullable<Settings["provider"]>["reasoningEffort"] } : {}) } })),
+    clearModel: () => writeSettings((s) => clearProviderModel(s)),
+    dismissed: () => setupDismissedFrom(settings),
+    writeDismissed: (dismissed) => writeSettings((s) => ({ ...s, setup: { ...s.setup, dismissed } })),
+    offered: (model) => catalogModelListings(activeCatalog(), new Set()).some((m) => m.id === model),
+    emit: (state) => void mossServer?.coreEvent({ type: "setup_changed", setup: state }),
+    log: (line) => console.error(line),
+  });
   const liveModel = liveSelection && liveProvider
-    ? () => `${liveSelection!().providerId ?? liveProvider!()}/${liveSelection!().model}` as ModelTag
+    ? () => (setup.defaultModel() ?? "") as ModelTag
     : undefined;
   const liveEffort = liveSelection ? () => liveSelection().reasoningEffort ?? "" : undefined;
 
@@ -3533,8 +3565,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...Object.keys((await credentialPresenceFrom(secrets)).byProvider),
       ...(await pluginAuth?.signedInProviders().catch(() => new Set<string>()) ?? []),
     ]),
-    defaultModel: () => liveModel?.(),
+    defaultModel: () => liveModel?.() || undefined,
   })));
+  // The setup guide's questions (`setup.state`, `setup.dismiss`, `models.setDefault`), any client's.
+  if (settings) Object.assign(mossLaneHandlers, laneMethodHandlers(setupMethods(setup)));
+  // Read once now: the boot's presence was taken before the legacy credential move, which may have added one.
+  if (settings) await setup.refresh();
   // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
   // are empty and anything else is refused while it opens; then the registry's handlers serve them.
   let pluginMethods: Record<string, MethodHandler> = {};
@@ -3715,7 +3751,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   });
   const server: IpcServer = startIpcServer({
     // The bots' view of the stored keys, refreshed at once on `credential.set` and the sign-in doors.
-    credentialChanged: () => botKeys?.refresh(),
+    credentialChanged: async () => { await botKeys?.refresh(); if (settings) await setup.refresh(); },
+    // `credential.remove`, the person's own act: a default model on that provider is replaced or taken away.
+    credentialRemoved: async (provider) => { if (settings) await setup.providerRemoved(provider); },
     mossConnections: mossServer,
     socketPath: dirs.socketPath,
     serverVersion: CORE_VERSION,
@@ -4264,7 +4302,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       }).then(
         (started) => {
           if (partsStopping || pluginHost !== host) started.stop();
-          else modelPlugins = started;
+          else {
+            modelPlugins = started;
+            // The plugins' providers can be read in full now: the setup's read is complete from here on.
+            void setup.refresh();
+          }
         },
         (err: unknown) => { console.error(`[model-plugins] not started: ${err instanceof Error ? err.name : typeof err}; sessions use the SDK's compiled catalog`); },
       );
@@ -4278,8 +4320,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // The bots' view first, as `credentialChanged` does: a turn started on the event, or once the sign-in's call
         // returns, already sees it.
         await botKeys?.refresh();
+        await setup.refresh();
         mossServer?.coreEvent({ type: "plugin_auth_changed", id, auth });
       },
+      // The person signed out: a default model on what the sign-in covered is replaced or taken away (setup-state.ts).
+      signedOut: async (providers) => { for (const p of providers) await setup.providerRemoved(p); },
       credentialChanged: async (provider) => {
         // The bots' view of the stored keys first, so the next bot turn runs on the key just added or removed.
         await botKeys?.refresh();
@@ -4295,6 +4340,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       },
       log: (line) => console.error(line),
     }), { openCard: brokerCardOpener(pluginsBroker), nameOf: (id) => { const n = opened.registry.get(id)?.name; return typeof n === "string" ? n : undefined; }, emit: (event) => void mossServer?.coreEvent(event), log: (line) => console.error(line) })));
+    // The setup's providers read again now the plugins' sign-ins can be asked, and the default settled (a home with
+    // one provider and an older build's written default gets that provider's recommended model).
+    void setup.refresh();
     // Lane J: the plugins' stdio MCP servers. What a daemon before this one left running is reaped by its marks first
     // (this daemon holds the home's lock, so no other daemon of this home runs one). Without the plugin run files (no
     // guard, no fence), none is served.
@@ -4492,7 +4540,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         offBotKeysWatch?.();
         // `registry` is the plugin registry (`daemonBots`' argument: `startPlugins`' `opened.registry`): a plugin
         // installed, removed or switched reads the sign-ins again.
-        offBotKeysWatch = registry.watch(() => { void keys.refresh(); });
+        offBotKeysWatch = registry.watch(() => { void keys.refresh(); void setup.refresh(); });
         botKeys = keys;
         return keys;
       })(),
@@ -4911,6 +4959,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         agents: p.agents === false ? false : {
           socketPath: dirs.socketPath, spawn: (options) => embeddedSessions.spawn(options), doors: agentDoors,
           defaultModel: p.agents?.defaultModel ?? (() => liveModel?.() ?? ""),
+          ...(p.agents?.defaultModel === undefined ? { defaultEffort: () => setup.state().default?.effort } : {}),
           // The same provider fill as the bots': an agent's turn gets its provider and credential as a bot's does.
           fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
           ...(p.agents?.backends ? { backends: p.agents.backends } : {}),

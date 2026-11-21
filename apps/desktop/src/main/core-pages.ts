@@ -8,7 +8,7 @@
 // daemon's credential store and nowhere else: never into a log line or an error message here.
 // The plugin manager lists every plugin but the app's own and turns one off or removes it; turning plugins on waits
 // for a normal start, where its OK is a sealed card.
-import type { PluginAuthView, PluginSummary, PointView } from "@waifucave/moss-protocol";
+import type { ModelListing, PluginAuthView, PluginSummary, PointView, SetupState } from "@waifucave/moss-protocol";
 import { SAFE_MODE_PLUGINS } from "./ui/model";
 import type { KeyTarget } from "./ui/tree-calls";
 import { textIn } from "./ui/strings";
@@ -58,9 +58,47 @@ export async function listProviders(client: PageClient, lang: string): Promise<P
   return out;
 }
 
-/** Whether a provider is signed in already (then the guide doesn't open by itself). */
+/** Whether a provider is signed in already: the guide's rule against an older engine that doesn't answer `setup.state`. */
 export function anyReady(providers: readonly ProviderView[]): boolean {
   return providers.some((p) => p.auth.some((a) => a.state === "signed-in" || a.state === "refreshing"));
+}
+
+/** A model the guide's picker offers: one of a provider the person added (signed in). */
+export interface PickView {
+  id: string;
+  name: string;
+  provider: string;
+  providerName: string;
+}
+
+/** The models of the providers the person added, as the guide's picker lists them. */
+export async function signedInModels(client: PageClient, lang: string): Promise<PickView[]> {
+  const { models } = await client.request<{ models: ModelListing[] }>("models.list", {});
+  return models.filter((m) => m.signedIn).map((m) => ({ id: m.id, name: textIn(m.name, lang) || m.id, provider: m.provider, providerName: textIn(m.providerName, lang) || m.provider }));
+}
+
+/** Whether the guide opens by itself on this start: the engine's setup isn't ready and the person hasn't skipped it. */
+export function guideOpens(state: Pick<SetupState, "ready" | "dismissed">): boolean {
+  return !state.ready && !state.dismissed;
+}
+
+/** Whether the core's page (the setup guide) steps aside: a pending card the engine's router placed in this program's main
+ *  window (its conversation or its strip), or the old home's copy card waiting. A card placed elsewhere (the island,
+ *  another app) leaves it where it is. */
+export function guideStepsAside(o: {
+  places: Iterable<readonly [string, { kind: string; program?: string; window?: string } | undefined]>;
+  pending(cardId: string): boolean;
+  program: string;
+  window?: string;
+  copyWaits: boolean;
+}): boolean {
+  if (o.copyWaits) return true;
+  const window = o.window ?? "main";
+  for (const [id, p] of o.places) {
+    if (p === undefined || (p.kind !== "conversation" && p.kind !== "strip")) continue;
+    if (p.program === o.program && p.window === window && o.pending(id)) return true;
+  }
+  return false;
 }
 
 export interface ManagedPlugin {
@@ -98,7 +136,7 @@ export interface PageDeps {
   lang(): string;
   /** Opens a page in the user's own browser (a provider's sign-in or terms). */
   openExternal(url: string): Promise<void>;
-  /** The guide is done (or skipped): it doesn't open by itself again. */
+  /** The guide is finished: the window lands on a new code session (the coding side). */
   welcomeDone(): void;
   /** The page the root should show now, and closing it. */
   page(): CorePage | null;
@@ -119,7 +157,7 @@ export interface PageDeps {
 }
 
 /** The calls the root's pages make, by name. Anything else is refused. */
-export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "plugins.list", "plugins.turnOff", "plugins.remove", "key.view", "key.save", "key.remove", "release.switchNow", "release.retry"] as const;
+export const PAGE_CALLS = ["page.current", "registry.state", "page.close", "welcome.providers", "welcome.signIn", "welcome.openTerms", "welcome.done", "welcome.skip", "welcome.setup", "welcome.models", "welcome.setDefault", "plugins.list", "plugins.turnOff", "plugins.remove", "key.view", "key.save", "key.remove", "release.switchNow", "release.retry"] as const;
 export type PageCall = (typeof PAGE_CALLS)[number];
 
 const ID_RE = /^[a-z][a-z0-9-]*(\/[a-z][a-z0-9-]*)?$/;
@@ -162,12 +200,25 @@ export async function pageCall(name: string, params: unknown, deps: PageDeps): P
     return { ok: true };
   }
   if (name === "welcome.done") {
-    deps.welcomeDone();
     deps.closePage();
+    deps.welcomeDone();
     return { ok: true };
   }
   const client = deps.client();
   if (client === undefined) throw new Error("MOSS Code isn't running");
+  if (name === "welcome.skip") {
+    // The engine's: it doesn't open by itself again in either app (Settings opens it again).
+    await client.request("setup.dismiss", { dismissed: true });
+    deps.closePage();
+    return { ok: true };
+  }
+  if (name === "welcome.setup") return client.request<SetupState>("setup.state", {});
+  if (name === "welcome.models") return { models: await signedInModels(client, deps.lang()) };
+  if (name === "welcome.setDefault") {
+    const model = typeof p.model === "string" && p.model.length > 0 && p.model.length <= 200 ? p.model : undefined;
+    if (model === undefined) throw new Error("which model?");
+    return (await client.request<{ setup: SetupState }>("models.setDefault", { model })).setup;
+  }
   const id = typeof p.id === "string" && ID_RE.test(p.id) ? p.id : undefined;
   switch (name as PageCall) {
     case "welcome.providers":

@@ -2,7 +2,7 @@ import { describe, expect, test, spyOn } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSettings, loadPermissionDirs, addLocalDir, saveSettings, Settings, REASONING_EFFORTS, CLIENT_EFFORTS, isClientEffort, wireEffort, clientEffortEligible, setProviderModel, setReasoningEffort, hooksEnabledFrom, setOutputStyle, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, computerUseEnabledFrom, lspEnabledFrom, mossOptionsFromSettings, DEFAULT_WINTER_IDLE_TIMEOUT_SEC, DEFAULT_PROVIDER, pinsFor, setModelRole, modelRoleInfo, setSkillDenied, skillDenyRule, MODEL_ROLES, roleEffortFor, roleAcceptsClientEffort, roleCarriesEffort, effortToSpendForRole, retiredRuntimeSettingKeys } from "../src/settings";
+import { loadSettings, loadPermissionDirs, addLocalDir, saveSettings, Settings, REASONING_EFFORTS, CLIENT_EFFORTS, isClientEffort, wireEffort, clientEffortEligible, setProviderModel, setReasoningEffort, hooksEnabledFrom, setOutputStyle, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, computerUseEnabledFrom, lspEnabledFrom, mossOptionsFromSettings, DEFAULT_WINTER_IDLE_TIMEOUT_SEC, pinsFor, setModelRole, modelRoleInfo, setSkillDenied, skillDenyRule, MODEL_ROLES, roleEffortFor, roleAcceptsClientEffort, roleCarriesEffort, effortToSpendForRole, retiredRuntimeSettingKeys } from "../src/settings";
 import { ModelRole as ProtocolModelRole } from "@waifucave/moss-protocol";
 import { mkdirSync, writeFileSync as wf } from "node:fs";
 import { UNSTATED_TAG, type ModelTag } from "../src/runtime-sdk/model-tag";
@@ -13,6 +13,10 @@ import { noReasoningBlockTag, reasoningUnsupportedTag } from "./helpers/reasonin
 // exercises `loadSettings`'s OWN migration; every v3 fixture below uses `DEFAULT_PROVIDER.model`
 // (a tag) instead. `DEFAULT_CODEX_MODEL` itself is deleted along with `CODEX_MODELS`.
 const LEGACY_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+
+/** The model every build before 2026-11-20 wrote into a fresh home (the old fixed default): a plain valid tag for the v3
+ *  fixtures below. A fresh home now has no default model (`default-model.ts`). */
+const DEFAULT_PROVIDER = { model: "codex-oauth/gpt-5.6-sol" as ModelTag } as const;
 
 /** A plain test literal known to be tag-shaped, asserted as `ModelTag` for `toEqual`/`toBe` against
  *  a branded field — these fixtures are hand-written to already be valid tags, so this is a type
@@ -32,11 +36,11 @@ describe("loadSettings", () => {
   // (with presence in hand); every other caller (the CLI, every test below that doesn't pass
   // `persistMigration: true`) gets the SAME migrated `Settings` object back, but the file on disk is
   // left exactly as found.
-  test("migrates schemaVersion 1 → 3 with codex-oauth default IN MEMORY, without persistMigration", () => {
+  test("migrates schemaVersion 1 → 3 with no default model IN MEMORY, without persistMigration", () => {
     const p = tmpSettings({ schemaVersion: 1 });
     const s = loadSettings(p);
     expect(s.schemaVersion).toBe(3);
-    expect(s.provider).toEqual(DEFAULT_PROVIDER); // gpt-5.4 fully deprecated — default points at the current tag
+    expect(s.provider).toBeUndefined(); // 2026-11-20: no fixed default — none until a provider is added
     expect(JSON.parse(readFileSync(p, "utf8")).schemaVersion).toBe(1); // NOT persisted — this is the "CLI path"
   });
 
@@ -44,8 +48,9 @@ describe("loadSettings", () => {
     const p = tmpSettings({ schemaVersion: 1 });
     const s = loadSettings(p, { persistMigration: true });
     expect(s.schemaVersion).toBe(3);
-    expect(s.provider).toEqual(DEFAULT_PROVIDER);
+    expect(s.provider).toBeUndefined();
     expect(JSON.parse(readFileSync(p, "utf8")).schemaVersion).toBe(3); // migration persisted
+    expect(JSON.parse(readFileSync(p, "utf8")).provider).toBeUndefined();
   });
 
   // WS-20 (spec §5 rule 3): a v2 `openai-compatible` provider migrates to an `openai/` tag, and
@@ -117,7 +122,7 @@ describe("loadSettings", () => {
     const p = tmpSettings({ legacyCustom: { provider: "disabled" } });
     const s = loadSettings(p, { persistMigration: true });
     expect(s.schemaVersion).toBe(3);
-    expect(s.provider.model).toBe(DEFAULT_PROVIDER.model);
+    expect(s.provider).toBeUndefined();
     const onDisk = JSON.parse(readFileSync(p, "utf8"));
     expect(onDisk.legacyCustom).toEqual({ provider: "disabled" }); // v1 data preserved on disk
     expect(onDisk.schemaVersion).toBe(3);
@@ -127,7 +132,7 @@ describe("loadSettings", () => {
     const p = tmpSettings({ legacyCustom: { provider: "disabled" } });
     const s = loadSettings(p);
     expect(s.schemaVersion).toBe(3);
-    expect(s.provider.model).toBe(DEFAULT_PROVIDER.model);
+    expect(s.provider).toBeUndefined();
     const onDisk = JSON.parse(readFileSync(p, "utf8"));
     expect(onDisk.schemaVersion).toBeUndefined(); // untouched — the original v1 fixture has none
   });
@@ -554,17 +559,17 @@ describe("loadSettings", () => {
 
   test("provider.reasoningEffort parses on both provider variants; absent → undefined", () => {
     const codex = Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol", reasoningEffort: "high" } });
-    expect(codex.provider.reasoningEffort).toBe("high");
+    expect(codex.provider?.reasoningEffort).toBe("high");
     const openai = Settings.parse({ schemaVersion: 3, provider: { model: "openai/gpt-5.2", reasoningEffort: "xhigh" }, providers: { openai: { baseUrl: "https://x" } } });
-    expect(openai.provider.reasoningEffort).toBe("xhigh");
-    expect(Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }).provider.reasoningEffort).toBeUndefined();
+    expect(openai.provider?.reasoningEffort).toBe("xhigh");
+    expect(Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol" } }).provider?.reasoningEffort).toBeUndefined();
   });
 
   test("every documented reasoning-effort slug parses; an invalid slug is rejected", () => {
     expect(REASONING_EFFORTS).toEqual(["none", "low", "medium", "high", "xhigh", "max"]);
     for (const effort of REASONING_EFFORTS) {
       const s = Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol", reasoningEffort: effort } });
-      expect(s.provider.reasoningEffort).toBe(effort);
+      expect(s.provider?.reasoningEffort).toBe(effort);
     }
     expect(() => Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol", reasoningEffort: "bogus" } })).toThrow();
   });
@@ -585,7 +590,7 @@ describe("loadSettings", () => {
     expect(REASONING_EFFORTS as readonly string[]).toContain("none");
     expect(() => Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol", reasoningEffort: "ultra" } })).toThrow();
     const s = Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-sol", reasoningEffort: "none" } });
-    expect(s.provider.reasoningEffort).toBe("none");
+    expect(s.provider?.reasoningEffort).toBe("none");
 
     // The actual `moss model --effort ultra` path: setReasoningEffort + saveSettings (which
     // validates before writing). Before this task's fix, this round-trip SUCCEEDED and wrote
@@ -1039,8 +1044,8 @@ describe("setProviderModel / setReasoningEffort (moss model CLI's pure transform
     const withEffort = setReasoningEffort(s, "xhigh");
     expect(withEffort.provider).toEqual({ model: tag("codex-oauth/gpt-5.6-sol"), reasoningEffort: "xhigh" });
     const cleared = setReasoningEffort(withEffort, undefined);
-    expect(cleared.provider.model).toBe(tag("codex-oauth/gpt-5.6-sol"));
-    expect(cleared.provider.reasoningEffort).toBeUndefined();
+    expect(cleared.provider?.model).toBe(tag("codex-oauth/gpt-5.6-sol"));
+    expect(cleared.provider?.reasoningEffort).toBeUndefined();
   });
 
   test("both transforms produce Settings.parse-valid output", () => {
@@ -1056,7 +1061,7 @@ describe("setProviderModel / setReasoningEffort (moss model CLI's pure transform
   test("R4: setProviderModel accepts any catalog provider, including one the internal Provider cannot serve", () => {
     const s: Settings = { schemaVersion: 3, provider: { model: tag("codex-oauth/gpt-5.6-sol") } };
     const next = setProviderModel(s, tag("anthropic/claude-sonnet-5"));
-    expect(next.provider.model).toBe(tag("anthropic/claude-sonnet-5"));
+    expect(next.provider?.model).toBe(tag("anthropic/claude-sonnet-5"));
     expect(() => Settings.parse(next)).not.toThrow();
   });
 });
@@ -1075,7 +1080,7 @@ describe("setModelRole: the catalog-membership check", () => {
 
   test("a real catalog tag is accepted", () => {
     expect(setModelRole(base, "pins.dispatch", "anthropic/claude-sonnet-5").pins?.dispatch).toBe(tag("anthropic/claude-sonnet-5"));
-    expect(setModelRole(base, "provider.model", "anthropic/claude-sonnet-5").provider.model).toBe(tag("anthropic/claude-sonnet-5"));
+    expect(setModelRole(base, "provider.model", "anthropic/claude-sonnet-5").provider?.model).toBe(tag("anthropic/claude-sonnet-5"));
   });
 
   // Not leniency: `winter-test/*` is not a catalog provider at all (provider-selection.ts's
@@ -1083,7 +1088,7 @@ describe("setModelRole: the catalog-membership check", () => {
   // taken it. A catalog lookup would refuse every test harness that names its own fake model.
   test("winter-test/* is exempt, because it is not a catalog namespace", () => {
     expect(setModelRole(base, "pins.dispatch", "winter-test/echo").pins?.dispatch).toBe(tag("winter-test/echo"));
-    expect(setModelRole(base, "provider.model", "winter-test/echo").provider.model).toBe(tag("winter-test/echo"));
+    expect(setModelRole(base, "provider.model", "winter-test/echo").provider?.model).toBe(tag("winter-test/echo"));
   });
 
   // The check must never stand between a user and a role's default.
@@ -1169,7 +1174,7 @@ describe("role reasoning efforts (roleEfforts / roleEffortFor / roleAcceptsClien
 
   test("provider.model reads and writes `provider.reasoningEffort`, never the new block", () => {
     const set = setModelRole(base, "provider.model", "codex-oauth/gpt-5.6-sol", "max");
-    expect(set.provider.reasoningEffort).toBe("max");
+    expect(set.provider?.reasoningEffort).toBe("max");
     expect(set.roleEfforts).toBeUndefined();
     expect(roleEffortFor(set, "provider.model")).toBe("max");
     // And an effort written the OLD way (`moss model --effort`) reads back through the role door.
@@ -1177,7 +1182,7 @@ describe("role reasoning efforts (roleEfforts / roleEffortFor / roleAcceptsClien
     expect(roleEffortFor(legacy, "provider.model")).toBe("low");
     expect(modelRoleInfo(legacy, "provider.model")).toMatchObject({ effort: "low", effortExplicit: true });
     // Clearing goes back through the same door.
-    expect(setModelRole(set, "provider.model", "codex-oauth/gpt-5.6-sol", null).provider.reasoningEffort).toBeUndefined();
+    expect(setModelRole(set, "provider.model", "codex-oauth/gpt-5.6-sol", null).provider?.reasoningEffort).toBeUndefined();
   });
 
   test("absent `effort` leaves a stored one untouched; `null` clears it — the two are distinguishable", () => {
@@ -1259,7 +1264,7 @@ describe("role reasoning efforts (roleEfforts / roleEffortFor / roleAcceptsClien
       expect(effortToSpendForRole(withEffort("pins.dream", "high"), "pins.dream", "codex-oauth/gpt-5.6-terra", "medium")).toBe("high");
       expect(effortToSpendForRole(withEffort("titles.model", "low"), "titles.model", "codex-oauth/gpt-5.6-sol", undefined)).toBe("low");
       // provider.model reads its established home, never roleEfforts.
-      expect(effortToSpendForRole({ ...base, provider: { ...base.provider, reasoningEffort: "xhigh" } }, "provider.model", "codex-oauth/gpt-5.6-sol", undefined)).toBe("xhigh");
+      expect(effortToSpendForRole({ ...base, provider: { ...base.provider!, reasoningEffort: "xhigh" } }, "provider.model", "codex-oauth/gpt-5.6-sol", undefined)).toBe("xhigh");
       // …and per-role: one role's stored effort is not another's.
       expect(effortToSpendForRole(withEffort("pins.dream", "high"), "pins.cleaner", "codex-oauth/gpt-5.6-terra", "low")).toBe("low");
     });
@@ -1619,7 +1624,7 @@ describe("retired official-leg settings (WS-23)", () => {
 // WS-20 (plan Task L3.2, Step 1's exact test list).
 describe("WS-20: provider.model is a tag", () => {
   test("provider.model is a tag; a bare id is rejected; `type` is gone (strict object)", () => {
-    expect(Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-terra" } }).provider.model).toBe(tag("codex-oauth/gpt-5.6-terra"));
+    expect(Settings.parse({ schemaVersion: 3, provider: { model: "codex-oauth/gpt-5.6-terra" } }).provider?.model).toBe(tag("codex-oauth/gpt-5.6-terra"));
     expect(() => Settings.parse({ schemaVersion: 3, provider: { model: "gpt-5.6-terra" } })).toThrow();
     expect(() => Settings.parse({ schemaVersion: 3, provider: { type: "codex-oauth", model: "codex-oauth/gpt-5.6-terra" } })).toThrow(); // `type` is gone (strict object)
   });
@@ -1634,8 +1639,8 @@ describe("WS-20: provider.model is a tag", () => {
   // refusing the write.
   test("R4: Settings.parse accepts provider.model naming ANY catalog provider, including one the internal Provider cannot serve", () => {
     const s = Settings.parse({ schemaVersion: 3, provider: { model: "anthropic/claude-sonnet-5" } });
-    expect(s.provider.model).toBe(tag("anthropic/claude-sonnet-5"));
-    expect(Settings.parse({ schemaVersion: 3, provider: { model: "winter-test/echo" } }).provider.model).toBe(tag("winter-test/echo"));
+    expect(s.provider?.model).toBe(tag("anthropic/claude-sonnet-5"));
+    expect(Settings.parse({ schemaVersion: 3, provider: { model: "winter-test/echo" } }).provider?.model).toBe(tag("winter-test/echo"));
   });
 });
 

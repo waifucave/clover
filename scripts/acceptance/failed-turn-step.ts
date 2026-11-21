@@ -1,5 +1,6 @@
 // A coding session whose turn failed stays open (lane MC1k), headless, on the real path: the user's coding session on MOSS's
-// own agent is started (the app's `agent.start`) on the model the run holds no key for (the default one), and its first
+// own agent is started (the app's `agent.start`) on a model the run holds no key for (named: since 2026-11-20 the default is
+// computed from the providers the person added, so it is always one with a key), and its first
 // message fails with the provider's own reason, as an error row. The session is not ended: `session.list` says so, and the
 // same session answers once the user switches it to the model the run's key drives (`session.setModel`, the call the model
 // picker makes) and sends again.
@@ -8,6 +9,9 @@ import { fail, type ExampleCtx } from "./example-steps";
 export const FAILED_TURN_STEP = "a coding session's turn fails for a missing key and shows the provider's reason; the session stays open, and the same session answers after the user switches it to a model with a key";
 
 type Ev = Record<string, unknown>;
+
+/** A model of a provider the run holds no key for (Codex's sign-in). */
+const UNKEYED_MODEL = "codex-oauth/gpt-5.6-sol";
 
 export async function failedTurnStep(ctx: ExampleCtx): Promise<string> {
   const done: string[] = [];
@@ -18,7 +22,7 @@ export async function failedTurnStep(ctx: ExampleCtx): Promise<string> {
   mkdirSync(join(ctx.userHome, "failed-turn"), { recursive: true });
   const keyed = (await ctx.rpc.request<{ bots: { id: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.id === "alpha")?.model;
   if (keyed === undefined) fail("Alpha has no model to give the coding session once it is switched");
-  const session = (await ctx.rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/failed-turn` }, 30_000)).session;
+  const session = (await ctx.rpc.request<{ session: string }>("agent.start", { backend: "moss-code", computer, root: `home/${computer}/failed-turn`, model: UNKEYED_MODEL }, 30_000)).session;
 
   const first = await ctx.turn(session, "say hello", 150_000);
   const stop = String(first.events.find((e: Ev) => e.type === "turn_completed")?.stopReason ?? "?");

@@ -219,8 +219,9 @@ export interface DaemonAgentsInput {
   socketPath: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
   spawn: SpawnClaudeCodeProcess;
-  /** The user's default model, when a delegation or a client names none. */
+  /** The user's default model, when a delegation or a client names none, and the effort written with it. */
   defaultModel(): string;
+  defaultEffort?(): string | undefined;
   /** The daemon's provider fill for a real model (lane A's `fillProvider`). */
   fillProvider?: (model: string, options: Options) => void | Promise<void>;
   /** The MOSS server's doors to the agents (`lateAgentDoors`), set once they're up. */
@@ -433,7 +434,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
             watchLevels: (fn) => n.registry.watch(() => fn()),
             mossCode: {
               baseOptions: (s) => embeddedSessionOptions({ home: input.mossHome, spawn: a.spawn }, s),
-              defaultModel: a.defaultModel, ...(a.fillProvider ? { fillProvider: a.fillProvider } : {}),
+              defaultModel: a.defaultModel, ...(a.defaultEffort ? { defaultEffort: a.defaultEffort } : {}), ...(a.fillProvider ? { fillProvider: a.fillProvider } : {}),
             },
             inProcess: {
               home: input.mossHome, spawn: a.spawn, defaultModel: a.defaultModel, ...(a.fillProvider ? { provider: a.fillProvider } : {}),

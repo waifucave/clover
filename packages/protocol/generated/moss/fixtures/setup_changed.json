@@ -1,0 +1,17 @@
+{
+  "type": "setup_changed",
+  "ts": 1781270000000,
+  "setup": {
+    "ready": true,
+    "missing": [],
+    "providers": [
+      "anthropic"
+    ],
+    "default": {
+      "model": "anthropic/claude-opus-5-5",
+      "source": "chosen",
+      "effort": "medium"
+    },
+    "dismissed": false
+  }
+}

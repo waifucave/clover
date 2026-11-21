@@ -18,7 +18,7 @@ body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: v
 
 /* The core's own pages (pages.ts): a dialog over the window, in the system's own look. */
 #moss-page { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 48px 24px 24px; background: color-mix(in srgb, Canvas 70%, transparent); }
-#moss-page[hidden] { display: none; }
+#moss-page[hidden], #moss-page[data-aside] { display: none; }
 .moss-page { width: min(560px, 100%); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 20px 24px; border-radius: 12px; background: var(--moss-color-float, Canvas); color: var(--moss-color-text, CanvasText); border: 1px solid var(--moss-color-hairline, color-mix(in srgb, CanvasText 15%, transparent)); box-shadow: 0 12px 40px rgb(0 0 0 / 0.18); }
 .moss-page__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .moss-page h1 { margin: 0; font-size: 17px; font-weight: 600; }
@@ -27,11 +27,15 @@ body { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: v
 .moss-page__body, .moss-page__list { display: flex; flex-direction: column; gap: 10px; }
 .moss-page__search { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--moss-color-hairline, color-mix(in srgb, CanvasText 18%, transparent)); background: transparent; color: inherit; font: inherit; }
 .moss-page__item { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 8px; border: 1px solid var(--moss-color-hairline, color-mix(in srgb, CanvasText 12%, transparent)); }
+.moss-page__item--row { gap: 0; padding: 0; }
+.moss-page .moss-page__item-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; text-align: start; font-weight: 600; }
+.moss-page__item-body { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
 .moss-page__note { color: var(--moss-color-text-muted, GrayText); font-size: 12px; }
 .moss-page__terms { margin: 0; padding: 8px 10px; max-height: 120px; overflow: auto; font-size: 12px; border-left: 3px solid var(--moss-color-hairline, GrayText); white-space: pre-wrap; }
 .moss-page__check, .moss-page__field { display: flex; align-items: center; gap: 8px; }
 .moss-page__field { flex-direction: column; align-items: stretch; gap: 4px; font-size: 12px; }
-.moss-page__field input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--moss-color-hairline, GrayText); background: var(--moss-color-control, Field); color: inherit; }
+.moss-page__field input, .moss-page__field select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--moss-color-hairline, GrayText); background: var(--moss-color-control, Field); color: inherit; }
+.moss-page__step { margin: 0; color: var(--moss-color-text-muted, GrayText); font-size: 12px; }
 .moss-page__auth, .moss-page__row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .moss-page__actions { display: flex; justify-content: flex-end; gap: 8px; }
 .moss-page__status:empty { display: none; }

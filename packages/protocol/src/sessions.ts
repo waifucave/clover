@@ -266,6 +266,32 @@ export const ModelListing = z.object({
 });
 export type ModelListing = z.infer<typeof ModelListing>;
 
+/** What a first working reply still needs (the setup guide, 2026-11-20): a model provider (a key or a sign-in), then a
+ *  default model; or (`default-provider`) the default model the settings name is kept but its provider isn't signed in
+ *  now. Engine state, so every client asks the same question and gets the same answer. */
+export const SetupMissing = z.enum(["provider", "model", "default-provider"]);
+export type SetupMissing = z.infer<typeof SetupMissing>;
+
+export const SetupState = z.object({
+  /** Nothing is missing: a turn has a model and a provider to answer with. */
+  ready: z.boolean(),
+  missing: z.array(SetupMissing).max(2),
+  /** The providers the person added (a stored key or sign-in), by catalog provider id. */
+  providers: z.array(utf16(128, 1)).max(1_000),
+  /** The default model now, if any: `chosen` when the settings name it (picked, or written by the engine for the one
+   *  provider added), `computed` when it is the one provider's recommended model and not written yet. */
+  default: z.object({ model: utf16(200, 1), source: z.enum(["chosen", "computed"]), effort: utf16(32, 1).optional() }).optional(),
+  /** The default model the settings name, kept while its provider isn't signed in (`missing` has `default-provider`):
+   *  it is the default again once the key or the sign-in is back. */
+  signedOut: utf16(200, 1).optional(),
+  /** Each added provider's recommended default, its family's (a model and its effort), where it has one (the guide's
+   *  pre-filled pick). */
+  recommended: z.record(utf16(128, 1), z.object({ model: utf16(200, 1), effort: utf16(32, 1).optional() })).optional(),
+  /** The person skipped the guide: it doesn't open by itself again (it stays reachable from Settings). */
+  dismissed: z.boolean(),
+});
+export type SetupState = z.infer<typeof SetupState>;
+
 export const SESSIONS_METHODS = {
   botList: defineMethod({
     name: "bot.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "bots.read",
@@ -408,6 +434,24 @@ export const SESSIONS_METHODS = {
     params: z.object({ session: SessionId.optional() }),
     result: z.object({ models: z.array(ModelListing).max(10_000), default: utf16(200).optional() }),
     doc: "The models a session can switch to (`session.setModel`), read-only, for a model picker (lane I's phone among them): every model of a provider plugin that is on, signed in or not, less blocked rows and the rows of a blocked provider (a picker never offers what `session.setModel` refuses). With `session`, only the ones that session's runtime takes. `default` is the user's default model.",
+  }),
+  modelsSetDefault: defineMethod({
+    name: "models.setDefault", owner: "A", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ model: utf16(200, 1) }),
+    result: z.object({ setup: SetupState }),
+    doc: "Sets the person's default model (what a bot or a session with no model of its own runs on): a model `models.list` offers whose provider the person added. Kept until they pick another or remove its provider (the setup guide, 2026-11-20).",
+  }),
+  setupState: defineMethod({
+    name: "setup.state", owner: "A", roles: ["app", "cli"],
+    params: z.object({}),
+    result: SetupState,
+    doc: "Whether this home is set up for a first working reply: the providers added, the default model and what is missing. The apps' setup guide opens by itself while it isn't, unless dismissed.",
+  }),
+  setupDismiss: defineMethod({
+    name: "setup.dismiss", owner: "A", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ dismissed: z.boolean() }),
+    result: SetupState,
+    doc: "The person skipped the setup guide (`dismissed: true`: it no longer opens by itself, in either app), or asked for it back.",
   }),
   sessionCompact: defineMethod({
     name: "session.compact", owner: "D", roles: ["app", "cli"], userOnly: true,
@@ -562,6 +606,8 @@ export const PluginMessageEvent = sessionEvent("plugin_message", {
  *  clock. A message stamped before output the model already produced sits after that output, showing its time. */
 export const UserMessageStamp = z.object({ device: DeviceId, sentAt: Timestamp });
 
+export const SetupChangedEvent = coreEvent("setup_changed", { setup: SetupState });
+
 export const MossSessionEvent = z.discriminatedUnion("type", [
   BotMessageEvent, AgentMessageEvent, AgentFinishedEvent, RoutineResultEvent, NoteEvent, PluginMessageEvent,
 ]);
@@ -570,6 +616,11 @@ export type MossSessionEvent = z.infer<typeof MossSessionEvent>;
 const READERS = ["app", "cli", "remote", "web", "layer"] as const;
 
 export const SESSIONS_EVENTS = {
+  setupChanged: defineEvent({
+    type: "setup_changed", owner: "A", roles: ["app", "cli"], schema: SetupChangedEvent,
+    fixture: { type: "setup_changed", ts: 1781270000000, setup: { ready: true, missing: [], providers: ["anthropic"], default: { model: "anthropic/claude-opus-5-5", source: "chosen", effort: "medium" }, dismissed: false } },
+    doc: "What the home's setup needs changed: a provider was added or removed, or the default model or the guide's dismissal changed.",
+  }),
   botChanged: defineEvent({
     type: "bot_changed", owner: "D", roles: READERS, capability: "bots.read", schema: BotChangedEvent,
     fixture: {

@@ -17,6 +17,7 @@
 //   bot's do, as an `agent` session (so a hook scoped to bots only isn't run). `tool.before` runs after the pause and
 //   before the approval: a guard denies, a rewrite is what the approval is asked on and what runs; `tool.after` may
 //   change the result. Without them, a guard a bot holds would not cover the agents it starts.
+import { NO_DEFAULT_MODEL_REASON } from "../../default-model";
 import { statSync } from "node:fs";
 import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type McpSdkServerConfigWithInstance, type Options, type Query } from "@waifucave/clover-agent-sdk";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
@@ -399,6 +400,8 @@ class InProcessSession implements AgentSession {
       try { await mossSessions(deps.home).getSessionInfo(spec.reattach.agentSessionId); resume = true; } catch { resume = false; }
     }
     const model = spec.model ?? deps.defaultModel();
+    // No model asked for and no default model (a fresh home before a provider is added): refused with the plain sentence.
+    if (model === "") throw new ContractError("refused", NO_DEFAULT_MODEL_REASON);
     this.#gate = (deps.pauseGateFor as InProcessBackendDeps["pauseGateFor"] | undefined)?.(spec) ?? CLOSED_GATE;
     const privateFolders = [...(deps.privateFoldersFor?.(spec) ?? [])].map((p) => p.replace(/\/+$/, "")).filter((p) => p !== "");
     const queue = createHostPromptQueue();

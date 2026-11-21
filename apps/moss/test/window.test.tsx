@@ -45,6 +45,7 @@ function stub(v: MossView, page: ConversationPage | { waiting: true }): MossBrid
     botSettings: async () => ({ waiting: true }), setBotSetting: async () => false, setLevel: async () => false,
     setPermission: async () => false, signIn: async () => ({ ok: false, why: "no" }), signOut: async () => false,
     botRecord: async () => ({ waiting: true }), botInstructions: async () => ({ waiting: true }), editBot: async () => false, models: async () => ({ waiting: true }),
+    setup: async () => ({ waiting: true }), setupProviders: async () => ({ waiting: true }), openTerms: async () => false, setDefaultModel: async () => ({ ok: false, why: "no" }), skipSetup: async () => false,
     archiveBot: async () => false, archivedBots: async () => [], restoreBot: async () => false, retry: async (bot) => { retried.push(bot); return { ok: true }; }, pictureInput: () => {},
   };
 }
@@ -173,6 +174,116 @@ describe("the composer and dropped things", () => {
     const r = await draw(view(), { bot: "juniper", hasMore: false, messages: [{ id: "n1", from: "note", text: 'Routine "Brief": The run failed (provider): the model refused the key.', at: Date.now(), routineFailed: true }] });
     const note = r.container.querySelector("[data-routine-failed]");
     expect(note?.textContent).toContain("The run failed (provider)");
+    r.unmount();
+  });
+});
+
+describe("the setup guide (2026-11-20)", () => {
+  const NOT_SET = { ready: false, missing: ["provider", "model"] as ("provider" | "model")[], providers: [], dismissed: false };
+  async function withGuide(v: MossView, over: Partial<MossBridge>) {
+    const b = { ...stub(v, { bot: "juniper", hasMore: false, messages: [] }), ...over };
+    (window as unknown as { moss: MossBridge }).moss = b;
+    const r = render(h(App));
+    await act(async () => { await new Promise((res) => setTimeout(res, 30)); });
+    return r;
+  }
+
+  test("a card waiting in this window comes first: the guide steps aside, kept at its step, and is back after", async () => {
+    viewTo = [];
+    const r = await withGuide(view({ setup: NOT_SET }), {
+      setupProviders: async () => [{ pluginId: "moss/model-anthropic", name: "Anthropic", auth: [{ index: 0, method: "api-key", state: "signed-out" }] }],
+    });
+    const holder = () => r.container.querySelector(".setup-holder") as HTMLDivElement | null;
+    expect(holder()?.hidden).toBe(false);
+    await act(async () => { for (const f of viewTo) f(view({ setup: NOT_SET, cards: [{ id: "k1", bot: "juniper", kind: "approval", place: "conversation" }] })); await new Promise((res) => setTimeout(res, 10)); });
+    expect(holder()?.hidden).toBe(true);
+    expect(holder()?.dataset.setupAside).toBe("yes");
+    expect(r.container.querySelector("[data-setup-step=providers]")).not.toBeNull();
+    await act(async () => { for (const f of viewTo) f(view({ setup: NOT_SET, cards: [] })); await new Promise((res) => setTimeout(res, 10)); });
+    expect(holder()?.hidden).toBe(false);
+    // The old home's copy, pending though drawn elsewhere, holds it aside too.
+    await act(async () => { for (const f of viewTo) f(view({ setupWaits: true })); await new Promise((res) => setTimeout(res, 10)); });
+    expect(holder()?.hidden).toBe(true);
+    r.unmount();
+  });
+
+  test("a home that isn't set up opens it by itself; a skip goes to the engine and closes it", async () => {
+    let skipped = 0;
+    const r = await withGuide(view({ setup: NOT_SET }), {
+      setupProviders: async () => [{ pluginId: "moss/model-anthropic", name: "Anthropic", terms: { text: "Be kind." }, auth: [{ index: 0, method: "api-key", state: "signed-out" }] }],
+      skipSetup: async () => { skipped++; return true; },
+    });
+    expect(r.container.querySelector("[data-setup-step=providers]")).not.toBeNull();
+    expect(r.container.querySelector("[data-setup-provider='moss/model-anthropic']")).not.toBeNull();
+    // Next waits for a provider.
+    expect((r.container.querySelector("[data-setup=next]") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => { (r.container.querySelector("[data-setup=skip]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 10)); });
+    expect(skipped).toBe(1);
+    expect(r.container.querySelector("[data-setup-step]")).toBeNull();
+    r.unmount();
+  });
+
+  test("a home that works, or a guide skipped before, doesn't show it", async () => {
+    for (const setup of [{ ...NOT_SET, ready: true, missing: [] }, { ...NOT_SET, dismissed: true }]) {
+      const r = await withGuide(view({ setup }), {});
+      expect(r.container.querySelector("[data-setup-step]")).toBeNull();
+      r.unmount();
+    }
+  });
+
+  test("the terms come before a provider's way in", async () => {
+    const r = await withGuide(view({ setup: NOT_SET }), {
+      setupProviders: async () => [{ pluginId: "moss/model-anthropic", name: "Anthropic", terms: { text: "Be kind." }, auth: [{ index: 0, method: "api-key", state: "signed-out" }] }],
+    });
+    // One provider listed: it is open, its way in disabled until the terms are accepted.
+    expect((r.container.querySelector(".setup__ways") as HTMLFieldSetElement).disabled).toBe(true);
+    await act(async () => { (r.container.querySelector("[data-setup-terms]") as HTMLInputElement).click(); });
+    expect((r.container.querySelector(".setup__ways") as HTMLFieldSetElement).disabled).toBe(false);
+    r.unmount();
+  });
+
+  test("two providers, the default shown at step 2: done names the same model, effort and provider, and nothing is re-stored", async () => {
+    const set = { ready: true, missing: [] as ("provider" | "model")[], providers: ["anthropic", "deepseek-anthropic"], default: { model: "anthropic/claude-opus-5-5", source: "chosen" as const, effort: "medium" }, dismissed: false };
+    const stored: string[] = [];
+    const r = await withGuide(view({ setup: { ...set, ready: false } }), {
+      setupProviders: async () => [{ pluginId: "moss/model-anthropic", name: "Anthropic", auth: [{ index: 0, method: "api-key", state: "signed-in" }] }],
+      setup: async () => set,
+      models: async () => [{ id: "anthropic/claude-opus-5-5", title: "Claude Opus 5.5", provider: "Anthropic", ready: true }, { id: "deepseek-anthropic/deepseek-v4-pro", title: "DeepSeek V4 Pro", provider: "DeepSeek (Anthropic dialect)", ready: true }],
+      setDefaultModel: async (m) => { stored.push(m); return { ok: true, setup: set }; },
+    });
+    await act(async () => { (r.container.querySelector("[data-setup=next]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 20)); });
+    const chosen = r.container.querySelector("[data-setup-step=model] .setup__chosen")!;
+    const muted = chosen.querySelectorAll("span.muted");
+    const step2 = `${chosen.querySelector("strong")!.textContent}${muted[muted.length - 1]!.textContent}`;
+    expect(step2).toBe("Claude Opus 5.5 · medium · Anthropic");
+    await act(async () => { (r.container.querySelector("[data-setup=next]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 20)); });
+    expect(r.container.querySelector("[data-setup-done-model]")?.getAttribute("data-setup-done-model")).toBe(step2);
+    expect(r.container.querySelector("[data-setup-step=done]")?.textContent).toContain(step2);
+    expect(stored).toEqual([]);
+    r.unmount();
+  });
+
+  test("with several providers the person picks; the pick goes to the engine and done lands in the default bot's conversation", async () => {
+    const two = { ready: false, missing: ["model"] as ("provider" | "model")[], providers: ["anthropic", "openai"], recommended: { anthropic: { model: "anthropic/b", effort: "medium" }, openai: { model: "openai/a" } }, dismissed: false };
+    const picked: string[] = [];
+    const r = await withGuide(view({ setup: two }), {
+      setupProviders: async () => [{ pluginId: "moss/model-anthropic", name: "Anthropic", auth: [{ index: 0, method: "api-key", state: "signed-in" }] }],
+      setup: async () => two,
+      models: async () => [{ id: "anthropic/b", title: "B", provider: "Anthropic", ready: true }, { id: "openai/a", title: "A", provider: "OpenAI", ready: true }, { id: "x/off", title: "Off", provider: "X", ready: false }],
+      setDefaultModel: async (m) => { picked.push(m); return { ok: true, setup: { ...two, ready: true, missing: [], default: { model: m, source: "chosen" } } }; },
+    });
+    await act(async () => { (r.container.querySelector("[data-setup=next]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 20)); });
+    expect(r.container.querySelector("[data-setup-step=model]")).not.toBeNull();
+    const select = r.container.querySelector("[data-setup-model-picker]") as HTMLSelectElement;
+    // Only the added providers' models, the first added provider's recommended one pre-filled.
+    expect([...select.querySelectorAll("option")].map((o) => o.value)).toEqual(["anthropic/b", "openai/a"]);
+    expect(select.value).toBe("anthropic/b");
+    await act(async () => { select.value = "openai/a"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => { (r.container.querySelector("[data-setup=next]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 20)); });
+    expect(picked).toEqual(["openai/a"]);
+    expect(r.container.querySelector("[data-setup-step=done]")?.textContent).toContain("A · OpenAI answers Juniper's first message");
+    await act(async () => { (r.container.querySelector("[data-setup=start]") as HTMLButtonElement).click(); await new Promise((res) => setTimeout(res, 80)); });
+    expect(r.container.querySelector("[data-setup-step]")).toBeNull();
     r.unmount();
   });
 });

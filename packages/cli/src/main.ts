@@ -1044,8 +1044,8 @@ async function runTurnSession(opts: { promptOverride?: string; forceAuto?: boole
     let effort: string | undefined;
     try {
       const s = loadSettings(join(resolveMossHome(), "settings.json"));
-      model = s.provider.model;
-      effort = s.provider.reasoningEffort; // T5 status chrome: the global effort half
+      model = (s.provider?.model ?? "");
+      effort = s.provider?.reasoningEffort; // T5 status chrome: the global effort half
     } catch { /* keep fallback */ }
     await mountTui({
       client: c, bridge: bridge!, sessionId, cwd, initialPolicy: policy, version, model,
@@ -2693,9 +2693,9 @@ if (import.meta.main) {
     const c = await connect("cli-status");
     const s = await c.daemonStatus();
     // WS-20: `s.provider.id` is already a bare providerId once the daemon side lands the tag
-    // change (`providerIdOf` is a no-op fallback for the pre-migration shape); `s.provider.model`
+    // change (`providerIdOf` is a no-op fallback for the pre-migration shape); `(s.provider?.model ?? "")`
     // may already be split by the daemon or may still be a full tag — `modelIdOf` handles both.
-    const provider = s.provider ? `${providerIdOf(s.provider.id) ?? s.provider.id} (${modelIdOf(s.provider.model)})` : "(none configured)";
+    const provider = s.provider ? `${providerIdOf(s.provider.id) ?? s.provider.id} (${modelIdOf((s.provider?.model ?? ""))})` : "(none configured)";
     const profileTag = resolveMossProfile() === "dev" ? " (dev)" : "";
     console.log(`${AQUA}moss-core v${s.version}${profileTag}${RESET} ${DIM}up ${formatElapsed(s.uptimeMs)} · ${s.socketPath}${RESET}`);
     console.log(`${DIM}provider: ${provider} · sessions: ${s.sessionsCount} · plugins: ${s.pluginsCount}${RESET}`);
@@ -3911,8 +3911,8 @@ if (import.meta.main) {
     // WS-20: no `.type` read — the provider is the tag's own providerId; a not-yet-migrated
     // settings.json (a bare model, pre-L3.3) prints the raw value rather than reaching for the
     // field this command is retiring.
-    const providerId = providerIdOf(s.provider.model) ?? "(unqualified)";
-    console.log(`${AQUA}${providerId}${RESET} ${DIM}model ${modelIdOf(s.provider.model)}${RESET}`);
+    const providerId = providerIdOf((s.provider?.model ?? "")) ?? "(unqualified)";
+    console.log(`${AQUA}${providerId}${RESET} ${DIM}model ${modelIdOf((s.provider?.model ?? ""))}${RESET}`);
     break;
   }
   case "model": {
@@ -3932,9 +3932,9 @@ if (import.meta.main) {
     }
 
     if (action.kind === "show") {
-      const effortSuffix = settings.provider.reasoningEffort ? `  ${DIM}effort: ${settings.provider.reasoningEffort}${RESET}` : "";
+      const effortSuffix = settings.provider?.reasoningEffort ? `  ${DIM}effort: ${settings.provider?.reasoningEffort}${RESET}` : "";
       // Review fix (Nit 1): the modelId, the provider trailing as a hint — never the raw tag.
-      console.log(`${AQUA}${modelDisplayWithHint(settings.provider.model)}${RESET}${effortSuffix}`);
+      console.log(`${AQUA}${modelDisplayWithHint((settings.provider?.model ?? ""))}${RESET}${effortSuffix}`);
       // WS-20: the full grouped-by-provider catalogue needs the daemon's `sync.config` (the live
       // model list — this command has no static per-provider allowlist to fall back on anymore,
       // see model-cli.ts's `validateModelTag`). Try the socket; on any failure (no daemon, no
@@ -3954,7 +3954,7 @@ if (import.meta.main) {
             // this command exploding on a shape it doesn't otherwise depend on.
             const parsed = SyncConfigModel.array().safeParse((raw as { models?: unknown } | undefined)?.models);
             if (parsed.success && parsed.data.length > 0) {
-              console.log(renderModelListing(parsed.data as ModelListingRow[], settings.provider.model));
+              console.log(renderModelListing(parsed.data as ModelListingRow[], (settings.provider?.model ?? "")));
             }
           } finally {
             door.close();
@@ -4015,7 +4015,7 @@ if (import.meta.main) {
     let next = settings;
     if (action.kind === "setModel" || action.kind === "setModelAndEffort") {
       // Design correction (after item 4): `moss model <tag>` writes the GLOBAL
-      // settings.provider.model, but that no longer REFUSES a non-internal-provider tag — any
+      // (settings.provider?.model ?? ""), but that no longer REFUSES a non-internal-provider tag — any
       // catalog provider may be the default model (a user whose default is Claude must be able to
       // boot). Only the shape/catalog checks (`validateModelTag`) still gate the write; a
       // non-internal provider gets an informational stderr note instead, since the daemon's
@@ -4030,14 +4030,14 @@ if (import.meta.main) {
       next = setProviderModel(next, parseModelTag(action.slug));
     }
     if (action.kind === "setEffort" || action.kind === "setModelAndEffort") {
-      const err = validateEffort(action.effort, next.provider.model);
+      const err = next.provider === undefined ? "there is no default model yet: pick one first (moss model <provider>/<model>)" : validateEffort(action.effort, next.provider.model);
       if (err) { console.error(err); process.exit(1); }
-      next = setReasoningEffort(next, action.effort as NonNullable<Settings["provider"]["reasoningEffort"]>);
+      next = setReasoningEffort(next, action.effort as NonNullable<NonNullable<Settings["provider"]>["reasoningEffort"]>);
     }
     saveSettings(settingsPath, next);
     const changed = [
-      action.kind === "setModel" || action.kind === "setModelAndEffort" ? `model ${modelDisplayWithHint(next.provider.model)}` : null,
-      action.kind === "setEffort" || action.kind === "setModelAndEffort" ? `effort ${next.provider.reasoningEffort}` : null,
+      action.kind === "setModel" || action.kind === "setModelAndEffort" ? `model ${modelDisplayWithHint((next.provider?.model ?? ""))}` : null,
+      action.kind === "setEffort" || action.kind === "setModelAndEffort" ? `effort ${next.provider?.reasoningEffort}` : null,
     ].filter(Boolean).join(", ");
     console.log(`${AQUA}updated${RESET} ${DIM}(${changed}) — takes effect next turn, no daemon restart needed${RESET}`);
     process.exit(0);
@@ -4221,7 +4221,7 @@ if (import.meta.main) {
     // (model-cli.ts) warns about for `moss model <tag>` itself.
     if (!active) {
       let note: string | undefined;
-      try { note = internalProviderNote(s.provider.model); } catch { /* not tag-shaped — fall through to the generic message */ }
+      try { note = internalProviderNote((s.provider?.model ?? "")); } catch { /* not tag-shaped — fall through to the generic message */ }
       console.error(`no internal provider is built for the current provider.model — ${note ?? "the configured provider is not one of the daemon's internal providers (codex-oauth, openai)"}`);
       process.exit(1);
     }

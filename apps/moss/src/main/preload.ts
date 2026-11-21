@@ -77,6 +77,11 @@ if (where === "moss-app:" && location.host === "app" && window.top === window) {
     retry: (bot) => ipcRenderer.invoke("moss:retry", { bot }),
     pictureInput: (kind) => ipcRenderer.send("moss:picture-input", { kind }),
     models: () => ipcRenderer.invoke("moss:models"),
+    setup: () => ipcRenderer.invoke("moss:setup"),
+    setupProviders: () => ipcRenderer.invoke("moss:setup-providers"),
+    openTerms: (pluginId) => ipcRenderer.invoke("moss:open-terms", { pluginId }),
+    setDefaultModel: (model) => ipcRenderer.invoke("moss:set-default-model", { model }),
+    skipSetup: () => ipcRenderer.invoke("moss:skip-setup"),
   };
   contextBridge.exposeInMainWorld("moss", bridge);
 } else if (where === "moss-sealed:" && location.host === "card") {

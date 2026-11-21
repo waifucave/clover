@@ -36,6 +36,7 @@
 //
 // The driver of each session comes from `DriverFactory`: lane A's embedded runtime once A-M1 merges; tests use the
 // contracts' FakeSessionDriver.
+import { NO_DEFAULT_MODEL_CODE, NO_DEFAULT_MODEL_REASON } from "../default-model";
 import {
   MOSS_ERR, type BotView, type Caller, type ChangeResult, type Level, type RoutineRunView, type SessionView, type Text, type TurnOrigin, type UserMessageInput,
 } from "@waifucave/moss-protocol";
@@ -1099,6 +1100,14 @@ export class BotService {
    *  compaction, which never asks, runs only on a provider already allowed, pinned the same way. */
   #driver(live: Live, ctx: BotSessionContext): SessionDriver {
     const driver = this.#o.drivers(ctx);
+    // No model for the bot and no default model (a fresh home before a provider is added): the turn is refused with the
+    // plain sentence that leads to adding a provider or picking a model, never sent to a provider the person lacks.
+    const run = driver.turn.bind(driver);
+    driver.turn = (input, ctl): Promise<TurnEnd> => {
+      if (this.#effective(live).model !== "") return run(input, ctl);
+      ctl.record({ type: "agent_error", threadId: ctx.sessionId, message: NO_DEFAULT_MODEL_REASON, code: NO_DEFAULT_MODEL_CODE });
+      return Promise.resolve({ reason: "failed", failure: "error", text: NO_DEFAULT_MODEL_REASON } satisfies TurnEnd);
+    };
     const consent = this.#o.providerConsent;
     if (consent === undefined) return driver;
     const turn = driver.turn.bind(driver);

@@ -116,3 +116,28 @@
 .ma2-memory__file:hover { background: var(--hover); }
 .ma2-memory__path { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
 .ma2-memory__text { margin: 4px 0 8px; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* ---- The setup guide (2026-11-20): a plain card over the window, the window's own tokens; no tint ---- */
+.setup { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: var(--bg); overflow-y: auto; -webkit-app-region: drag; }
+.setup__card { -webkit-app-region: no-drag; display: flex; flex-direction: column; gap: 10px; width: min(560px, 100%); max-height: calc(100vh - 48px); padding: 26px 28px 20px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
+.setup__card h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+.setup__card p { margin: 0; line-height: 1.5; }
+.setup__step { margin: 0 !important; }
+.setup__search { flex: none; }
+.setup__providers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 120px; max-height: 46vh; }
+.setup__provider { border: 1px solid var(--line); border-radius: 12px; }
+.setup__provider.is-open { border-color: var(--line-strong); }
+.setup__provider-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 10px 12px; border: 0; background: transparent; text-align: left; font-weight: 550; border-radius: 12px; }
+.setup__provider-head:hover { background: var(--hover); }
+.setup__provider-body { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.setup__ways { border: 0; margin: 0; padding: 0; min-width: 0; }
+.setup__ways:disabled { opacity: 0.5; }
+.setup__link { align-self: flex-start; border: 0; padding: 0; background: none; color: var(--link); text-decoration: underline; }
+.setup__terms { margin: 0; padding: 8px 10px; max-height: 120px; overflow: auto; font-size: 12px; border-left: 3px solid var(--line-strong); white-space: pre-wrap; color: var(--muted); }
+.setup__check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.setup__chosen { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--bot-bg); color: var(--bot-text); }
+.setup__field { display: flex; flex-direction: column; gap: 4px; }
+.setup__field .ma2-field { width: 100%; }
+.setup__actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.setup__gap { flex: 1; }
+.setup__skip { border-color: transparent; color: var(--muted); }

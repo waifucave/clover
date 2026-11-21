@@ -1,5 +1,6 @@
 // The acceptance run's result table: its steps, in order, and how a run's recorded results become one row per step.
 // Kept apart from run.ts (which starts a run when loaded) so the table can be unit-tested (steps.test.ts).
+import { SETUP_STEPS } from "./setup-step";
 import { UI_STEPS } from "./ui-steps";
 import { EXAMPLE_NOTES_STEP, EXAMPLE_WEATHER_STEP } from "./example-steps";
 import { BUNDLED_TOOLS_STEP } from "./bundled-tools-step";
@@ -139,6 +140,8 @@ export const FULL_STEPS = [
   HOST_GAVE_UP_STEP,
   BROWSER_HOST_STEP,
   SURFACE_COPY_HOST_STEP,
+  // Lane SG's rows: the setup guide in both apps on a fresh home (the `setup` unit, setup-step.ts).
+  ...SETUP_STEPS,
   COLD_START_STEP,
   IDLE_STEP,
 ] as const;
@@ -166,6 +169,8 @@ export const COPY_UPGRADE_STEPS = [
   "upgrade cold start: the app opens first on a fresh home beside the old install's, the daemon after, and the shell fills the window",
   "the copy from the old install's home is offered on the core's own card, taken on the press, and swapped in at the restart",
   "the old run's model key does not come over: the notice names it, it isn't signed in, and it works once entered again",
+  // Lane SG: an existing home that works is set up (the engine's setup.state), and the setup guide doesn't open over it.
+  "the upgraded home is set up once its key is in again: the engine's setup.state is ready, its default model the key's provider's (the old home's named default kept when that provider is had, else the provider's recommended model), and the app doesn't open the setup guide over it",
   "the old conversation is listed and opens in MOSS: the default bot's record is on the old conversation, the engine's page of it holds the old turns, and MOSS (the bots app, beside MOSS Code) draws them in her conversation; the old run's code sessions, if any, are listed for MOSS Code",
   // Lane BT's: the bots the old home recorded, after the move (bot-move-upgrade-step.ts).
   BOT_MOVE_UPGRADE_STEP,

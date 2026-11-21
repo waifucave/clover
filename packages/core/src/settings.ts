@@ -391,7 +391,10 @@ export type McpServerSettingsEntry = z.infer<typeof McpServerSettingsEntry>;
 
 export const Settings = z.object({
   schemaVersion: z.literal(3),
-  provider: ProviderSettings,
+  /** The person's default model. Absent until they have one: a fresh home has none until a provider is added
+   *  (`default-model.ts`, the owner's 2026-11-20 ruling); the engine writes the one provider's recommended model, or the
+   *  person picks. */
+  provider: ProviderSettings.optional(),
   permissions: PermissionsSettings.optional(),
   mcpServers: z.record(z.string(), McpServerSettingsEntry).optional(),
   /** Daemon settings surface batch 3 (item 3a): which CONFIGURED MCP servers are disabled, by
@@ -810,6 +813,9 @@ export const Settings = z.object({
    *  on the next `saveSettings` and silently rewrite the user's file. `modelRoleInfo` marks the role
    *  retired instead, and `setModelRole` refuses to set a new value while still allowing a stored one to
    *  be cleared. Same rule for its `roleEfforts` key below. */
+  /** The setup guide (2026-11-20): `dismissed` once the person skipped it, so it no longer opens by itself in either
+   *  app. Read only through `setupDismissedFrom`. */
+  setup: z.object({ dismissed: z.boolean().optional() }).optional(),
   pins: z.object({
     dispatch: ModelTagSchemaCore,
     dream: ModelTagSchemaCore,
@@ -864,15 +870,15 @@ export const Settings = z.object({
 export type Settings = z.infer<typeof Settings>;
 
 /** WS-20 (review round 1, GUARD): the catalog providerId the daemon's SINGLE internal-calls
- *  `Provider` instance is actually bound to — `splitTag(settings.provider.model).providerId`, with
- *  the same `DEFAULT_PROVIDER` fallback `pinsFor` itself uses for a settings file with no
- *  `provider.model` at all. Extracted so `pinsFor`'s own `ownProvider` derivation and
+ *  `Provider` instance is actually bound to — `splitTag(settings.provider.model).providerId`, or
+ *  undefined when the settings name no `provider.model` (there is no fixed default provider). Extracted so `pinsFor`'s own `ownProvider` derivation and
  *  `providers/manager.ts`'s `internalModelFor` guard (dreamer/cleaner/research's own internal-
  *  Provider calls) read the identical "which provider is this daemon actually bound to" answer —
  *  they must never independently rederive it and risk disagreeing. */
-export function ownProviderFor(settings: Settings | null | undefined): string {
-  const providerModel = settings?.provider?.model ?? DEFAULT_PROVIDER.model;
-  try { return splitTag(providerModel).providerId; } catch { return splitTag(DEFAULT_PROVIDER.model).providerId; }
+export function ownProviderFor(settings: Settings | null | undefined): string | undefined {
+  const providerModel = settings?.provider?.model;
+  if (providerModel === undefined) return undefined;
+  try { return splitTag(providerModel).providerId; } catch { return undefined; }
 }
 
 /** WS-20: the ONE reader of `settings.pins.<slot>` — every default falls back to a `gpt-5.6-terra`
@@ -881,8 +887,8 @@ export function ownProviderFor(settings: Settings | null | undefined): string {
  *  provider the user actually configured rather than an unrelated one. When that provider does
  *  NOT serve the pinned slot (e.g. `deepseek`, which has no `terra`/`luna` row), the default falls
  *  back to `openai` — the api-key vendor every gpt-5.6 slot is guaranteed to serve — never a
- *  fabricated tag, and never a throw: a settings file with no `provider.model` at all still gets a
- *  real answer via `DEFAULT_PROVIDER`. An explicit `settings.pins.<slot>` entry always wins over
+ *  fabricated tag, and never a throw: a settings file with no `provider.model` gets its explicit pins
+ *  or the unstated tag (there is no fixed default provider; the setup service computes the default). An explicit `settings.pins.<slot>` entry always wins over
  *  every default, per slot independently. */
 export function pinsFor(settings: Settings | null | undefined): {
   dispatch: ModelTag; dream: ModelTag; cleaner: ModelTag; research: ModelTag; researchFallback: ModelTag;
@@ -895,7 +901,18 @@ export function pinsFor(settings: Settings | null | undefined): {
   // harness's own double has no OTHER model to default to. Rule: the primary tag IS the pin — every
   // slot defaults to the SAME double the session itself runs on, unless an explicit
   // `settings.pins.<slot>` override says otherwise (still wins, unchanged).
-  const primary = settings?.provider?.model ?? DEFAULT_PROVIDER.model;
+  const primary = settings?.provider?.model;
+  // No default model yet (a fresh home before a provider is added): every slot is its explicit pin or the UNSTATED
+  // sentinel, which every door below already refuses or skips, typed. Never a provider the person doesn't have.
+  if (primary === undefined) {
+    return {
+      dispatch: settings?.pins?.dispatch ?? UNSTATED_TAG,
+      dream: settings?.pins?.dream ?? UNSTATED_TAG,
+      cleaner: settings?.pins?.cleaner ?? UNSTATED_TAG,
+      research: settings?.pins?.research ?? UNSTATED_TAG,
+      researchFallback: settings?.pins?.researchFallback ?? UNSTATED_TAG,
+    };
+  }
   if (primary.startsWith(MOSS_TEST_PREFIX)) {
     return {
       dispatch: settings?.pins?.dispatch ?? (primary as ModelTag),
@@ -919,7 +936,7 @@ export function pinsFor(settings: Settings | null | undefined): {
   // the user already picked. dream/cleaner/research additionally pass `internalModelFor`, so they
   // stay inert (typed, one log line) on a non-internal provider.
   const defaultFor = (slotName: "terra" | "luna"): ModelTag => {
-    return facingNameToTag(ownProvider, slotName) ?? (primary as ModelTag);
+    return (ownProvider === undefined ? undefined : facingNameToTag(ownProvider, slotName)) ?? (primary as ModelTag);
   };
   const terra = defaultFor("terra");
   const luna = defaultFor("luna");
@@ -930,6 +947,11 @@ export function pinsFor(settings: Settings | null | undefined): {
     research: settings?.pins?.research ?? luna,
     researchFallback: settings?.pins?.researchFallback ?? terra,
   };
+}
+
+/** The ONE reader of `settings.setup.dismissed`: whether the person skipped the setup guide. */
+export function setupDismissedFrom(settings: Settings | null | undefined): boolean {
+  return settings?.setup?.dismissed === true;
 }
 
 /** The ONE reader of `settings.usage`: which of the user's other apps MOSS may read usage from (default both). */
@@ -1493,10 +1515,10 @@ export function setComputerUseFlags(settings: Settings, patch: ComputerUseFlagsP
  *  gates only the automatic post-edit-diagnostics append, not the tool's existence. */
 export const lspEnabledFrom = (s: Settings): boolean => s.lsp?.enabled !== false;
 
-// WS-20: the pre-deprecation `gpt-5.4` default is gone (there is no more CODEX_MODELS allowlist to
-// deprecate against) — points at `gpt-5.6-sol`, prefixed as a codex-oauth tag: the ONE default a
-// fresh install (no settings.json at all) or a v1-or-legacy file (no real provider info) lands on.
-export const DEFAULT_PROVIDER = { model: "codex-oauth/gpt-5.6-sol" as ModelTag } as const;
+// 2026-11-20 (the owner): there is no fixed default model any more. A fresh install, or a v1-or-legacy file with no
+// real provider info, has none until the person adds a provider; `default-model.ts` computes it from the providers they
+// added. Every build before this one wrote `codex-oauth/gpt-5.6-sol` into a fresh home's settings; such a file is read
+// as "no default chosen" while the person has no Codex sign-in (`effectiveDefault`).
 
 /** WS-20 (spec §5): every catalog provider id with a row whose BARE modelId (the tag's own tail)
  *  equals `m`, or whose `canonicalModelId` equals `m` (an alias/family match) — the "S" set the
@@ -1776,15 +1798,14 @@ export function loadSettings(path: string, opts?: { presentProviders?: ReadonlyS
     return parsed.data;
   }
   // v1-or-legacy file (Phase 0 wrote {schemaVersion:1}; the retired v1 app wrote files with no
-  // schemaVersion at all — same directory on case-insensitive APFS). No real provider info exists
-  // to migrate, so this lands straight on v3's DEFAULT_PROVIDER — preserving unknown fields so
-  // nothing is silently lost. Never backed up (nit h) — there is nothing real to lose.
-  const { schemaVersion: _legacy, ...preserved } = raw;
-  const migrated = { ...preserved, schemaVersion: 3 as const, provider: DEFAULT_PROVIDER };
+  // schemaVersion at all — same directory on case-insensitive APFS; a fresh home's first file is one). No real
+  // provider info exists to migrate, so this lands on v3 with NO default model (2026-11-20: the default is computed
+  // from the providers the person adds) — preserving unknown fields so nothing is silently lost. Never backed up
+  // (nit h) — there is nothing real to lose.
+  const { schemaVersion: _legacy, provider: _noProvider, ...preserved } = raw;
+  const migrated = { ...preserved, schemaVersion: 3 as const };
   // zod v4 z.object() strips unknown keys by default (does NOT throw) — safe to parse migrated.
-  // Validated BEFORE writing, same discipline as the v2 branch above (this arm's own `provider` is
-  // always the fixed `DEFAULT_PROVIDER`, so it can never itself fail the M6 refinement — kept in the
-  // same order regardless, for the same reason `saveSettings` always validates before writing).
+  // Validated BEFORE writing, same discipline as the v2 branch above.
   const result = Settings.parse(migrated);
   if (persistMigration) writeFileSync(path, JSON.stringify(migrated, null, 2) + "\n");
   return result;
@@ -1972,6 +1993,12 @@ export function setProviderModel(settings: Settings, model: ModelTag): Settings 
   return { ...settings, provider: { ...settings.provider, model } };
 }
 
+/** Pure Settings→Settings: the default model taken away (`provider` absent), its effort with it. */
+export function clearProviderModel(settings: Settings): Settings {
+  const { provider: _gone, ...rest } = settings;
+  return rest;
+}
+
 /** Pure Settings→Settings: set the active output style (or clear it for undefined/"default").
  *  Preserves every other field — mirrors setProviderModel. */
 export function setOutputStyle<T extends { outputStyle?: string }>(settings: T, name: string | undefined): T {
@@ -1986,6 +2013,8 @@ export function setOutputStyle<T extends { outputStyle?: string }>(settings: T, 
 /** Pure `Settings -> Settings` reasoning-effort transform — used by `moss model --effort
  *  <level>` (effort-only or combined with a model change). `effort: undefined` clears it. */
 export function setReasoningEffort(settings: Settings, effort: (typeof REASONING_EFFORTS)[number] | undefined): Settings {
+  // An effort needs a model to belong to: with no default model there is nothing to set it on.
+  if (settings.provider === undefined) throw new TypeError("there is no default model to set an effort on: pick a model first");
   return { ...settings, provider: { ...settings.provider, reasoningEffort: effort } };
 }
 
@@ -2274,8 +2303,8 @@ export function preferredInternalProviderFor(
 ): string | undefined {
   const eligible = internalEligibleProviderIds();
   const own = ownProviderFor(settings);
-  if (snapshot === undefined) return eligible.has(own) ? own : undefined;
-  if (eligible.has(own) && snapshot.credentialed.has(own)) return own;
+  if (snapshot === undefined) return own !== undefined && eligible.has(own) ? own : undefined;
+  if (own !== undefined && eligible.has(own) && snapshot.credentialed.has(own)) return own;
   // M-3 RULING (2026-09-19, review): the fallback considers ONLY `INTERNAL_PROVIDER_IDS`. The wider
   // `internalProviderPreferenceOrder()` tail is gone from this path: it is alphabetical inventory order
   // over ~94 providers, so "the first credentialed one" is a coin toss the user never asked for, and
@@ -2346,7 +2375,7 @@ export function internalRoleDefaultTagFor(
 ): ModelTag | undefined {
   const slotted = facingNameToTag(providerId, slot);
   if (slotted !== undefined) return slotted;
-  if (providerId === ownProviderFor(settings)) return (settings?.provider?.model ?? DEFAULT_PROVIDER.model) as ModelTag;
+  if (providerId === ownProviderFor(settings) && settings?.provider?.model !== undefined) return settings.provider.model as ModelTag;
   return undefined;
 }
 
@@ -2729,9 +2758,9 @@ function modelRoleModel(settings: Settings | null | undefined, role: ModelRole, 
   const permitted = constraint === "internal-provider"
     ? (internal !== undefined
         ? permittedProviders(internalEligibleProviderIds())
-        : (INTERNAL_PROVIDER_IDS as readonly string[]).includes(effectiveProvider) ? permittedProviders(new Set([effectiveProvider])) : [])
+        : effectiveProvider !== undefined && (INTERNAL_PROVIDER_IDS as readonly string[]).includes(effectiveProvider) ? permittedProviders(new Set([effectiveProvider])) : [])
     : permittedProviders();
-  const primaryModel = (settings?.provider?.model ?? DEFAULT_PROVIDER.model) as ModelTag;
+  const primaryModel = settings?.provider?.model as ModelTag | undefined;
 
   switch (role) {
     case "pins.dispatch":
@@ -2759,13 +2788,12 @@ function modelRoleModel(settings: Settings | null | undefined, role: ModelRole, 
     case "pins.researchFallback":
       return { model: pinsFor(settings).researchFallback, explicit: settings?.pins?.researchFallback !== undefined, constraint, permitted: [] };
     case "provider.model":
-      // Always "explicit": `ProviderSettings.model` is a REQUIRED field, so every loaded `Settings`
-      // always carries a real, currently-effective value — there is no "unset" state to distinguish.
-      return { model: primaryModel, explicit: true, constraint, permitted };
+      // 2026-11-20: a home may have no default model yet (`null`, not explicit) until a provider is added.
+      return { model: primaryModel ?? null, explicit: primaryModel !== undefined, constraint, permitted };
     case "titles.model":
-      return { model: internal !== undefined ? internalRoleEffectiveTag(settings, "titles.model", internal) : settings?.titles?.model ?? primaryModel, explicit: settings?.titles?.model !== undefined, constraint, permitted };
+      return { model: internal !== undefined ? internalRoleEffectiveTag(settings, "titles.model", internal) : settings?.titles?.model ?? primaryModel ?? null, explicit: settings?.titles?.model !== undefined, constraint, permitted };
     case "reviewer.model":
-      return { model: internal !== undefined ? internalRoleEffectiveTag(settings, "reviewer.model", internal) : settings?.reviewer?.model ?? primaryModel, explicit: settings?.reviewer?.model !== undefined, constraint, permitted };
+      return { model: internal !== undefined ? internalRoleEffectiveTag(settings, "reviewer.model", internal) : settings?.reviewer?.model ?? primaryModel ?? null, explicit: settings?.reviewer?.model !== undefined, constraint, permitted };
     case "runtimes.advisorModel": {
       const raw = settings?.runtimes?.advisorModel?.trim();
       return { model: raw ? (raw as ModelTag) : null, explicit: Boolean(raw), constraint, permitted };

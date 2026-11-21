@@ -3,7 +3,7 @@
 // (the root's CSP), and the daemon only through the main process's checked calls (`mossRoot.call`). A key the user
 // pastes goes from its field to that call and nowhere else: never stored here, never shown again, never logged.
 
-import { orderProviders, SEARCH_FROM } from "./provider-order";
+import { orderProviders, SEARCH_FROM } from "@waifucave/moss-protocol/provider-order";
 
 export type Translate = (key: string, params?: Record<string, string | number>) => string;
 export type Call = (name: string, params?: unknown) => Promise<unknown>;
@@ -67,104 +67,223 @@ function frame(host: HTMLElement, title: string, onClose: (() => void) | undefin
 // The welcome setup guide
 // -------------------------------------------------------------------------------------------------
 
+interface SetupView {
+  ready: boolean;
+  missing: ("provider" | "model" | "default-provider")[];
+  providers: string[];
+  default?: { model: string; source: "chosen" | "computed"; effort?: string };
+  recommended?: Record<string, { model: string; effort?: string }>;
+  dismissed: boolean;
+}
+
+interface PickView {
+  id: string;
+  name: string;
+  provider: string;
+  providerName: string;
+}
+
+/** The setup guide (§3.3, the owner's 2026-11-20 ruling): add a provider, then the default model (already chosen when
+ *  one provider was added, a picker when several), then done, which lands on a new code session. Skippable at every
+ *  step; the engine keeps what is set up and whether it was skipped, so finishing or skipping here holds for MOSS too. */
+/** A model as the guide names it: "Claude Opus 5.5 · medium" when it has an effort. */
+function withEffort(name: string, effort: string | undefined): string {
+  return effort === undefined || effort === "" ? name : `${name} · ${effort}`;
+}
+
 export async function showWelcome(host: HTMLElement, t: Translate, call: Call, done: () => void): Promise<void> {
-  const page = frame(host, t("welcome.title"), undefined, t);
-  page.body.append(el("p", {}, t("welcome.intro")), el("p", { class: "moss-page__note" }, t("welcome.no-claude")));
-  const search = el("input", { type: "search", class: "moss-page__search", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.search"), placeholder: t("welcome.search"), "data-moss-search": "" });
-  search.hidden = true;
-  const list = el("div", { class: "moss-page__list" }, el("p", {}, t("welcome.loading")));
-  page.body.append(search, list);
-  let all: ProviderView[] = [];
-  const show = () => {
-    const shown = orderProviders(all, search.value);
-    list.replaceChildren(...(shown.length > 0 ? shown.map((p) => provider(p)) : [el("p", {}, t("welcome.no-match"))]));
-  };
-  search.addEventListener("input", show);
-  const finish = async () => {
-    await call("welcome.done");
+  const total = 3;
+  const skip = async () => {
+    await call("welcome.skip");
     done();
   };
-  const start = button(t("welcome.done"), finish, { class: "moss-page__primary", "data-moss-welcome": "start" });
-  page.actions.append(button(t("welcome.skip"), finish, { "data-moss-welcome": "skip" }), start);
-  const draw = async () => {
-    let providers: ProviderView[];
-    try {
-      providers = ((await call("welcome.providers")) as { providers: ProviderView[] }).providers;
-    } catch (err) {
-      list.replaceChildren(el("p", {}, t("welcome.failed", { error: message(err) })));
-      return;
-    }
-    if (providers.length === 0) {
-      list.replaceChildren(el("p", {}, t("welcome.none")));
-      return;
-    }
-    const ready = providers.filter((p) => p.auth.some((a) => a.state === "signed-in" || a.state === "refreshing")).length;
-    page.status.textContent = ready > 0 ? t("welcome.ready", { count: ready }) : "";
-    start.disabled = false;
-    all = providers;
-    search.hidden = providers.length < SEARCH_FROM;
-    show();
-  };
-  const provider = (p: ProviderView): HTMLElement => {
-    const box = el("article", { class: "moss-page__item", "data-moss-provider": p.id }, el("h2", {}, p.name));
-    // The terms come first (§5.7): each sign-in waits until they are accepted.
-    let accepted = p.terms === undefined;
-    const signIns: HTMLElement[] = [];
-    if (p.terms !== undefined) {
-      const tick = el("input", { type: "checkbox", id: `terms-${p.id}`, "data-moss-terms": p.id });
-      tick.addEventListener("change", () => {
-        accepted = tick.checked;
-        for (const s of signIns) s.toggleAttribute("data-disabled", !accepted);
-        for (const c of box.querySelectorAll<HTMLButtonElement | HTMLInputElement>("[data-needs-terms]")) c.disabled = !accepted;
-      });
-      const terms = "url" in p.terms
-        ? button(t("welcome.terms", { provider: p.name }), () => call("welcome.openTerms", { id: p.id }).then(() => undefined, (err) => void (page.status.textContent = t("welcome.failed", { error: message(err) }))), { class: "moss-page__link" })
-        : el("blockquote", { class: "moss-page__terms" }, p.terms.text);
-      box.append(terms, el("label", { class: "moss-page__check", for: `terms-${p.id}` }, tick, t("welcome.terms-accept", { provider: p.name })));
-    }
-    for (const a of p.auth) {
-      const row = el("div", { class: "moss-page__auth", "data-moss-auth": `${p.id}#${a.index}` });
-      signIns.push(row);
-      if (a.state === "signed-in" || a.state === "refreshing") {
-        row.append(el("p", { class: "moss-page__ok" }, `${t("welcome.signed-in")}${a.account !== undefined ? ` (${a.account})` : ""}`));
-      } else if (a.method === "api-key") {
-        const field = el("input", { type: "password", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.key-label", { provider: p.name }), placeholder: t("welcome.paste-key"), "data-needs-terms": "", "data-moss-key": `${p.id}#${a.index}` });
-        field.disabled = !accepted;
-        const save = button(t("welcome.save-key"), async () => {
-          const key = field.value;
-          if (key.trim() === "") return;
-          try {
-            await call("welcome.signIn", { id: p.id, index: a.index, key });
-            field.value = "";
-            page.status.textContent = t("welcome.key-saved");
-            await draw();
-            page.status.textContent = t("welcome.key-saved");
-          } catch (err) {
-            field.value = "";
-            page.status.textContent = t("welcome.failed", { error: message(err) });
-          }
-        }, { "data-needs-terms": "", "data-moss-save": `${p.id}#${a.index}` });
-        save.disabled = !accepted;
-        if (a.help !== undefined) row.append(el("p", { class: "moss-page__note" }, a.help));
-        row.append(el("label", { class: "moss-page__field" }, t("welcome.key-label", { provider: p.name }), field), save);
-      } else {
-        const go = button(t("welcome.sign-in"), async () => {
-          try {
-            const r = (await call("welcome.signIn", { id: p.id, index: a.index })) as { state: string; opened: boolean };
-            page.status.textContent = r.opened ? t("welcome.waiting") : "";
-            await draw();
-          } catch (err) {
-            page.status.textContent = t("welcome.failed", { error: message(err) });
-          }
-        }, { "data-needs-terms": "", "data-moss-signin": `${p.id}#${a.index}` });
-        go.disabled = !accepted;
-        row.append(go);
+  const skipButton = () => button(t("welcome.skip"), skip, { "data-moss-welcome": "skip" });
+  const stepNote = (n: number) => el("p", { class: "moss-page__step", "data-moss-step": String(n) }, t("welcome.step", { n, total }));
+
+  // Step 1: a provider, each with its own way in (its terms first, then a key or a sign-in).
+  const providersStep = async (): Promise<void> => {
+    const page = frame(host, t("welcome.title"), undefined, t);
+    host.querySelector("section")?.setAttribute("data-moss-welcome-step", "providers");
+    page.body.append(stepNote(1), el("p", {}, t("welcome.intro")), el("p", { class: "moss-page__note" }, t("welcome.no-claude")));
+    const search = el("input", { type: "search", class: "moss-page__search", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.search"), placeholder: t("welcome.search"), "data-moss-search": "" });
+    search.hidden = true;
+    const list = el("div", { class: "moss-page__list" }, el("p", {}, t("welcome.loading")));
+    page.body.append(search, list);
+    let all: ProviderView[] = [];
+    // Each provider is a closed row that opens to its terms and its ways in when clicked (the one shown alone is open).
+    const opened = new Set<string>();
+    const show = () => {
+      const shown = orderProviders(all, search.value);
+      list.replaceChildren(...(shown.length > 0 ? shown.map((p) => provider(p, shown.length === 1)) : [el("p", {}, t("welcome.no-match"))]));
+    };
+    search.addEventListener("input", show);
+    const next = button(t("welcome.next"), () => modelStep(), { class: "moss-page__primary", "data-moss-welcome": "next" });
+    next.disabled = true;
+    page.actions.append(skipButton(), next);
+    const draw = async () => {
+      let providers: ProviderView[];
+      try {
+        providers = ((await call("welcome.providers")) as { providers: ProviderView[] }).providers;
+      } catch (err) {
+        list.replaceChildren(el("p", {}, t("welcome.failed", { error: message(err) })));
+        return;
       }
-      box.append(row);
-    }
-    return box;
+      if (providers.length === 0) {
+        list.replaceChildren(el("p", {}, t("welcome.none")));
+        return;
+      }
+      const ready = providers.filter((p) => p.auth.some((a) => a.state === "signed-in" || a.state === "refreshing")).length;
+      page.status.textContent = ready > 0 ? t("welcome.ready", { count: ready }) : t("welcome.need-provider");
+      next.disabled = ready === 0;
+      all = providers;
+      search.hidden = providers.length < SEARCH_FROM;
+      show();
+    };
+    const provider = (p: ProviderView, alone: boolean): HTMLElement => {
+      const isReady = p.auth.some((a) => a.state === "signed-in" || a.state === "refreshing");
+      const open = alone || opened.has(p.id);
+      const head = el("button", { type: "button", class: "moss-page__item-head", "aria-expanded": String(open), "data-moss-open": p.id }, el("span", {}, p.name), isReady ? el("span", { class: "moss-page__ok" }, t("welcome.signed-in")) : null);
+      head.addEventListener("click", () => {
+        if (opened.has(p.id)) opened.delete(p.id);
+        else opened.add(p.id);
+        show();
+      });
+      const row = el("article", { class: `moss-page__item moss-page__item--row${open ? " is-open" : ""}`, "data-moss-provider": p.id }, head);
+      if (!open) return row;
+      const box = el("div", { class: "moss-page__item-body" });
+      row.append(box);
+      // The terms come first (§5.7): each sign-in waits until they are accepted.
+      let accepted = p.terms === undefined;
+      const signIns: HTMLElement[] = [];
+      if (p.terms !== undefined) {
+        const tick = el("input", { type: "checkbox", id: `terms-${p.id}`, "data-moss-terms": p.id });
+        tick.addEventListener("change", () => {
+          accepted = tick.checked;
+          for (const s of signIns) s.toggleAttribute("data-disabled", !accepted);
+          for (const c of box.querySelectorAll<HTMLButtonElement | HTMLInputElement>("[data-needs-terms]")) c.disabled = !accepted;
+        });
+        const terms = "url" in p.terms
+          ? button(t("welcome.terms", { provider: p.name }), () => call("welcome.openTerms", { id: p.id }).then(() => undefined, (err) => void (page.status.textContent = t("welcome.failed", { error: message(err) }))), { class: "moss-page__link" })
+          : el("blockquote", { class: "moss-page__terms" }, p.terms.text);
+        box.append(terms, el("label", { class: "moss-page__check", for: `terms-${p.id}` }, tick, t("welcome.terms-accept", { provider: p.name })));
+      }
+      for (const a of p.auth) {
+        const row = el("div", { class: "moss-page__auth", "data-moss-auth": `${p.id}#${a.index}` });
+        signIns.push(row);
+        if (a.state === "signed-in" || a.state === "refreshing") {
+          row.append(el("p", { class: "moss-page__ok" }, `${t("welcome.signed-in")}${a.account !== undefined ? ` (${a.account})` : ""}`));
+        } else if (a.method === "api-key") {
+          const field = el("input", { type: "password", autocomplete: "off", spellcheck: "false", "aria-label": t("welcome.key-label", { provider: p.name }), placeholder: t("welcome.paste-key"), "data-needs-terms": "", "data-moss-key": `${p.id}#${a.index}` });
+          field.disabled = !accepted;
+          const save = button(t("welcome.save-key"), async () => {
+            const key = field.value;
+            if (key.trim() === "") return;
+            try {
+              await call("welcome.signIn", { id: p.id, index: a.index, key });
+              field.value = "";
+              await draw();
+              page.status.textContent = t("welcome.key-saved");
+            } catch (err) {
+              field.value = "";
+              page.status.textContent = t("welcome.failed", { error: message(err) });
+            }
+          }, { "data-needs-terms": "", "data-moss-save": `${p.id}#${a.index}` });
+          save.disabled = !accepted;
+          if (a.help !== undefined) row.append(el("p", { class: "moss-page__note" }, a.help));
+          row.append(el("label", { class: "moss-page__field" }, t("welcome.key-label", { provider: p.name }), field), save);
+        } else {
+          const go = button(t("welcome.sign-in"), async () => {
+            try {
+              const r = (await call("welcome.signIn", { id: p.id, index: a.index })) as { state: string; opened: boolean };
+              page.status.textContent = r.opened ? t("welcome.waiting") : "";
+              await draw();
+            } catch (err) {
+              page.status.textContent = t("welcome.failed", { error: message(err) });
+            }
+          }, { "data-needs-terms": "", "data-moss-signin": `${p.id}#${a.index}` });
+          go.disabled = !accepted;
+          row.append(go);
+        }
+        box.append(row);
+      }
+      return row;
+    };
+    await draw();
   };
-  await draw();
+
+  // Step 2: the default model: shown already chosen (one provider added), with the picker one click away; a picker
+  // when several were added and none is chosen.
+  const modelStep = async (): Promise<void> => {
+    const page = frame(host, t("welcome.model-title"), undefined, t);
+    host.querySelector("section")?.setAttribute("data-moss-welcome-step", "model");
+    page.body.append(stepNote(2), el("p", {}, t("welcome.model-intro")));
+    let setup: SetupView;
+    let models: PickView[];
+    try {
+      [setup, models] = await Promise.all([call("welcome.setup") as Promise<SetupView>, call("welcome.models").then((r) => (r as { models: PickView[] }).models)]);
+    } catch (err) {
+      page.body.append(el("p", {}, t("welcome.failed", { error: message(err) })));
+      page.actions.append(button(t("welcome.back"), () => providersStep(), { "data-moss-welcome": "back" }), skipButton());
+      return;
+    }
+    const named = (id: string) => models.find((m) => m.id === id);
+    const select = el("select", { class: "moss-page__select", "aria-label": t("welcome.model-label"), "data-moss-model-picker": "" });
+    let group: HTMLOptGroupElement | undefined;
+    for (const m of models) {
+      if (group?.label !== m.providerName) select.append(group = el("optgroup", { label: m.providerName }));
+      group.append(el("option", { value: m.id }, m.name));
+    }
+    const current = setup.default?.model;
+    // Pre-filled: the default there is, else the first added provider's recommended model; the person still says so.
+    const first = current ?? setup.providers.map((p) => setup.recommended?.[p]?.model).find((x) => x !== undefined && named(x) !== undefined) ?? models[0]?.id;
+    if (first !== undefined) select.value = first;
+    const pickerRow = el("label", { class: "moss-page__field" }, t("welcome.model-label"), select);
+    const next = button(t("welcome.next"), async () => {
+      const chosen = select.value;
+      if (chosen === "") return;
+      try {
+        const effort = chosen !== current ? ((await call("welcome.setDefault", { model: chosen })) as SetupView).default?.effort : setup.default?.effort;
+        await doneStep(chosen, named(chosen), effort);
+      } catch (err) {
+        page.status.textContent = t("welcome.failed", { error: message(err) });
+      }
+    }, { class: "moss-page__primary", "data-moss-welcome": "next" });
+    if (models.length === 0) {
+      page.body.append(el("p", { class: "moss-page__note" }, t("welcome.model-none")));
+      next.disabled = true;
+    } else if (current !== undefined) {
+      const m = named(current);
+      const line = el("p", { class: "moss-page__ok", "data-moss-default": current }, t("welcome.model-chosen", { model: withEffort(m?.name ?? current, setup.default?.effort), provider: m?.providerName ?? current.slice(0, current.indexOf("/")) }));
+      pickerRow.hidden = true;
+      const change = button(t("welcome.change"), () => {
+        pickerRow.hidden = false;
+        change.hidden = true;
+        select.focus();
+      }, { class: "moss-page__link", "data-moss-welcome": "change" });
+      page.body.append(line, change, pickerRow);
+    } else {
+      page.body.append(el("p", {}, t("welcome.model-pick")), pickerRow);
+    }
+    page.actions.append(button(t("welcome.back"), () => providersStep(), { "data-moss-welcome": "back" }), skipButton(), next);
+  };
+
+  // Step 3: done: the window lands on a new code session.
+  const doneStep = async (model: string, m: PickView | undefined, effort: string | undefined): Promise<void> => {
+    const page = frame(host, t("welcome.done-title"), undefined, t);
+    host.querySelector("section")?.setAttribute("data-moss-welcome-step", "done");
+    // The model named as step 2 names it: name · effort (provider).
+    const said = withEffort(m?.name ?? model, effort);
+    page.body.append(stepNote(3), el("p", { "data-moss-done-model": `${said} (${m?.providerName ?? model.slice(0, model.indexOf("/"))})` }, t("welcome.done-intro", { model: said, provider: m?.providerName ?? model.slice(0, model.indexOf("/")) })));
+    page.actions.append(
+      button(t("welcome.back"), () => modelStep(), { "data-moss-welcome": "back" }),
+      button(t("welcome.start-code"), async () => {
+        await call("welcome.done");
+        done();
+      }, { class: "moss-page__primary", "data-moss-welcome": "start" }),
+    );
+  };
+
+  await providersStep();
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -326,4 +445,11 @@ export async function showKey(host: HTMLElement, t: Translate, call: Call, close
   page.body.append(el("p", {}, t("key.intro", { plugin: view.plugin })), state, confirmRow, el("label", { class: "moss-page__field" }, view.label, field));
   page.actions.append(remove, save);
   draw(view);
+}
+
+/** The core's page steps aside for a card waiting in this window, or comes back: kept as it is (its step, what was typed),
+ *  only not drawn (root.css: `#moss-page[data-aside]`). */
+export function stepAside(host: HTMLElement, aside: boolean): void {
+  if (aside) host.dataset.aside = "yes";
+  else delete host.dataset.aside;
 }

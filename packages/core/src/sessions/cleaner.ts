@@ -408,7 +408,7 @@ export class SessionCleaner {
     // unstamped for the next pass.
     const resolved = this.deps.resolve?.();
     if (resolved !== undefined && isInternalRefusal(resolved)) return null;
-    const boundProviderId = resolved?.providerId ?? this.deps.provider?.live?.().providerId ?? ownProviderFor(settings);
+    const boundProviderId = resolved?.providerId ?? this.deps.provider?.live?.().providerId ?? ownProviderFor(settings) ?? "";
     const cleanerPin = resolved?.tag ?? pinsFor(settings).cleaner;
     const cleanerModel = resolved !== undefined
       ? resolved.model

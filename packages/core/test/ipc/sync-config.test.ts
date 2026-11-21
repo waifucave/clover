@@ -767,6 +767,9 @@ describe("sync.config `provider` through a real startDaemon (whole-branch review
     // openai-compatible test below, keeping the codex-oauth test's picker lineup isolated to what it
     // explicitly seeds.
     if (!opts.model.startsWith("codex-oauth/")) await secrets.set("openai-api-key", "sk-test-not-a-real-key");
+    // 2026-11-20: a default model counts only while its provider holds a credential (default-model.ts), so the codex-oauth
+    // Mac is signed in to Codex, as a real one is.
+    else await new CodexAuthStore(secrets).save({ accessToken: "at_test", refreshToken: null, idToken: null, accountId: null, expiresAt: 0 });
     // WS-20 (review round 4): see bootReal's identical note above — every caller of this helper
     // configures codex-oauth/openai.
     const active = await createProvider(loadSettings(settingsPath), secrets, settingsPath);
