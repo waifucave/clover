@@ -390,6 +390,27 @@ async function pressApprove(s: Ctx, cardId: string): Promise<string> {
   const sel = ".seal-button[data-kind=approve]:not([data-remember])";
   const tried: string[] = [];
   for (let attempt = 0; attempt < 2; attempt++) {
+    // The card grows to its own height once its frame draws and the conversation scrolls under it: the person waits
+    // for it to settle, scrolls the button into view and presses.
+    let last = -1;
+    await s.x.until("the card's frame at its own height", 10_000, async () => {
+      const h = await s.moss.eval<number>(`document.querySelector('iframe[data-card-frame=${JSON.stringify(cardId)}]')?.getBoundingClientRect().height ?? -1`);
+      const steady = h > 0 && h === last;
+      last = h;
+      return steady ? true : undefined;
+    }, 300).catch(() => undefined);
+    const inFrame = await s.x.until("the card's Approve button", 15_000, () => s.moss.cdp.centerOf(doc.session, sel), 250);
+    await s.moss.eval(`((id, y) => {
+      const f = document.querySelector('iframe[data-card-frame="' + id + '"]');
+      if (!f) return false;
+      let p = f.parentElement;
+      while (p && !(p.scrollHeight > p.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(p).overflowY))) p = p.parentElement;
+      if (!p) return true;
+      const pr = p.getBoundingClientRect(), fr = f.getBoundingClientRect();
+      p.scrollTop += (fr.top + y) - (pr.top + pr.height / 2);
+      return true;
+    })(${JSON.stringify(cardId)}, ${inFrame.y})`);
+    await sleep(400);
     const btn = await s.x.until("the card's Approve button", 15_000, () => s.moss.cdp.centerOf(doc.session, sel), 250);
     const from = s.x.readLog(s.mossLog).length;
     await s.moss.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, doc.session).catch(() => undefined);
@@ -403,9 +424,9 @@ async function pressApprove(s: Ctx, cardId: string): Promise<string> {
       if (word !== undefined) return word;
       if (new RegExp(`sealed: a press over ${cardId} [^\\n]*reached no sealed page`).test(text)) return "missed";
       return /sealed: answer refused \([^\n]*/.exec(text)?.[0];
-    }, 200);
+    }, 200).catch(() => "unheard");
     if (said === "accepted") return attempt === 0 ? "pressed once" : `pressed again after "${tried.join(", ")}"`;
-    if (attempt === 0 && (said === "late" || said === "missed" || said === "no-pointer" || said === "opening")) { tried.push(said); continue; }
+    if (attempt === 0 && (said === "late" || said === "missed" || said === "no-pointer" || said === "opening" || said === "unheard")) { tried.push(said); continue; }
     s.x.fail(`the press on the card's Approve in MOSS: ${said}${tried.length > 0 ? ` (before it: ${tried.join(", ")})` : ""}`);
   }
   return s.x.fail(`the card's Approve in MOSS was not answered at 2 presses (${tried.join(", ")})`);
