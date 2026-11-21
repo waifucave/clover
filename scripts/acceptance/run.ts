@@ -5856,7 +5856,11 @@ async function releaseSteps(app: { exe: string; args: string[] }): Promise<void>
         const log = readLog(daemon.log).slice(logFrom);
         for (const re of MISSING_BESIDE) { const m = re.exec(log); if (m !== null) fail(`the installed engine says: ${m[0].slice(0, 200)}`); }
         const session = await keyedCodeSession(c, "release-install");
-        const called = await callTurn({ requests: () => fake!.requests, turn: (s: string, t: string, ms?: number) => turn(c, s, t, ms) } as unknown as ExampleCtx, session, "figure_status", {});
+        // No app runs in this row, so the tool's card (answered over RPC, as the sealed frame would) has no app to have been told of it.
+        const wasAppless = appless;
+        appless = true;
+        let called: Awaited<ReturnType<typeof callTurn>>;
+        try { called = await callTurn({ requests: () => fake!.requests, turn: (s: string, t: string, ms?: number) => turn(c, s, t, ms) } as unknown as ExampleCtx, session, "figure_status", {}); } finally { appless = wasAppless; }
         // The plugin's own words: its code ran in the plugin Bun beside the engine (no avatar is shown in a run, and it says so).
         if (!/no avatar is shown/.test(called.result.text)) fail(`${called.called} answered, but not with the plugin's own words: ${called.result.text.slice(0, 200)}`);
         record(installN, "PASS", `engine install placed ${bundled.join(", ")} and the plugin tree in the home (marker build ${marker.build}), the engine started from there found the process holder and the link sidecar (no missing-file line), "${listed.replace(/^\[plugins\] /, "").slice(0, 90)}", and ${called.called} answered in the plugin's words`);
