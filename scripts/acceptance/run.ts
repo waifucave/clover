@@ -443,6 +443,8 @@ function baseEnv(): Record<string, string> {
     TMPDIR: join(root, "tmp"),
     LANG: "en_US.UTF-8",
     MOSS_HOME: home,
+    // The run's time scale reaches its children (the acceptance daemon's app heartbeat limit follows it, daemon.ts); the env is a whitelist, so it is named.
+    ...(process.env.MOSS_ACCEPT_TIME_SCALE !== undefined ? { MOSS_ACCEPT_TIME_SCALE: process.env.MOSS_ACCEPT_TIME_SCALE } : {}),
     // The run's fake plugin index and npm registry (fake-exa.ts): read by the source daemon's seam (a packaged test
     // build reaches them by name through MOSS_TEST_OUTSIDE_WORLD instead).
     MOSS_ACCEPTANCE_PLUGIN_WORLD: pluginWorld,
