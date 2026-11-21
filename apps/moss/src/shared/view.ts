@@ -28,6 +28,8 @@ export interface BotRow {
   title?: string;
   last?: { text: string; from: "user" | "bot" | "note"; at: number };
   unread: boolean;
+  /** The default bot (her record says the engine made her by default): the one the window opens on by itself. */
+  default?: true;
 }
 
 /** A card the router placed in MOSS's window: its ids only (its words are sealed, drawn by its own frame). */

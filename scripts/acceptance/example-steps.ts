@@ -182,9 +182,17 @@ export async function pluginsPage(cdp: Cdp, tab: "Add" | "Installed"): Promise<v
 export async function installFromPage(ctx: ExampleCtx, folder: string, id: string): Promise<{ card: string; text: string }> {
   const { cdp, rpc } = ctx;
   const name = folder.split("/").pop()!;
-  // The window's document can load again (a layer just installed) between the page opening and the picker's answer, which drops the
-  // Add tab: the whole of it is done again, up to three times, until the chosen folder's name stands.
+  // The window's document loads again when a plugin's layer was installed after it was served ("layers: mN loads again", about a second after the
+  // approval of the plugin installed just before, and a second time for its client), which drops the Add tab and what it had chosen. It can come
+  // between the page opening and the picker's answer, or after the chosen folder's name stood and before the Install press landed (`cards` row 58,
+  // run 44867088957: A's OK pressed 04:38:59.98, "m2 loads again" 04:39:00.97, "m20 loads again" 04:39:01.74; B's Install press never reached the
+  // core and the Add page ended with nothing chosen). So the whole of it is done again, up to three times, until the chosen folder's name stands
+  // AND the press reached the core (the plugin's record or its OK card exists within 15 s); a press that did not land with no reload in the app's
+  // log since the attempt began is not done again: the wait below then fails as before and says what the page showed.
+  const reloads = (): number => (ctx.appLog().match(/loads again/g) ?? []).length;
+  const landed = async (): Promise<boolean> => (await rpc.request<{ cards: Card[] }>("card.list").then((r) => r.cards.some((c) => c.kind === "plugin-ok" && c.pluginId === id), () => false)) || (await rpc.request("plugin.get", { id }).then(() => true, () => false));
   for (let attempt = 0; ; attempt++) {
+    const before = reloads();
     ctx.pick(folder);
     await pluginsPage(cdp, "Add");
     await clickTree(cdp, "Choose a folder…", "button", "Choose a folder");
@@ -192,9 +200,11 @@ export async function installFromPage(ctx: ExampleCtx, folder: string, id: strin
       for (const d of await treeDocs(cdp)) if (String(await cdp.evaluate(d.session, "document.body.innerText").catch(() => "")).includes(`Chosen: ${name}`)) return true;
       return undefined;
     }).then(() => true, (err) => { if (attempt >= 2) throw err; return false; });
-    if (chosen) break;
+    if (!chosen) continue;
+    await clickTree(cdp, `Install ${name}`, "button", `Install ${name}`);
+    const reached = await until(`${id}'s Install press reaching the core`, 15_000, async () => ((await landed()) ? true : undefined)).then(() => true, () => false);
+    if (reached || attempt >= 2 || reloads() === before) break;
   }
-  await clickTree(cdp, `Install ${name}`, "button", `Install ${name}`);
   const card = await until(`${id}'s OK card`, 60_000, async () => (await rpc.request<{ cards: Card[] }>("card.list")).cards.find((c) => c.kind === "plugin-ok" && c.pluginId === id)).catch(async (err: unknown) => {
     // A card that never came (`cards` row 57: run 44210338753 twice, run 44219354846 once): say what the core held at the end of the wait, which names
     // the cause: the plugin's record, whether its folder is in the plugins folder, the pending cards. In run 44219354846 it held none of the three: the

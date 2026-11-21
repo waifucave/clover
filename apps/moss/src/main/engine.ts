@@ -176,6 +176,7 @@ export class MossEngine {
         ...(mood === "working" && a?.tool !== undefined ? { tool: a.tool } : {}),
         ...(mood === "working" && this.liveCall.has(r.id) && (a?.tool === undefined || a.tool === this.liveCall.get(r.id)!.name) ? { ...(this.liveCall.get(r.id)!.detail !== undefined ? { detail: this.liveCall.get(r.id)!.detail! } : {}), ...(this.liveCall.get(r.id)!.title !== undefined ? { title: this.liveCall.get(r.id)!.title! } : {}) } : {}),
         ...(s?.last !== undefined ? { last: s.last } : {}), unread: s?.unread === true,
+        ...(r.madeBy.kind === "default" ? { default: true as const } : {}),
       };
     });
     // Newest activity first, as a list of conversations is.

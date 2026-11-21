@@ -1,6 +1,7 @@
 // MOSS's window (spec §6.10, the owner's picture of 2026-11-16): the bots on the left, the selected bot's one
 // conversation in the middle, its screen and routines on the right when asked for. Built in and fixed: no plugin part is
 // mounted anywhere in it. What it shows comes from MOSS's main process as plain data (shared/view.ts).
+import { autoOpenBot } from "./auto-open";
 import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { bridge } from "./bridge";
@@ -54,8 +55,8 @@ export function App() {
     const t = setInterval(() => setTick((n) => n + 1), 30_000);
     return () => clearInterval(t);
   }, []);
-  // The first bot opens by itself; a removed bot's page goes back to the first.
-  const shown: Page | undefined = page !== undefined && ("page" in page || view.bots.some((b) => b.id === page.bot)) ? page : view.bots[0] !== undefined ? { bot: view.bots[0].id } : undefined;
+  // The default bot opens by itself (else the first);  a removed bot's page goes back to the first.
+  const shown: Page | undefined = page !== undefined && ("page" in page || view.bots.some((b) => b.id === page.bot)) ? page : autoOpenBot(view.bots) !== undefined ? { bot: autoOpenBot(view.bots)!.id } : undefined;
   const showingKey = shown === undefined ? "none" : "bot" in shown ? `bot:${shown.bot}` : `page:${shown.page}`;
   useEffect(() => {
     // Presence: main checks the bot against the ones it knows and reports it with the window's focus (§3.5).
