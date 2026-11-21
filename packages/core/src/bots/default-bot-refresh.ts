@@ -75,18 +75,19 @@ export function refreshPatch(record: BotRecord, instructions: string, layer: { n
 /** Runs the step once. Returns the fields it changed, or undefined when it didn't run (already done, her record isn't
  *  there, or it isn't the default's own). */
 export async function refreshDefaultBot(o: { home: string; store: RefreshStore; layers: Pick<UserLayerStore, "get">; now: () => number; warn?: (m: string) => void }): Promise<string[] | undefined> {
-  if (defaultBotRefreshed(o.home)) return undefined;
-  const record = o.store.record(DEFAULT_BOT_ID);
-  // Hers only: made by the default, or moved from her plugin; a bot of the person's own that took the id is theirs.
-  if (record === undefined || !(record.madeBy.kind === "default" || (record.madeBy.kind === "move" && record.madeBy.plugin === DEFAULT_BOT_ID))) return undefined;
-  const patch = refreshPatch(record, o.store.instructions(DEFAULT_BOT_ID), o.layers.get(DEFAULT_BOT_ID));
-  const changed = Object.keys(patch);
+  // Everything here is inside the guard: a fault in this step is a line in the log, never a start that fails.
   try {
+    if (defaultBotRefreshed(o.home)) return undefined;
+    const record = o.store.record(DEFAULT_BOT_ID);
+    // Hers only: made by the default, or moved from her plugin; a bot of the person's own that took the id is theirs.
+    if (record === undefined || !(record.madeBy.kind === "default" || (record.madeBy.kind === "move" && record.madeBy.plugin === DEFAULT_BOT_ID))) return undefined;
+    const patch = refreshPatch(record, o.store.instructions(DEFAULT_BOT_ID), o.layers.get(DEFAULT_BOT_ID));
+    const changed = Object.keys(patch);
     if (changed.length > 0) await o.store.edit(DEFAULT_BOT_ID, patch);
     writeJsonAtomic(markerPath(o.home), { refresh: 1, id: DEFAULT_BOT_ID, at: o.now(), changed } satisfies Marker, { mode: 0o600 });
+    return changed;
   } catch (err) {
     o.warn?.(`the default bot's rename wasn't carried over: ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
-  return changed;
 }
