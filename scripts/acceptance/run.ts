@@ -6159,20 +6159,38 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
   try {
     if (bots === undefined) fail(`bot.list: ${botsWhy}`);
     if (k.session === undefined) block("the old run left no conversation (its step 3 didn't run)");
-    const bot = bots!.find((b) => b.mainSession === k.session);
-    if (bot === undefined) fail(`bot.list doesn't list the old conversation ${k.session} (it lists ${bots!.map((b) => `${b.id}: ${b.mainSession}`).join(", ") || "no bot"})`);
+    // An old build that already was the two apps (a MOSS one) ran its first conversation as a CODE session, beside the
+    // default bot's one conversation: then the old conversation is the code session (listed for MOSS Code, with its old
+    // reply in its history), and the bot's conversation looked at below is the default bot's, which the old run talked in too.
+    const oldCode = bots!.some((b) => b.mainSession === k.session) ? undefined : k.session;
+    if (oldCode !== undefined) {
+      const listedOld = (await c.request<{ sessions: { id: string }[] }>("session.list", {})).sessions;
+      if (!listedOld.some((x) => x.id === oldCode)) fail(`neither bot.list nor session.list lists the old conversation ${oldCode} (bots: ${bots!.map((b) => `${b.id}: ${b.mainSession}`).join(", ") || "none"}; sessions: ${listedOld.map((x) => x.id).join(", ") || "none"})`);
+      let held = false;
+      let at: number | undefined;
+      for (let i = 0; i < 20 && !held; i++) {
+        const page = await c.request<{ events: { seq?: number }[]; hasMore: boolean }>("session.history", { id: oldCode, limit: 500, ...(at !== undefined ? { before: at } : {}) });
+        held = JSON.stringify(page.events).includes("ACCEPTANCE-REPLY-OK");
+        const first = page.events.find((e) => typeof e.seq === "number")?.seq;
+        if (held || !page.hasMore || first === undefined) break;
+        at = first;
+      }
+      if (!held) fail(`the old code session ${oldCode} is listed but its history holds no reply of the old run`);
+    }
     session = k.session;
     type Rec = { id: string; name: string | { en: string }; mainSession: string; madeBy: { kind: string } };
     const recs = (await c.request<{ bots: Rec[] }>("bot.records", {})).bots;
-    const rec = recs.find((r) => r.mainSession === k.session);
-    if (rec === undefined) fail(`bot.records has no record on the old conversation ${k.session} (records: ${recs.map((r) => `${r.id}: ${r.mainSession} (${r.madeBy.kind})`).join(", ") || "none"})`);
+    const rec = oldCode === undefined ? recs.find((r) => r.mainSession === k.session) : recs.find((r) => r.id === "alpha");
+    if (rec === undefined) fail(oldCode === undefined ? `bot.records has no record on the old conversation ${k.session} (records: ${recs.map((r) => `${r.id}: ${r.mainSession} (${r.madeBy.kind})`).join(", ") || "none"})` : `bot.records has no default bot (records: ${recs.map((r) => `${r.id}: ${r.mainSession} (${r.madeBy.kind})`).join(", ") || "none"})`);
+    const botsOwn = oldCode === undefined ? k.session : rec!.mainSession;
+    if (!bots!.some((b) => b.mainSession === botsOwn)) fail(`bot.list doesn't list ${rec!.id}'s conversation ${botsOwn} (it lists ${bots!.map((b) => `${b.id}: ${b.mainSession}`).join(", ") || "no bot"})`);
     // The engine's own page of her one conversation, newest last: back through the pages until the old reply.
     let found = false;
     let pages = 0;
     let before: number | undefined;
     for (; pages < 20 && !found; pages++) {
       const page = await c.request<{ session: string; events: { seq?: number }[]; hasMore: boolean }>("bot.conversation", { id: rec!.id, limit: 200, ...(before !== undefined ? { before } : {}) });
-      if (page.session !== k.session) fail(`bot.conversation of ${rec!.id} is session ${page.session}, not the old conversation ${k.session}`);
+      if (page.session !== botsOwn) fail(`bot.conversation of ${rec!.id} is session ${page.session}, not ${oldCode === undefined ? "the old conversation" : "her record's main session"} ${botsOwn}`);
       found = JSON.stringify(page.events).includes("ACCEPTANCE-REPLY-OK");
       const first = page.events.find((e) => typeof e.seq === "number")?.seq;
       if (found || !page.hasMore || first === undefined) break;
@@ -6181,11 +6199,12 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     if (!found) fail(`bot.conversation of ${rec!.id} (${pages + 1} page(s)) holds no reply of the old run`);
     const name = typeof rec!.name === "string" ? rec!.name : rec!.name.en;
     // The old run's code sessions: what MOSS Code's window lists (session.list); the old build kept none in its index.
-    const listed = (await c.request<{ sessions: { id: string; mode?: string; kind?: string }[] }>("session.list", {}).catch(() => ({ sessions: [] }))).sessions;
-    const code = listed.filter((x) => (x.mode ?? x.kind) === "code");
+    const listed = (await c.request<{ sessions: { id: string; kind?: string }[] }>("session.list", {}).catch(() => ({ sessions: [] }))).sessions;
+    const code = listed.filter((x) => x.kind === "agent" || x.kind === "coding");
     if (target !== "source" && mossBundle === undefined) block(`${rec!.id}'s record and her old turns are on the engine (bot.records, bot.conversation); a packaged run takes the build's MOSS with --moss-app <MOSS.app> to draw them`);
     const drawn = await mossShowsOldConversation(mossCtx(), { bot: rec!.id, name, text: "ACCEPTANCE-REPLY-OK", keep: mossKept });
-    record(stepNo("the old conversation is listed"), "PASS", `bot.records: ${rec!.id} (made by ${rec!.madeBy.kind}) on the old conversation ${session}; bot.conversation holds the old run's reply; ${drawn}; the old run's code sessions listed for MOSS Code: ${code.length === 0 ? "none (the old build kept none)" : code.map((x) => x.id).join(", ")}`);
+    if (oldCode !== undefined && !code.some((x) => x.id === oldCode)) fail(`session.list lists the old conversation ${oldCode}, but not as a code session (for MOSS Code)`);
+    record(stepNo("the old conversation is listed"), "PASS", `${oldCode === undefined ? `bot.records: ${rec!.id} (made by ${rec!.madeBy.kind}) on the old conversation ${session}` : `the old conversation ${oldCode} is a code session, listed for MOSS Code with the old run's reply in its history; bot.records: ${rec!.id} (made by ${rec!.madeBy.kind}) on ${botsOwn}`}; bot.conversation holds the old run's reply; ${drawn}; the old run's code sessions listed for MOSS Code: ${code.length === 0 ? "none (the old build kept none)" : code.map((x) => x.id).join(", ")}`);
   } catch (err) {
     record(stepNo("the old conversation is listed"), statusOf(err), why(err));
     // A conversation not listed: the new turns go to the bot's current one, if there is one.

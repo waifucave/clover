@@ -466,7 +466,11 @@ async function cardRow(s: Ctx): Promise<string> {
   if (covered.on) s.x.fail("MOSS's guide is open but her conversation is still the topmost thing drawn: the guide doesn't cover the window");
   // A card for this window while the guide is open: her turn's Write asks for approval.
   const before = new Set((await s.c.request<{ cards: { id: string }[] }>("card.list")).cards.map((k) => k.id));
-  await s.c.request("user.send", { to: { bot: "alpha" }, text: "ACCEPTANCE-WRITE while the guide is open", clientMessageId: randomUUID() }, 30_000);
+  // session.send on her record's main session (the driver's connection on a packaged run is the cli role, which has
+  // no user.send).
+  const own = (await s.c.request<{ bots: { id: string; mainSession: string }[] }>("bot.records", {})).bots.find((b) => b.id === "alpha")?.mainSession;
+  if (own === undefined) s.x.fail("bot.records lists no default bot (alpha)");
+  await s.c.request("session.send", { id: own, message: { text: "ACCEPTANCE-WRITE while the guide is open", clientMessageId: randomUUID() } }, 30_000);
   const card = await s.x.until("the Write's approval card", 90_000, async () => (await s.c.request<{ cards: { id: string; kind: string }[] }>("card.list")).cards.find((k) => !before.has(k.id)), 300);
   const place = await s.x.until("the router's place for the card", 20_000, async () => {
     const r = await s.c.request<{ placements: { card: string; place: { kind: string; program?: string; window?: string } }[] }>("card.placement", { ids: [card.id] });
