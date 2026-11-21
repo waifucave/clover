@@ -93,8 +93,9 @@ export function Player() {
       holds({ utterances: s.holds });
     }, () => undefined);
     const mute = (): void => void api.settings.get<boolean>("speakReplies").then((on) => { if (live) player.setMuted(on === false); }, () => undefined);
-    mute();
+    // Subscribe first, then read (a change between the read's answer and the subscription taking effect would be lost).
     const offMute = api.settings.watch("speakReplies", mute);
+    mute();
     return () => {
       live = false;
       accepting();

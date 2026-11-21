@@ -105,8 +105,9 @@ export function usePoint(point: string): PointEntry[] | undefined {
   const [entries, setEntries] = useState<PointEntry[] | undefined>(undefined);
   useEffect(() => {
     let live = true;
-    void api.points.entries(point).then((e) => live && setEntries(e), () => live && setEntries([]));
+    // Subscribe first, then read: a change between the read's answer and a later subscription taking effect would be lost for good.
     const stop = api.points.watch(point, (e) => live && setEntries(e));
+    void api.points.entries(point).then((e) => live && setEntries(e), () => live && setEntries([]));
     return () => { live = false; stop(); };
   }, [api, point]);
   return entries;
@@ -119,9 +120,10 @@ export function useSetting<T>(key: string): T | undefined {
   useEffect(() => {
     let live = true;
     const read = () => void api.settings.get<T>(key).then((v) => live && setValue(v), () => undefined);
-    read();
-    // The watch says which key changed; the value is read again.
+    // The watch says which key changed; the value is read again. Subscribe first, then read: a change between the first
+    // read's answer and the subscription taking effect would be lost for good (the figure stayed on its old pick).
     const stop = api.settings.watch(key, read);
+    read();
     return () => { live = false; stop(); };
   }, [api, key]);
   return value;

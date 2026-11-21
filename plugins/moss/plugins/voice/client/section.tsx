@@ -25,8 +25,10 @@ export function VoiceSection() {
   }, [api]);
 
   useEffect(() => {
+    // Subscribe first, then read (a change between the read's answer and the subscription taking effect would be lost).
+    const off = api.settings.watch("speakReplies", () => void load());
     void load();
-    return api.settings.watch("speakReplies", () => void load());
+    return off;
   }, [api, load]);
 
   const toggleSpeak = async () => {
