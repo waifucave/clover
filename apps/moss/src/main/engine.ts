@@ -190,7 +190,7 @@ export class MossEngine {
     const talk = "command" in this.talk ? { ready: true as const } : { ready: false as const, why: this.talk.why };
     // The engine's offer to copy an old install's home comes first: the setup guide waits while it is pending.
     const copyOffered = [...this.cards.values()].some((c) => c.change === "home-copy" && this.sealed.isPending(c.id));
-    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.setupNow !== undefined && !copyOffered ? { setup: this.setupNow } : {}), ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.releaseNotice !== undefined ? { notice: this.releaseNotice } : this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
+    return { connection: this.connection, pieces: { ...this.pieces }, bots, cards, talk, ...(this.setupNow !== undefined && !copyOffered ? { setup: this.setupNow } : {}), ...(copyOffered ? { setupWaits: true as const } : {}), ...(this.engineRelease !== undefined ? { engine: this.engineRelease } : {}), ...(this.releaseNotice !== undefined ? { notice: this.releaseNotice } : this.hostGaveUp ? { notice: HOST_DOWN_NOTICE } : {}) };
   }
 
   /** How many pending cards MOSS knows that the router hasn't placed yet (anywhere): the smoke run waits for none. */

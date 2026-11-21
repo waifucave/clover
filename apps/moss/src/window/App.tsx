@@ -81,6 +81,7 @@ export function App() {
   const inConversation = bot === undefined ? [] : view.cards.filter((c) => c.place === "conversation" && c.bot === bot.id);
   // The strip: every card the router placed in this window that this conversation doesn't draw.
   const stripCards = view.cards.filter((c) => !inConversation.includes(c));
+  const guideAside = view.cards.length > 0 || view.setupWaits === true;
   const strip = !stripShown ? null : <Strip cards={stripCards} botName={(id) => names.get(id)} onOpen={(id) => setPage({ bot: id })} />;
   const banner = CONNECTION_WORDS[view.connection.kind];
   return (
@@ -95,6 +96,9 @@ export function App() {
           : <main className="conversation conversation--empty" data-col="conversation">{strip}<p className="muted">{view.pieces.bots === "waiting" ? "Waiting for the engine's bots." : "Make a bot with + to start."}</p></main>}
       </div>
       {guide === "open" ? (
+        // A card waiting in this window (an approval, a plugin's OK, the old home's copy) comes first: the guide, which
+        // covers the whole window, steps aside (kept as it is, its step too) and is back once no card waits.
+        <div className="setup-holder" hidden={guideAside} data-setup-aside={guideAside ? "yes" : "no"}>
         <SetupGuide
           setup={view.setup} botName={defaultBot?.name ?? "your bot"} {...(guideStep !== undefined ? { initialStep: guideStep } : {})}
           onClose={() => setGuide("closed")}
@@ -105,6 +109,7 @@ export function App() {
             setTimeout(() => document.querySelector<HTMLTextAreaElement>("[data-composer] textarea")?.focus(), 50);
           }}
         />
+        </div>
       ) : null}
       {bot !== undefined && panel ? <SidePanel bot={bot} cardsKey={view.cards.map((c) => c.id).join(",")} onClose={() => setPanel(false)} onSettings={() => { setSettingsBot(bot.id); setPage({ page: "settings" }); }} /> : null}
     </div>

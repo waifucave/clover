@@ -53,6 +53,8 @@ export interface MossView {
   /** What the home's setup needs (the engine's `setup.state`): the setup guide opens by itself while it isn't ready and
    *  the person hasn't skipped it. Absent until the engine answers (an older engine never does). */
   setup?: SetupRow;
+  /** A card the setup guide waits behind is pending (the old home's copy), though not drawn in this window. */
+  setupWaits?: true;
 }
 
 /** The engine's answer to "is this home set up for a first reply" (`setup.state`). */

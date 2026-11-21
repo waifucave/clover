@@ -188,6 +188,25 @@ describe("the setup guide (2026-11-20)", () => {
     return r;
   }
 
+  test("a card waiting in this window comes first: the guide steps aside, kept at its step, and is back after", async () => {
+    viewTo = [];
+    const r = await withGuide(view({ setup: NOT_SET }), {
+      setupProviders: async () => [{ pluginId: "moss/model-anthropic", name: "Anthropic", auth: [{ index: 0, method: "api-key", state: "signed-out" }] }],
+    });
+    const holder = () => r.container.querySelector(".setup-holder") as HTMLDivElement | null;
+    expect(holder()?.hidden).toBe(false);
+    await act(async () => { for (const f of viewTo) f(view({ setup: NOT_SET, cards: [{ id: "k1", bot: "juniper", kind: "approval", place: "conversation" }] })); await new Promise((res) => setTimeout(res, 10)); });
+    expect(holder()?.hidden).toBe(true);
+    expect(holder()?.dataset.setupAside).toBe("yes");
+    expect(r.container.querySelector("[data-setup-step=providers]")).not.toBeNull();
+    await act(async () => { for (const f of viewTo) f(view({ setup: NOT_SET, cards: [] })); await new Promise((res) => setTimeout(res, 10)); });
+    expect(holder()?.hidden).toBe(false);
+    // The old home's copy, pending though drawn elsewhere, holds it aside too.
+    await act(async () => { for (const f of viewTo) f(view({ setupWaits: true })); await new Promise((res) => setTimeout(res, 10)); });
+    expect(holder()?.hidden).toBe(true);
+    r.unmount();
+  });
+
   test("a home that isn't set up opens it by itself; a skip goes to the engine and closes it", async () => {
     let skipped = 0;
     const r = await withGuide(view({ setup: NOT_SET }), {

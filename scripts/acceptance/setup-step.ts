@@ -28,7 +28,8 @@ export const SETUP_PICK_STEP = "two providers: a second one added leaves the def
 /** The owner's default for the Claude family, as Anthropic serves it. */
 export const CLAUDE_DEFAULT = "anthropic/claude-opus-5-5";
 
-export const SETUP_STEPS: readonly string[] = [SETUP_OPEN_STEP, SETUP_ONE_STEP, SETUP_PICK_STEP];
+export const SETUP_CARD_STEP = "a card raised while MOSS's guide is open: the guide (which covers the window) steps aside, the approval card is drawn on top in MOSS's window and a real press on its Approve answers it, and the guide is back, at the step it was on, once no card waits";
+export const SETUP_STEPS: readonly string[] = [SETUP_OPEN_STEP, SETUP_ONE_STEP, SETUP_PICK_STEP, SETUP_CARD_STEP];
 
 /** The second provider: one more on the Anthropic wire, pointed at the run's fake (`providers.<id>.baseUrl`). */
 export const SECOND_PROVIDER = "deepseek-anthropic";
@@ -194,10 +195,11 @@ export async function setupUnit(x: SetupUnitCtx): Promise<void> {
     }, 500);
     cdps.push(mossCdp);
     moss = new Doc(x, mossCdp, (u) => u.startsWith("moss-app://app/"), "MOSS's window");
-    const s: Ctx = { x, c, code, moss, renders, appearance, codeLog: codeApp.log };
+    const s: Ctx = { x, c, code, moss, renders, appearance, codeLog: codeApp.log, mossLog: mossApp.log };
     await row(SETUP_OPEN_STEP, () => openRow(s));
     await row(SETUP_ONE_STEP, () => oneRow(s));
     await row(SETUP_PICK_STEP, () => pickRow(s));
+    await row(SETUP_CARD_STEP, () => cardRow(s));
   } catch (err) {
     const why = `the setup unit's apps couldn't be started and driven: ${x.why(err)}`;
     for (const name of SETUP_STEPS) if (!done.has(name)) x.record(name, x.statusOf(err), why);
@@ -215,6 +217,7 @@ interface Ctx {
   renders: string | undefined;
   appearance: string;
   codeLog: string;
+  mossLog: string;
 }
 
 const CODE_STEP = (step: string) => `[data-moss-welcome-step=${step}]`;
@@ -363,4 +366,86 @@ async function pickRow(s: Ctx): Promise<string> {
   const upstream = SECOND_MODEL.slice(SECOND_MODEL.indexOf("/") + 1);
   if (!mine.some((r) => r.model === upstream)) s.x.fail(`MOSS's turn didn't run on the pick ${SECOND_MODEL}: the fake saw ${[...new Set(mine.map((r) => r.model))].join(", ") || "no request"}`);
   return `a second provider (${SECOND_PROVIDER}) left the default ${before.default?.model}; MOSS's picker offered only the added providers' ${offered.length} models; the pick ${SECOND_MODEL} is setup.state's chosen default; Talk to MOSS opened her conversation${focused === true ? " with the composer focused" : ""}; her turn ran on ${upstream}${pictures.length > 0 ? `; pictures: ${pictures.length}` : ""}`;
+}
+
+/** What is drawn at the centre of an element of MOSS's page: whether the element itself (or something in it) is the
+ *  topmost there, and else what covers it. */
+async function topmostAt(s: Ctx, selector: string): Promise<{ on: boolean; cover: string }> {
+  return s.moss.eval<{ on: boolean; cover: string }>(`((sel) => {
+    const e = document.querySelector(sel);
+    if (!e) return { on: false, cover: 'not drawn' };
+    const r = e.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return { on: false, cover: 'no size' };
+    const t = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 40));
+    const on = !!t && (t === e || e.contains(t));
+    return { on, cover: t ? (t.closest('[class]')?.className || t.tagName) : 'nothing' };
+  })(${JSON.stringify(selector)})`);
+}
+
+/** A real press on a card's Approve in MOSS's window (the pointer in, the sealed page's ready mark, a trusted click),
+ *  as moss-step.ts presses it; one more press when the card says press again. What MOSS said. */
+async function pressApprove(s: Ctx, cardId: string): Promise<string> {
+  const prefix = `moss-sealed://card/${encodeURIComponent(cardId)}/own`;
+  const doc = await s.x.until(`the card ${cardId}'s sealed frame in MOSS's window`, 30_000, async () => (await s.moss.cdp.documents()).find((d) => d.url.startsWith(prefix)), 300);
+  const sel = ".seal-button[data-kind=approve]:not([data-remember])";
+  const tried: string[] = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const btn = await s.x.until("the card's Approve button", 15_000, () => s.moss.cdp.centerOf(doc.session, sel), 250);
+    const from = s.x.readLog(s.mossLog).length;
+    await s.moss.cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: btn.x, y: btn.y, button: "none", buttons: 0 }, doc.session).catch(() => undefined);
+    await s.x.until("the sealed page's ready-to-answer mark", 15_000, async () => ((await s.moss.cdp.evaluate(doc.session, "document.body.dataset.ready ?? 'none'").catch(() => "gone")) === "yes" ? true : undefined), 100);
+    await sleep(200);
+    await s.moss.cdp.click(doc.session, btn.x, btn.y);
+    const said = await s.x.until(`MOSS's answer for the card ${cardId}`, 15_000, () => {
+      const text = s.x.readLog(s.mossLog).slice(from);
+      if (text.includes(`sealed: answer accepted for ${cardId}`)) return "accepted";
+      const word = /sealed: press on \S+: (covered|no-pointer|opening|late)\b/.exec(text.split("\n").filter((l) => l.includes(`press on ${cardId}`)).join("\n"))?.[1];
+      if (word !== undefined) return word;
+      if (new RegExp(`sealed: a press over ${cardId} [^\\n]*reached no sealed page`).test(text)) return "missed";
+      return /sealed: answer refused \([^\n]*/.exec(text)?.[0];
+    }, 200);
+    if (said === "accepted") return attempt === 0 ? "pressed once" : `pressed again after "${tried.join(", ")}"`;
+    if (attempt === 0 && (said === "late" || said === "missed" || said === "no-pointer" || said === "opening")) { tried.push(said); continue; }
+    s.x.fail(`the press on the card's Approve in MOSS: ${said}${tried.length > 0 ? ` (before it: ${tried.join(", ")})` : ""}`);
+  }
+  return s.x.fail(`the card's Approve in MOSS was not answered at 2 presses (${tried.join(", ")})`);
+}
+
+async function cardRow(s: Ctx): Promise<string> {
+  // MOSS's guide opened again (the person's way is Settings; the test hook opens it at the same step) over her
+  // conversation, and it covers the window.
+  await s.moss.eval("(window.__mossTest.go({ bot: 'alpha' }), true)");
+  await s.moss.waitFor("MOSS's conversation shown", `document.querySelector('main.conversation')?.getAttribute('aria-label') === "MOSS's conversation"`);
+  await s.moss.eval("(window.__mossTest.go({ guide: 'model' }), true)");
+  await s.moss.waitFor("MOSS's guide open at its model step", `!!document.querySelector('${MOSS_STEP("model")}') && document.querySelector('.setup-holder')?.hidden === false`);
+  const covered = await topmostAt(s, "main.conversation");
+  if (covered.on) s.x.fail("MOSS's guide is open but her conversation is still the topmost thing drawn: the guide doesn't cover the window");
+  // A card for this window while the guide is open: her turn's Write asks for approval.
+  const before = new Set((await s.c.request<{ cards: { id: string }[] }>("card.list")).cards.map((k) => k.id));
+  await s.c.request("user.send", { to: { bot: "alpha" }, text: "ACCEPTANCE-WRITE while the guide is open", clientMessageId: randomUUID() }, 30_000);
+  const card = await s.x.until("the Write's approval card", 90_000, async () => (await s.c.request<{ cards: { id: string; kind: string }[] }>("card.list")).cards.find((k) => !before.has(k.id)), 300);
+  const place = await s.x.until("the router's place for the card", 20_000, async () => {
+    const r = await s.c.request<{ placements: { card: string; place: { kind: string; program?: string; window?: string } }[] }>("card.placement", { ids: [card.id] });
+    const p = r.placements.find((x) => x.card === card.id)?.place;
+    return p !== undefined && (p.kind === "conversation" || p.kind === "strip") ? p : undefined;
+  }, 300);
+  if (place.program !== "moss") s.x.fail(`the router placed the card in ${place.program}/${place.window}, not in MOSS's window`);
+  const frame = `iframe[data-card-frame=${JSON.stringify(card.id)}]`;
+  await s.moss.waitFor("the card's frame drawn in MOSS's window", `!!document.querySelector(${JSON.stringify(frame)})`, 30_000);
+  // Where it is drawn, as it is drawn: the topmost thing at the card's centre is the card, not the guide.
+  const shown = await s.x.until("the card the topmost thing at its own centre", 10_000, async () => {
+    const t = await topmostAt(s, frame);
+    return t.on ? t : undefined;
+  }, 250).catch(async () => s.x.fail(`the card is drawn ${place.kind === "conversation" ? "in her conversation" : "in MOSS's strip"} but covered there by ${(await topmostAt(s, frame)).cover}, with the guide ${await s.moss.eval<string>("document.querySelector('.setup-holder')?.dataset.setupAside ?? 'gone'") === "yes" ? "aside" : "over it"}`));
+  void shown;
+  const aside = await s.moss.eval<string | null>("document.querySelector('.setup-holder')?.dataset.setupAside ?? null");
+  if (aside !== "yes") s.x.fail(`the guide didn't step aside for the card (${aside ?? "gone"})`);
+  const pressed = await pressApprove(s, card.id);
+  await s.x.until("the card answered", 15_000, async () => ((await s.c.request<{ cards: { id: string }[] }>("card.list")).cards.some((k) => k.id === card.id) ? undefined : true), 300);
+  // Back once no card waits, at the step it was on.
+  await s.moss.waitFor("MOSS's guide back at its model step once no card waits", `!!document.querySelector('${MOSS_STEP("model")}') && document.querySelector('.setup-holder')?.hidden === false`, 30_000);
+  await s.moss.waitFor("the guide topmost again", `(() => { const r = document.querySelector('.setup__card')?.getBoundingClientRect(); if (!r) return false; const t = document.elementFromPoint(r.left + r.width / 2, r.top + 20); return !!t && !!t.closest('.setup'); })()`, 10_000);
+  // Leave it closed for whatever runs next.
+  await s.moss.eval("(window.__mossTest.go({ guide: false }), true)");
+  return `the guide open at its model step covered MOSS's conversation; the Write's approval card (placed ${place.kind} of ${place.program}/${place.window}) was the topmost thing at its centre with the guide aside; Approve ${pressed}; the guide was back at its model step`;
 }
