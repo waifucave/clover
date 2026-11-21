@@ -102,3 +102,16 @@ try {
   const { CORE_BRAND } = await import("../src/runtime-sdk/brand");
   installBrand(CORE_BRAND);
 }
+
+// On CI only: this test process says when its own event loop was held up for more than 3 s, with the time. A hook or a test that
+// times out with no output before it (core · linux 2/3, moss-chat-e2e's beforeAll, 21 s of nothing once) is then either a held-up
+// process (this line, at the moment it wakes) or something awaited that never came (no line). Unref'd: it never keeps a process up.
+if (process.env.CI === "true" && process.env.MOSS_TEST_LOOP_LAG !== "off") {
+  let last = Date.now();
+  const beat = setInterval(() => {
+    const t = Date.now();
+    if (t - last > 3_500) console.error(`[test-lag] ${new Date(t).toISOString()}: this test process's loop ran ${t - last - 500} ms late (a tick every 500 ms)`);
+    last = t;
+  }, 500);
+  (beat as { unref?: () => void }).unref?.();
+}
