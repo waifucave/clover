@@ -37,6 +37,7 @@ export const S = {
   newSession: "New session",
   newSessionDetail: "Pick a coding agent and a folder on this computer; it works there, and you see and steer it here.",
   pickAgent: "Agent",
+  folder: "Folder",
   noAgents: "No coding agent is installed yet. Add one from Plugins.",
   notInstalled: "not installed on this computer",
   pickFolder: "Choose a folder…",

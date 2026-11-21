@@ -629,9 +629,11 @@ function inProcessBridgeOf(spec: AgentStartSpec): McpSdkServerConfigWithInstance
 }
 
 /** The in-process backend, one more `agentBackends` entry for lane K's manager. */
-export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend & { readonly inProcess: true; readonly drawsBotChildSandbox: true } {
+export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend & { readonly name: string; readonly inProcess: true; readonly drawsBotChildSandbox: true } {
   return {
     id: IN_PROCESS_BACKEND_ID,
+    // What a person sees in a list of agents (agent.backends falls back to the id, which read as a stray "moss").
+    name: "MOSS subagent (in-process)",
     inProcess: true,
     // It draws a bot's child by the bot's own builder (`botChild`).
     drawsBotChildSandbox: true,

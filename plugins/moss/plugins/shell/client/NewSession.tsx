@@ -21,10 +21,13 @@ export function agentsHere(backends: readonly { id: string; name: unknown; compu
     name: plain(b.name as never) || b.id,
     installed: b.computers.some((c) => c.installed && (here === undefined || c.computer === here)),
   }));
-  return list.sort((a, b) => (a.id === "moss-code" ? -1 : b.id === "moss-code" ? 1 : a.name.localeCompare(b.name)));
+  // MOSS's own first, then the agents this computer has, then the rest, each group by name.
+  const rank = (a: NewSessionAgent) => (a.id === "moss-code" ? 0 : a.installed ? 1 : 2);
+  return list.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
-export function NewSession({ onStarted }: { onStarted: (session: string) => void }) {
+/** `layout`: "page" fills the window's main column under the title bar and scrolls; "panel" lays out in whatever container it is put in (a panel or a dialog about 420 to 560 px wide), assuming nothing about the window. */
+export function NewSession({ onStarted, layout = "page" }: { onStarted: (session: string) => void; layout?: "page" | "panel" }) {
   const core = useCore();
   const [agents, setAgents] = useState<NewSessionAgent[] | undefined>();
   const [agent, setAgent] = useState<string | undefined>();
@@ -71,26 +74,57 @@ export function NewSession({ onStarted }: { onStarted: (session: string) => void
     }
   };
 
+  const ready = agent !== undefined && folder !== undefined && !starting;
   return (
-    <section className="cl-new-session" aria-label={S.newSession}>
-      <h1 className="cl-new-session__title">{S.newSession}</h1>
-      <p className="cl-new-session__detail">{S.newSessionDetail}</p>
-      <fieldset className="cl-new-session__agents">
-        <legend>{S.pickAgent}</legend>
-        {agents === undefined ? <p role="status">{S.loading}</p> : agents.length === 0 ? <p role="status">{S.noAgents}</p> : agents.map((a) => (
-          <label key={a.id} className="cl-new-session__agent" data-installed={a.installed}>
-            <input type="radio" name="agent" value={a.id} checked={agent === a.id} disabled={!a.installed} onChange={() => setAgent(a.id)} />
-            <span>{a.name}</span>
-            {!a.installed && <span className="cl-new-session__note">{S.notInstalled}</span>}
-          </label>
-        ))}
-      </fieldset>
-      <div className="cl-new-session__folder">
-        <button type="button" className="cl-new-session__pick" onClick={() => void pickFolder()}>{folder === undefined ? S.pickFolder : S.changeFolder}</button>
-        {folder !== undefined && <span className="cl-new-session__folder-name">{folder.name}</span>}
+    <section className="cl-new-session" data-layout={layout} aria-label={S.newSession}>
+      <div className="cl-new-session__page">
+        <h1 className="cl-new-session__title">{S.newSession}</h1>
+        <p className="cl-new-session__detail">{S.newSessionDetail}</p>
+        <AgentList agents={agents} value={agent} onChange={setAgent} />
+        <FolderRow folder={folder} onPick={() => void pickFolder()} />
+        <div className="cl-new-session__actions">
+          <StartButton disabled={!ready} onStart={() => void start()} />
+        </div>
+        {error !== undefined && <p className="cl-new-session__error" role="alert">{error}</p>}
       </div>
-      <button type="button" className="cl-new-session__start" disabled={agent === undefined || folder === undefined || starting} onClick={() => void start()}>{S.startSession}</button>
-      {error !== undefined && <p className="cl-new-session__error" role="alert">{error}</p>}
     </section>
   );
+}
+
+/** The agents as one row each, the chosen one marked; an agent this computer lacks is a muted row, not selectable. A step of its own. */
+export function AgentList({ agents, value, onChange }: { agents: readonly NewSessionAgent[] | undefined; value: string | undefined; onChange: (id: string) => void }) {
+  return (
+    <div className="cl-new-session__section" role="radiogroup" aria-labelledby="cl-new-session-agents">
+      <h2 className="cl-new-session__label" id="cl-new-session-agents">{S.pickAgent}</h2>
+      {agents === undefined ? <p className="cl-new-session__status" role="status">{S.loading}</p> : agents.length === 0 ? <p className="cl-new-session__status" role="status">{S.noAgents}</p> : (
+        <div className="cl-new-session__agents">
+          {agents.map((a) => (
+            <label key={a.id} className="cl-new-session__agent" data-installed={a.installed} data-selected={value === a.id}>
+              <input type="radio" name="agent" value={a.id} checked={value === a.id} disabled={!a.installed} onChange={() => onChange(a.id)} />
+              <span className="cl-new-session__agent-name">{a.name}</span>
+              {!a.installed && <span className="cl-new-session__note">{S.notInstalled}</span>}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The folder step: a button that opens the app's own dialog, and the chosen folder's name beside it. */
+export function FolderRow({ folder, onPick }: { folder: { name: string } | undefined; onPick: () => void }) {
+  return (
+    <div className="cl-new-session__section">
+      <h2 className="cl-new-session__label">{S.folder}</h2>
+      <div className="cl-new-session__folder">
+        <button type="button" className="cl-new-session__button" onClick={onPick}>{folder === undefined ? S.pickFolder : S.changeFolder}</button>
+        {folder !== undefined && <span className="cl-new-session__folder-name" title={folder.name}>{folder.name}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** The one primary button. */
+export function StartButton({ disabled, onStart }: { disabled: boolean; onStart: () => void }) {
+  return <button type="button" className="cl-new-session__button cl-new-session__start" disabled={disabled} onClick={onStart}>{S.startSession}</button>;
 }

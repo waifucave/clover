@@ -305,6 +305,204 @@ button.cl-window__title:hover {
   font-size: var(--moss-font-size-label);
 }
 
+/* The New session page (NewSession.tsx): one column under the bar, scrolling when the agent list is long. The primary
+   button is neutral: the text colour on the surface (black in light, near-white in dark), never the accent. */
+.cl-new-session {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* As the window's page: it fills the main column under the bar and scrolls. In a panel or dialog it takes the container's own size. */
+.cl-new-session[data-layout="page"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: calc(var(--moss-plugin-moss-bar-height) + var(--moss-space-xl)) var(--moss-space-xl) var(--moss-space-xxl);
+}
+
+.cl-new-session[data-layout="panel"] {
+  padding: var(--moss-space-l);
+}
+
+.cl-new-session__page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moss-space-l);
+  max-width: 520px;
+  margin: 0 auto;
+  min-width: 0;
+}
+
+.cl-new-session__title {
+  margin: 0;
+  color: var(--moss-color-text);
+  font-size: var(--moss-font-size-title);
+  font-weight: var(--moss-font-weight-semibold);
+  line-height: var(--moss-font-line-tight);
+}
+
+.cl-new-session__detail {
+  margin: calc(var(--moss-space-s) * -1) 0 0;
+  color: var(--moss-color-text-secondary);
+  font-size: var(--moss-font-size-label);
+}
+
+.cl-new-session__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--moss-space-s);
+}
+
+.cl-new-session__label {
+  margin: 0;
+  color: var(--moss-color-text-secondary);
+  font-size: var(--moss-font-size-label);
+  font-weight: var(--moss-font-weight-semibold);
+}
+
+.cl-new-session__status {
+  margin: 0;
+  color: var(--moss-color-text-muted);
+  font-size: var(--moss-font-size-label);
+}
+
+/* The agents: one per row. The radio is the real input, drawn by the row (appearance off): a ring, filled when chosen. */
+.cl-new-session__agents {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--moss-color-hairline-raised);
+  border-radius: var(--moss-radius-large);
+  overflow: hidden;
+}
+
+.cl-new-session__agent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--moss-space-m);
+  padding: var(--moss-space-s) var(--moss-space-m);
+  color: var(--moss-color-text);
+  font-size: var(--moss-font-size-control);
+  line-height: var(--moss-font-line-tight);
+  cursor: pointer;
+}
+
+.cl-new-session__agent + .cl-new-session__agent {
+  border-top: 1px solid var(--moss-color-hairline);
+}
+
+.cl-new-session__agent:hover[data-installed="true"] {
+  background: var(--moss-color-hover);
+}
+
+.cl-new-session__agent[data-selected="true"] {
+  background: var(--moss-color-selected);
+}
+
+.cl-new-session__agent[data-installed="false"] {
+  color: var(--moss-color-text-muted);
+  cursor: default;
+}
+
+.cl-new-session__agent:has(:focus-visible) {
+  outline: 2px solid var(--moss-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-new-session__agent input {
+  appearance: none;
+  box-sizing: border-box;
+  grid-row: 1 / span 2;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid var(--moss-color-text-muted);
+  border-radius: var(--moss-radius-round);
+  background: transparent;
+  outline: none;
+  cursor: inherit;
+}
+
+.cl-new-session__agent input:checked {
+  border-color: var(--moss-color-text);
+  background: var(--moss-color-text);
+  box-shadow: inset 0 0 0 3px var(--moss-color-surface);
+}
+
+.cl-new-session__agent input:disabled {
+  border-color: var(--moss-color-hairline-raised);
+}
+
+.cl-new-session__agent-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cl-new-session__note {
+  grid-column: 2;
+  color: var(--moss-color-text-muted);
+  font-size: var(--moss-font-size-caption);
+}
+
+.cl-new-session__folder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--moss-space-m);
+}
+
+.cl-new-session__folder-name {
+  min-width: 0;
+  color: var(--moss-color-text);
+  font-size: var(--moss-font-size-label);
+  overflow-wrap: anywhere;
+}
+
+.cl-new-session__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cl-new-session__button {
+  padding: 6px var(--moss-space-m);
+  border: 1px solid var(--moss-color-hairline-raised);
+  border-radius: var(--moss-radius-medium);
+  background: var(--moss-color-control);
+  color: var(--moss-color-text);
+  font-size: var(--moss-font-size-label);
+  line-height: var(--moss-font-line-tight);
+  cursor: pointer;
+}
+
+.cl-new-session__button:hover:not(:disabled) {
+  background: var(--moss-color-hover);
+}
+
+.cl-new-session__start {
+  padding-right: var(--moss-space-xl);
+  padding-left: var(--moss-space-xl);
+  border-color: transparent;
+  background: var(--moss-color-text);
+  color: var(--moss-color-surface);
+}
+
+.cl-new-session__start:hover:not(:disabled) {
+  background: var(--moss-color-text);
+}
+
+.cl-new-session__button:disabled {
+  border-color: var(--moss-color-hairline);
+  background: var(--moss-color-control);
+  color: var(--moss-color-text-muted);
+  cursor: default;
+}
+
+.cl-new-session__error {
+  margin: 0;
+  color: var(--moss-color-danger);
+  font-size: var(--moss-font-size-label);
+}
+
 /* An agent's live tab: its transcript, its state over the composer, and Interrupt and Stop. */
 .cl-agent-tab {
   display: flex;
