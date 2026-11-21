@@ -67,6 +67,17 @@ const requestRestart = (): void => {
 };
 const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, requestRestart, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
+// A CI runner (run.ts sets MOSS_ACCEPT_DIAGNOSE): a tick every 500 ms; one that comes more than a second late says this daemon's loop was
+// held up (or the machine was), with the time, which the daemon's own lines do not carry. See stall-watch.ts.
+if (process.env.MOSS_ACCEPT_DIAGNOSE === "1") {
+  let last = Date.now();
+  const beat = setInterval(() => {
+    const t = Date.now();
+    if (t - last > 1_500) console.error(`${new Date(t).toISOString()} acceptance daemon: its loop ran ${t - last - 500} ms late (a tick every 500 ms)`);
+    last = t;
+  }, 500);
+  beat.unref();
+}
 let stopping = false;
 // A stop cut off at its bound (MOSS_TEST_STOP_BUDGET_MS, the capped reopen step's): the bound a slow stop hits
 // (try 9's took about 20 s against the 5 s one), made short, so the process ends while the stop's tail still runs.

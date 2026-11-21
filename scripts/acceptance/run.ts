@@ -81,6 +81,7 @@ import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, newestDirective as newestDirectiveOf, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
+import { diagnosing, runnerState, stallReportsDone, watchAppStall } from "./stall-watch";
 // lane HS
 import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
 import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
@@ -450,6 +451,8 @@ function baseEnv(): Record<string, string> {
     ...(profile === "dev" ? { MOSS_PROFILE: "dev" } : {}),
     MOSS_KEYCHAIN_SERVICE: service,
     MOSS_TEST_KEYCHAIN: keychain,
+    // A CI runner: the daemon says when its own loop ran late (daemon.ts), beside the stall watch on each app (stall-watch.ts).
+    ...(diagnosing() ? { MOSS_ACCEPT_DIAGNOSE: "1" } : {}),
     // The test app's answer key, kept beside the keychain file (a test-marked or unpackaged headless app only): every
     // app of the run, and an upgrade's, registers the same key.
     MOSS_TEST_ANSWER_KEY: answerKeyFile,
@@ -467,6 +470,9 @@ function startChild(name: string, cmd: string, args: string[], env: Record<strin
   const proc = spawn(cmd, args, { cwd, env, detached: true, stdio: ["ignore", fd, fd] });
   closeSync(fd);
   children.push({ name, proc });
+  // On a CI runner: an app (one with a DevTools port) that stops answering for 2 s is looked at while it is stuck (stall-watch.ts).
+  const port = /--remote-debugging-port=(\d+)/.exec(args.join(" "))?.[1];
+  if (diagnosing() && port !== undefined && proc.pid !== undefined) watchAppStall({ name, pid: proc.pid, port: Number(port), logs, say, alive: () => alive(proc) });
   return { proc, log };
 }
 
@@ -677,6 +683,7 @@ async function cleanup(): Promise<ReapResult | undefined> {
   if (cleaned) return reaped;
   cleaned = true;
   stoppingDaemon = true;
+  await stallReportsDone();
   for (const c of clients) c.close();
   pressCdp?.close();
   // The app first (so the daemon never sees it go and starts another), then the daemon; the hosts after their engines (a host
@@ -2063,6 +2070,7 @@ async function cards(c: MossClient): Promise<Card[]> {
 async function main(): Promise<void> {
   if (shards > 1) return orchestrate();
   console.error(`acceptance: target ${target}${appBundle ? ` (${appBundle})` : ` (${REPO})`}; temp folder ${root}${shardUnits !== undefined ? `; units ${shardUnits.join(", ")}` : ""}`);
+  if (diagnosing()) say(`the machine at the start: ${runnerState().split("\n").join("; ")}`);
   if (target === "packaged") {
     const refused = checkTestBuild();
     if (refused !== "") {
