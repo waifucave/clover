@@ -201,7 +201,15 @@ export async function installFromPage(ctx: ExampleCtx, folder: string, id: strin
     // press on Install never reached the core, a lost press on the Plugins page (not a slow install), which is not retried here.
     const said = await rpc.request<{ plugin: { state: string } }>("plugin.get", { id }).then((r) => `plugin.get says ${r.plugin.state}`, (e: unknown) => `plugin.get: ${String((e as Error).message).slice(0, 120)}`);
     const cards = await rpc.request<{ cards: Card[] }>("card.list").then((r) => r.cards.map((c) => `${c.kind}${c.pluginId ? `:${c.pluginId}` : ""}`).join(", ") || "none", () => "card.list failed");
-    throw new Error(`${(err as Error).message} (at the end of the wait: ${said}; its folder ${existsSync(join(ctx.home, "plugins", id)) ? "is" : "is not"} in the plugins folder; pending cards: ${cards})`);
+    // And what the page showed (`cards` row 58, runs 44824696229 and 44844529683, both on the second plugin: the press never reached the core and the page ended on
+    // "Choose a folder…" with nothing chosen): whether the chosen folder and its Install button were still there, and what the page logged.
+    const page: string[] = [];
+    for (const d of await treeDocs(cdp)) {
+      const t = String(await cdp.evaluate(d.session, "document.body.innerText").catch(() => ""));
+      if (t.includes("Choose the folder")) page.push(`${t.includes(`Chosen: ${name}`) ? `still says "Chosen: ${name}"` : "no longer says what was chosen"}, ${(await cdp.evaluate(d.session, `[...document.querySelectorAll('button')].some((b) => (b.textContent || '').includes(${JSON.stringify(`Install ${name}`)}))`).catch(() => false)) === true ? `has its "Install ${name}" button` : `has no "Install ${name}" button`}`);
+    }
+    const logged = cdp.console.filter((e) => e.level === "exception" || e.level === "error").slice(-4).map((e) => e.text.slice(0, 140)).join(" | ");
+    throw new Error(`${(err as Error).message} (at the end of the wait: ${said}; its folder ${existsSync(join(ctx.home, "plugins", id)) ? "is" : "is not"} in the plugins folder; pending cards: ${cards}; the Add page ${page.join("; ") || "was not found"}; the page logged: ${logged || "nothing"})`);
   });
   const text = JSON.stringify((await rpc.request<{ card: unknown }>("card.get", { id: card.id })).card);
   await ctx.pressCard(`${id}'s OK card`, (c) => c.id === card.id);
