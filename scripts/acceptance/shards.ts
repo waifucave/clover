@@ -99,6 +99,14 @@ export function windowIndexes(id: UnitId): number[] | undefined {
   return Array.from({ length: to - from }, (_, i) => from + i);
 }
 
+/** The window steps a run really runs: of `asked` (a unit's steps, or every step when undefined), only those whose row is in a
+ *  unit's table. A step whose row runs elsewhere (elsewhere.ts, retired included) or is in no unit is never run here: its body
+ *  would print a FAIL that counts nowhere, spend its waits and leave state for the rows after it. `undefined` when all run. */
+export function windowStepsToRun(asked?: ReadonlySet<number>, all: readonly Unit[] = units()): Set<number> | undefined {
+  const live = new Set(UI_STEPS.map((_, i) => i).filter((i) => (asked === undefined || asked.has(i)) && unitOf(`window: ${UI_STEPS[i]}`, all) !== undefined));
+  return live.size === UI_STEPS.length ? undefined : live;
+}
+
 const WINDOW_ESTIMATES: Readonly<Record<string, number>> = { "window-1": 120, "window-2": 200, "window-3": 170 };
 
 const OTHERS: readonly Unit[] = [

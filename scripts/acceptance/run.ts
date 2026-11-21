@@ -139,7 +139,7 @@ import { ownTurnEvents } from "./turn-end";
 import { oldLayoutMarkers } from "../../packages/core/src/migration/migrate-c";
 import { AgentTranscript } from "../../packages/core/src/agents/transcript";
 import { APP_NEWER, APP_OLDER, ENGINE_NEWER, ENGINE_OLDER, RELEASE_AHEAD_STEP, RELEASE_BEHIND_STEP, RELEASE_INSTALL_STEP, WORDS as RELEASE_WORDS } from "./release-step";
-import { chainOwnRuns, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, type TimedRow, type UnitId } from "./shards";
+import { chainOwnRuns, expandUnitIds, homePlan, mergeShards, planShards, serialUnits, slowest, unitOf, units as allUnits, windowIndexes, windowStepsToRun, type TimedRow, type UnitId } from "./shards";
 import { loadavg } from "node:os";
 import { FAKE_INDEX_URL, publishIndexVersion, publishNpm } from "./plugin-world";
 import { CAPABILITIES } from "../../packages/plugin-sdk/src/catalogs/capabilities";
@@ -6473,7 +6473,8 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean, 
         throw err;
       }) : undefined,
       onSetting: (key, value) => { if (key === "notifications.needsYou" && typeof value === "boolean") keptFacts.needsYou = value; },
-      ...(only !== undefined ? { only } : onlyUi !== undefined ? { only: new Set(onlyUi) } : windowStepsHere() !== undefined ? { only: windowStepsHere()! } : {}),
+      // A step whose row runs elsewhere or is in no unit never runs (windowStepsToRun); an explicit --only-ui is the person's own ask.
+      ...(onlyUi !== undefined ? { only: new Set(onlyUi) } : (() => { const run = windowStepsToRun(only ?? windowStepsHere()); return run !== undefined ? { only: run } : {}; })()),
       pickFolder,
       setPick: (folder) => writeFileSync(pickFile, `${folder}\n`),
       avatarFolder,
