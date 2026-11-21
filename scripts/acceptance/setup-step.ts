@@ -4,11 +4,11 @@
 // reads the engine's answer (`setup.state`) beside what the windows show.
 //
 // Its rows run in order on one home: (1) both apps open the guide by themselves on the fresh home; in MOSS, Skip for now
-// leaves it usable (a message to Alpha is answered with the plain sentence that leads to adding a provider) and the
+// leaves it usable (a message to MOSS is answered with the plain sentence that leads to adding a provider) and the
 // engine keeps the skip, and Settings opens the guide again; (2) in MOSS Code's guide, a key typed in its own field adds
 // the provider, whose recommended model becomes the default with nothing to pick, and Start lands on a new code session,
 // whose first turn (no model of its own) is answered on that default; (3) a second provider leaves the default as it was,
-// the picker in MOSS's guide sets the other provider's model, and Alpha's next turn runs on it.
+// the picker in MOSS's guide sets the other provider's model, and MOSS's next turn runs on it.
 //
 // With MOSS_ACCEPT_RENDERS set, each step of the guide is pictured: MOSS in light and dark, MOSS Code in its theme. A
 // picture, never a check.
@@ -21,9 +21,9 @@ import type { MossClient } from "./client";
 import type { FakeProvider } from "./fake-anthropic";
 import type { Status } from "./steps";
 
-export const SETUP_OPEN_STEP = "the setup guide on a fresh home (no provider, no default model): MOSS Code and MOSS each open it by themselves (the engine's setup.state says a provider and a model are missing); in MOSS, Skip for now leaves the app usable (a message to Alpha is answered with the plain sentence that leads to adding a provider, no provider called) and the engine keeps the skip for both apps; MOSS's Settings opens it again";
+export const SETUP_OPEN_STEP = "the setup guide on a fresh home (no provider, no default model): MOSS Code and MOSS each open it by themselves (the engine's setup.state says a provider and a model are missing); in MOSS, Skip for now leaves the app usable (a message to MOSS is answered with the plain sentence that leads to adding a provider, no provider called) and the engine keeps the skip for both apps; MOSS's Settings opens it again";
 export const SETUP_ONE_STEP = "the setup guide in MOSS Code: a key typed in the guide's own field adds the provider; its family's default (Claude Opus 5.5 at medium) is the default with nothing to pick, shown chosen with its effort in the guide's model step; Start lands on a new code session, and a code session with no model of its own gets its first reply on that default";
-export const SETUP_PICK_STEP = "two providers: a second one added leaves the default as it was; the picker in MOSS's guide (Change) sets the other provider's model as the default (the engine's setup.state), Talk to Alpha opens her conversation ready to type, and her next turn runs on the picked model";
+export const SETUP_PICK_STEP = "two providers: a second one added leaves the default as it was; the picker in MOSS's guide (Change) sets the other provider's model as the default (the engine's setup.state), Talk to MOSS opens her conversation ready to type, and her next turn runs on the picked model";
 
 /** The owner's default for the Claude family, as Anthropic serves it. */
 export const CLAUDE_DEFAULT = "anthropic/claude-opus-5-5";
@@ -241,14 +241,14 @@ async function openRow(s: Ctx): Promise<string> {
   await s.moss.waitFor("MOSS's guide closed after Skip for now", `!document.querySelector('${MOSS_STEP("providers")}')`);
   const skipped = await s.x.until("the engine keeping the skip (setup.state)", 10_000, async () => ((await setupState(s.c)).dismissed ? true : undefined), 300);
   void skipped;
-  // MOSS is usable: Alpha's conversation is there, and a message to her is answered with the sentence that leads on.
-  await s.moss.waitFor("Alpha's conversation in MOSS", "document.querySelector('main.conversation')?.getAttribute('aria-label') ?? null", 30_000);
+  // MOSS is usable: MOSS's conversation is there, and a message to her is answered with the sentence that leads on.
+  await s.moss.waitFor("MOSS's conversation in MOSS", "document.querySelector('main.conversation')?.getAttribute('aria-label') ?? null", 30_000);
   const asked = s.x.fake.requests.length;
   await s.moss.type("[data-composer] textarea", "hello, is anyone there?");
   await s.moss.click("button.send");
   const alpha = await s.c.request<{ bots: { id: string; mainSession: string }[] }>("bot.records", {}).then((r) => r.bots.find((b) => b.id === "alpha"));
-  if (alpha === undefined) s.x.fail("no Alpha record");
-  const refused = await s.x.until("Alpha's turn refused with the no-default-model sentence", 60_000, async () => {
+  if (alpha === undefined) s.x.fail("no MOSS record");
+  const refused = await s.x.until("MOSS's turn refused with the no-default-model sentence", 60_000, async () => {
     const page = await s.c.request<{ events: { type: string; message?: string; code?: string }[] }>("bot.conversation", { id: "alpha", limit: 50 }).catch(() => undefined);
     return page?.events.find((e) => e.type === "agent_error" && e.code === "no_default_model");
   }, 500);
@@ -258,7 +258,7 @@ async function openRow(s: Ctx): Promise<string> {
   await s.moss.click(".nav-item.account");
   await s.moss.click("[data-open-setup]");
   await s.moss.waitFor("MOSS's guide opened again from Settings", `!!document.querySelector('${MOSS_STEP("providers")}')`);
-  return `setup.state on the fresh home: ${JSON.stringify({ ready: st.ready, missing: st.missing })}; MOSS Code's and MOSS's guides opened by themselves; MOSS's Skip for now kept by the engine (dismissed: true); Alpha's turn refused: "${refused.message!.slice(0, 90)}", no provider called; Settings opened it again${pictures.length > 0 ? `; pictures: ${pictures.length}` : ""}`;
+  return `setup.state on the fresh home: ${JSON.stringify({ ready: st.ready, missing: st.missing })}; MOSS Code's and MOSS's guides opened by themselves; MOSS's Skip for now kept by the engine (dismissed: true); MOSS's turn refused: "${refused.message!.slice(0, 90)}", no provider called; Settings opened it again${pictures.length > 0 ? `; pictures: ${pictures.length}` : ""}`;
 }
 
 async function oneRow(s: Ctx): Promise<string> {
@@ -349,18 +349,18 @@ async function pickRow(s: Ctx): Promise<string> {
   const picked = await setupState(s.c);
   if (picked.default?.model !== SECOND_MODEL || picked.default.source !== "chosen") s.x.fail(`after the pick setup.state's default is ${JSON.stringify(picked.default)}, not ${SECOND_MODEL} chosen`);
   await s.moss.click("[data-setup=start]");
-  await s.moss.waitFor("MOSS's guide closed, Alpha's conversation open", `!document.querySelector('[data-setup-step]') && document.querySelector('main.conversation')?.getAttribute('aria-label') === "Alpha's conversation"`);
+  await s.moss.waitFor("the MOSS guide closed, the default bot's conversation open", `!document.querySelector('[data-setup-step]') && document.querySelector('main.conversation')?.getAttribute('aria-label') === "MOSS's conversation"`);
   const focused = await s.moss.waitFor<boolean>("the composer ready to type", "document.activeElement?.closest('[data-composer]') !== null && document.activeElement?.tagName === 'TEXTAREA'", 10_000).catch(() => false);
   // Her next turn runs on the pick.
   const asked = s.x.fake.requests.length;
   await s.moss.type("[data-composer] textarea", "ACCEPTANCE-REPLY: on the picked model");
   await s.moss.click("button.send");
-  await s.x.until("Alpha's reply on the picked model", 90_000, async () => {
+  await s.x.until("MOSS's reply on the picked model", 90_000, async () => {
     const page = await s.c.request<{ events: { type: string; text?: string }[] }>("bot.conversation", { id: "alpha", limit: 50 }).catch(() => undefined);
     return page?.events.some((e) => e.type === "assistant_message" && (e.text ?? "").includes("ACCEPTANCE-REPLY-OK")) ? true : undefined;
   }, 500);
   const mine = s.x.fake.requests.slice(asked).filter((r) => r.path.endsWith("/messages"));
   const upstream = SECOND_MODEL.slice(SECOND_MODEL.indexOf("/") + 1);
-  if (!mine.some((r) => r.model === upstream)) s.x.fail(`Alpha's turn didn't run on the pick ${SECOND_MODEL}: the fake saw ${[...new Set(mine.map((r) => r.model))].join(", ") || "no request"}`);
-  return `a second provider (${SECOND_PROVIDER}) left the default ${before.default?.model}; MOSS's picker offered only the added providers' ${offered.length} models; the pick ${SECOND_MODEL} is setup.state's chosen default; Talk to Alpha opened her conversation${focused === true ? " with the composer focused" : ""}; her turn ran on ${upstream}${pictures.length > 0 ? `; pictures: ${pictures.length}` : ""}`;
+  if (!mine.some((r) => r.model === upstream)) s.x.fail(`MOSS's turn didn't run on the pick ${SECOND_MODEL}: the fake saw ${[...new Set(mine.map((r) => r.model))].join(", ") || "no request"}`);
+  return `a second provider (${SECOND_PROVIDER}) left the default ${before.default?.model}; MOSS's picker offered only the added providers' ${offered.length} models; the pick ${SECOND_MODEL} is setup.state's chosen default; Talk to MOSS opened her conversation${focused === true ? " with the composer focused" : ""}; her turn ran on ${upstream}${pictures.length > 0 ? `; pictures: ${pictures.length}` : ""}`;
 }

@@ -75,7 +75,7 @@ export function App() {
     };
   }
   const bot = shown !== undefined && "bot" in shown ? view.bots.find((b) => b.id === shown.bot) : undefined;
-  /** The default bot (Alpha, `default-bot.ts`), else the first: where the finished setup guide lands. */
+  /** The default bot (MOSS, id alpha, `default-bot.ts`), else the first: where the finished setup guide lands. */
   const defaultBot = view.bots.find((b) => b.id === "alpha") ?? view.bots[0];
   const names = useMemo(() => new Map(view.bots.map((b) => [b.id, b.name])), [view.bots]);
   const inConversation = bot === undefined ? [] : view.cards.filter((c) => c.place === "conversation" && c.bot === bot.id);
