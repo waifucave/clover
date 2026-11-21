@@ -9,10 +9,11 @@ test("an app whose target list never comes back is reported once, with a report 
   try {
     const said: string[] = [];
     let alive = true;
+    let asks = 0;
     // A pid no process has: the sample can't run, which the report must survive.
-    const stopStalled = watchAppStall({ name: "stalled", pid: 2 ** 22 + 7, port: 1, logs: dir, say: (l) => said.push(l), alive: () => alive, ask: () => new Promise(() => undefined) });
+    const stopStalled = watchAppStall({ name: "stalled", pid: 2 ** 22 + 7, port: 1, logs: dir, say: (l) => said.push(l), alive: () => alive, ask: () => (asks++ === 0 ? Promise.resolve() : new Promise(() => undefined)) });
     const stopFine = watchAppStall({ name: "fine", pid: 2 ** 22 + 8, port: 2, logs: dir, say: (l) => said.push(l), alive: () => alive, ask: async () => undefined });
-    await Bun.sleep(5_200);
+    await Bun.sleep(6_500);
     alive = false;
     stopStalled();
     stopFine();

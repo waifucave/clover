@@ -13,7 +13,7 @@
 // about one run in three, and nothing kept said whether the app or the runner stopped. Nothing here changes what a row
 // does; every command it runs reads state (`ps` names, never arguments or environments).
 import { execFile, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadavg } from "node:os";
 
@@ -100,6 +100,8 @@ export function watchAppStall(o: StallOptions): () => void {
   let stalledSince: number | undefined;
   let reports = 0;
   let reported = false;
+  // An app still starting (its first target list not yet answered) is not stalled: it is a process the machine is still loading.
+  let answered = false;
   let lastTick = Date.now();
   const timer = setInterval(() => {
     if (stopped) return;
@@ -112,6 +114,7 @@ export function watchAppStall(o: StallOptions): () => void {
       () => {
         const took = Date.now() - t0;
         if (took < ASK_TIMEOUT_MS && took < STALL_AFTER_MS) {
+          answered = true;
           if (stalledSince !== undefined && reported) o.say(`STALL over: ${o.name} (pid ${o.pid}) answered its target list again, ${((Date.now() - stalledSince) / 1000).toFixed(1)} s after it stopped`);
           stalledSince = undefined;
           reported = false;
@@ -124,7 +127,7 @@ export function watchAppStall(o: StallOptions): () => void {
   }, 1_000);
   const stop = (): void => { stopped = true; clearInterval(timer); };
   const begin = (t0: number): void => {
-    if (stopped || !o.alive()) return;
+    if (stopped || !o.alive() || !answered) return;
     stalledSince ??= t0;
     if (reported || Date.now() - stalledSince < STALL_AFTER_MS || reports >= MAX_REPORTS) return;
     reported = true;
@@ -142,4 +145,20 @@ export function watchAppStall(o: StallOptions): () => void {
     void job.finally(() => pending.delete(job));
   };
   return stop;
+}
+
+/** Every 10 s, one line in `<logs>/runner.log`: the time, the load, the memory pressure and the three busiest processes (names only),
+ *  so a row that failed at a moment can be read against how busy the machine was then. Returns a function that stops it. */
+export function startRunnerLog(logs: string): () => void {
+  mkdirSync(logs, { recursive: true });
+  const file = join(logs, "runner.log");
+  const line = (): void => {
+    const busiest = run("ps", ["-A", "-r", "-o", "pcpu=,comm="], 3_000).split("\n").slice(0, 3).map((l) => l.trim().replace(/\/[^\s]*\//g, "")).join(" | ");
+    const pressure = process.platform === "darwin" ? ` pressure ${run("sysctl", ["-n", "kern.memorystatus_vm_pressure_level"], 2_000)} swap ${run("sysctl", ["-n", "vm.swapusage"], 2_000).split("  ")[1] ?? "?"}` : "";
+    try { appendFileSync(file, `${new Date().toISOString()} load ${loadavg().map((x) => x.toFixed(1)).join(" ")}${pressure} busiest ${busiest}\n`); } catch { /* the folder is gone */ }
+  };
+  line();
+  const t = setInterval(line, 10_000);
+  t.unref?.();
+  return () => clearInterval(t);
 }
