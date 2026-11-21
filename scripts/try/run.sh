@@ -107,13 +107,19 @@ build() {
 unregister_under() { while IFS= read -r p; do $LSR -u "$p" 2>/dev/null; done < <($LSR -dump 2>/dev/null | grep -E '^path:' | grep -F "$1/" | sed -E 's/^path: *//; s/ \(0x[0-9a-f]+\)$//'); }
 registered_under() { $LSR -dump 2>/dev/null | grep -E '^path:' | grep -cF "$1/"; }
 UPSTATE=""
+# Launch Services registers a bundle it comes across in a folder Spotlight indexes by itself (a checkout outside the
+# temp folders), and keeps the entry after the bundle is gone. A build leaves bundles in both apps' out folders (MOSS's
+# own before it is moved beside MOSS Code's, and the host helper's stash): every entry under them goes after each
+# build and at the end, found by the entries themselves, not by what is still on disk.
+MOSSOUT="$ROOT/apps/moss/out"
+unregister_builds() { unregister_under "$DESKTOP/out"; unregister_under "$MOSSOUT"; }
 cleanup() {
-  for d in "$WORK" "$DESKTOP/out/sign-only" "$DESKTOP/out/test-build"; do [ -d "$d" ] && unregister_under "$d"; done
+  unregister_under "$WORK"; unregister_builds
   # The previous try's worktree (under WORK) is let go of, and the upgrade's state dir (temp homes and a throwaway
   # keychain FILE that was never in the search list) goes.
   [ -d "$WORK/old" ] && git worktree remove --force "$WORK/old" 2>/dev/null; git worktree prune 2>/dev/null
   [ -n "$UPSTATE" ] && rm -rf "$UPSTATE"
-  rm -rf "$WORK" "$DESKTOP/out/sign-only" "$DESKTOP/out/test-build"
+  rm -rf "$WORK" "$DESKTOP/out/sign-only" "$DESKTOP/out/test-build" "$DESKTOP/out/host-helper" "$MOSSOUT/sign-only" "$MOSSOUT/test-build"
 }
 trap cleanup EXIT
 echo "try: $COMMIT ($(git rev-parse --short HEAD)) into $OUT; the identity: team $TEAM's Developer ID (found)"
@@ -125,6 +131,7 @@ if [ "$TWINONLY" = false ]; then
   SO="$DESKTOP/out/sign-only"
   cp "$SO"/MOSS-*.dmg "$SO"/MOSS-*-mac.zip "$SO/BUILD-COMMIT-mac.txt" "$SO/SHA256SUMS-mac.txt" "$OUT/" || die "the sign-only build's files are missing"
   ditto "$SO" "$WORK/sign-only"
+  unregister_builds
   timed "verify (static checks)" bash -c 'scripts/try/verify.sh "$1" "$2" --sign-only 2>&1 | tee "$3"; exit "${PIPESTATUS[0]}"' _ "$WORK/sign-only" "$ROOT" "$OUT/verify.txt"
   VERIFY=$?
   unregister_under "$WORK/sign-only"; rm -rf "$WORK/sign-only"
@@ -136,7 +143,7 @@ fi
 timed "twin build (test-marked, same commit)" build "$OUT/build-test-twin.log" --test-build || die "the test twin's build failed (build-test-twin.log)"
 mkdir -p "$WORK/twin" && ditto "$DESKTOP/out/test-build/mac-arm64/MOSS Code.app" "$WORK/twin/MOSS Code.app"
 ditto "$DESKTOP/out/test-build/mac-arm64/MOSS.app" "$WORK/twin/MOSS.app" || die "the test twin has no MOSS.app (one release builds both apps)"
-unregister_under "$DESKTOP/out/test-build"; rm -rf "$DESKTOP/out/test-build"
+rm -rf "$DESKTOP/out/test-build" "$MOSSOUT/test-build"; unregister_builds
 if [ -n "$KEEPTWIN" ]; then
   mkdir -p "$KEEPTWIN" && ditto "$WORK/twin/MOSS Code.app" "$KEEPTWIN/MOSS Code.app" && ditto "$WORK/twin/MOSS.app" "$KEEPTWIN/MOSS.app" || die "the twin pair couldn't be kept in $KEEPTWIN"
   echo "try: the test twin pair kept in $KEEPTWIN (unregister and delete it when done)"
@@ -215,7 +222,7 @@ fi
 
 # ── 6. the table, the times ──────────────────────────────────────────────────────────────────────────────────────
 cleanup; trap - EXIT
-LEFT=$(( $(registered_under "$DESKTOP/out") + $(registered_under "$WORK") ))
+LEFT=$(( $(registered_under "$DESKTOP/out") + $(registered_under "$MOSSOUT") + $(registered_under "$WORK") ))
 {
   if [ "$TWINONLY" = false ]; then
     echo "try $COMMIT; BUILD-COMMIT: $(head -1 "$OUT/BUILD-COMMIT-mac.txt") ($(sed -n 2p "$OUT/BUILD-COMMIT-mac.txt" | cut -d: -f1))"
