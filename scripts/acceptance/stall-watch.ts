@@ -169,7 +169,7 @@ export function startRunnerLog(logs: string): () => void {
   return () => clearInterval(t);
 }
 
-/** The daemon's own word that an app has not answered `app.ping` for a while (packages/core/src/ipc/moss.ts, a third of the way to the 15 s
+/** The daemon's own word that an app has not answered `app.ping` for a while (packages/core/src/ipc/moss.ts, half of the way to the 15 s
  *  after which it ends the app): read from the run's daemon logs, and at that moment each running app is looked at (its machine state, its
  *  processes, a `sample` of its main thread), because the app is ended 10 s later. This is the signal the engine itself acts on, so it
  *  catches the stall that the DevTools list (`watchAppStall`) did not (run 44851355486: the daemon ended the app, the list had answered). */

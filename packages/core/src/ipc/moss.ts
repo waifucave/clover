@@ -344,9 +344,9 @@ export function createMossServer(deps: MossServerDeps): MossServer {
       // The count starts again from the wake, and the app gets a ping and its full time to answer it.
       if (t - ticked > beatGap) { beat.heard = t; beat.warned = false; }
       ticked = t;
-      // A third of the time it has: one line, so what the app is doing (its main thread, the machine's load) can be looked at while it is
+      // Half of the time it has (a tick sees the last answer 5 s old when the app is well, 10 s old once a ping went unanswered): one line, so what the app is doing (its main thread, the machine's load) can be looked at while it is
       // still there to look at. It changes nothing about when the app is ended.
-      if (t - beat.heard > beatTimeout / 3 && t - beat.heard <= beatTimeout && beat.warned !== true) {
+      if (t - beat.heard > beatTimeout / 2 && t - beat.heard <= beatTimeout && beat.warned !== true) {
         beat.warned = true;
         deps.log?.(`[moss] the app (connection ${conn.connId}) has not answered app.ping for ${t - beat.heard} ms`);
       }

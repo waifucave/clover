@@ -621,6 +621,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  code signature by audit token against the profile's MOSS app). Tests whose own process says hello as the app
    *  inject one, or `"none"`. */
   appPeer?: AppPeerPolicy;
+  /** The app's heartbeat limit (ruling R9): how long an app may go without answering `app.ping` before the engine ends it. Default 15 s.
+   *  The acceptance run's engine sets it to the run's time scale, as it does every wait of its own (a 3-core hosted runner answers late);
+   *  a real engine never does. */
+  heartbeatTimeoutMs?: number;
   /** One release for everything (spec §3.1, RL): whether an `app` hello must be on this engine's release (a newer one gets
    *  the release door only; an older one, or one that names none, is refused). Default: on in a release build, and in a test
    *  build that sets `MOSS_TEST_ENGINE_RELEASE`; off elsewhere (a source run, the tests' own app clients). */
@@ -3696,6 +3700,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     ...(opts.appPeer !== undefined ? { appPeer: opts.appPeer } : {}),
+    ...(opts.heartbeatTimeoutMs !== undefined ? { heartbeat: { timeoutMs: opts.heartbeatTimeoutMs } } : {}),
     computerUse: {
       acting: () => Promise.resolve({ running: computerUse?.anyActing() ?? false, session: computerUse?.anyActing() === true ? "s_cu" : undefined }),
     },

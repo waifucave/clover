@@ -844,7 +844,7 @@ describe("MOSS connections (C-M1)", () => {
     hung.close(); // what the kill does
     for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
     expect(b.pair.status().safeMode).toBe(true);
-    // One line while the app can still be looked at (a third of the way to the end), and one at the end; never twice for one silence.
+    // One line while the app can still be looked at (half of the way to the end), and one at the end; never twice for one silence.
     expect(b.logs.filter((l) => /has not answered app\.ping for \d+ ms/.test(l))).toHaveLength(1);
     expect(b.logs.filter((l) => /didn't answer app\.ping for 150 ms/.test(l))).toHaveLength(1);
   });

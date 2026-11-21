@@ -15,6 +15,7 @@ import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
 import { USAGE_INERT } from "../../packages/core/src/usage/wiring";
 import { fakeExa, searchOnlySeam } from "./fake-exa";
 import { hostLockPid } from "./host-step";
+import { scaled } from "./time-scale";
 
 const runPid = Number(process.env.MOSS_ACCEPTANCE_RUN_PID);
 const userHome = process.env.MOSS_ACCEPTANCE_USER_HOME;
@@ -65,7 +66,7 @@ const requestRestart = (): void => {
   console.error("acceptance daemon: restarting to swap the old home's copy in");
   void (async () => { try { await stopWithin(daemon, undefined, { keepApp: true }); } finally { process.exit(76); } })();
 };
-const daemon = await startDaemon({ appPeer, parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, requestRestart, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
+const daemon = await startDaemon({ appPeer, heartbeatTimeoutMs: scaled(15_000), parts: { userHome }, links, usage: USAGE_INERT, pluginFetch, requestRestart, ...(Number.isFinite(opening) && opening > 0 ? { pluginsOpenDelayMs: opening } : {}), ...(Number.isFinite(answering) && answering > 0 ? { pluginsOpenAnswerDelayMs: answering } : {}) });
 console.error(`acceptance daemon: listening on ${daemon.socketPath}`);
 // A CI runner (run.ts sets MOSS_ACCEPT_DIAGNOSE): a tick every 500 ms; one that comes more than a second late says this daemon's loop was
 // held up (or the machine was), with the time, which the daemon's own lines do not carry. See stall-watch.ts.
