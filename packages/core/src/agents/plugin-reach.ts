@@ -191,6 +191,56 @@ const text = (t: string) => ({ content: [{ type: "text", text: t }], isError: tr
 /** The bridge's plugin tools for one daemon. */
 export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
   const listing = (s: AgentSessionFacts | undefined) => (s === undefined ? new Map<string, BridgeTool>() : bridgeToolsOf(d.servers(s.kind, s.backend, s.bot)));
+  type CallArgs = Parameters<BridgeToolSource["call"]>;
+  const callBody = async (c: CallArgs[1], ctx: CallArgs[2], at: (stage: string) => void) => {
+      const s = ctx.session;
+      if (s === undefined) return text(`No tool named ${c.tool} is available to this agent.`);
+      // The listing now, not the one the session started with: a plugin turned off, stopped or refused since is gone.
+      const listed = listing(s).get(c.tool);
+      // A tool the session holds back until it is loaded is not callable before: a stale name an agent made up is refused.
+      const found = listed !== undefined && s.exposure === "list" && listed.tool.load !== "preload" && s.loaded?.has(listed.name) !== true ? undefined : listed;
+      if (found === undefined) {
+        // A tool the user turned off (the tool setting) is not on the listing, but the agent that cached its name is told why.
+        const off = bridgeToolsOf(d.servers(s.kind, s.backend, s.bot, { keepOff: true })).get(c.tool);
+        if (off?.tool.off === true) return text(toolOffMessage(`mcp__${off.server.server}__${off.tool.name}`));
+        return text(`No tool named ${c.tool} is available to this agent.`);
+      }
+      if (c.input !== undefined && (typeof c.input !== "object" || c.input === null || Array.isArray(c.input))) return text(`${c.tool} was refused: its input must be an object.`);
+      const served = `mcp__${found.server.server}__${found.tool.name}`;
+      let input = (c.input ?? {}) as Record<string, unknown>;
+      const hookSession: HookSession = { id: s.id, kind: s.kind, caller: agentCallerOf(s), ...(s.bot === undefined ? {} : { bot: s.bot }), computer: s.computer, backend: s.backend };
+      // The plugins' tool hooks, as a bot's call meets them, under the tool's own name, on every backend (the in-process
+      // one leaves its bridge's plugin tools to this; the manager doesn't run them at the permission request either).
+      const hooks = d.hooks?.() ?? (d.hooks === undefined ? "none" : undefined);
+      if (hooks === undefined) return text(`${c.tool} was refused: MOSS's plugin hooks aren't running yet, so plugin tools are refused until they are; try again in a moment.`);
+      if (hooks !== "none") {
+        at("the plugins' tool hooks (before)");
+        const before = await hooks.toolBefore(hookSession, { name: served, callId: c.callId }, input, ctx.signal);
+        if (before.deny !== undefined) return text(`${c.tool} was refused by a plugin's hook: ${before.deny}`);
+        if (before.input !== null && typeof before.input === "object" && !Array.isArray(before.input)) input = before.input as Record<string, unknown>;
+      }
+      at("the approval (a card waits here for an answer)");
+      const verdict = await d.judge(s, ctx, { served, input, callId: c.callId });
+      if (!verdict.allowed) return text(verdict.message);
+      try {
+        at("the plugin's server (sent, no answer yet)");
+        const { result } = await d.runner.run(found.server.server, found.tool.name, verdict.input, {
+          session: s.id, as: agentCallerOf(s), callId: c.callId, ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
+        });
+        const out = { content: Array.isArray(result.content) && result.content.length > 0 ? result.content : [{ type: "text", text: "" }], isError: result.isError === true };
+        try { d.observeResult?.(agentCheckContext(s, ctx.level), served, out, verdict.input); } catch { /* an observer never fails a call */ }
+        // What its successful result shows in the conversation, as a bot's (`ToolDisplays.put`: a success's valid one only).
+        const display = out.isError ? undefined : toolDisplay(result.structuredContent);
+        const shown = <T extends { content: unknown[]; isError: boolean }>(r: T) => (display === undefined || r.isError ? r : { ...r, display });
+        if (hooks === "none") return shown(out);
+        at("the plugins' tool hooks (after)");
+        const after = await hooks.toolAfter(hookSession, { name: served, callId: c.callId }, verdict.input, out, ctx.signal);
+        const a = after as { content?: unknown; isError?: unknown } | undefined;
+        return shown(a !== undefined && Array.isArray(a.content) ? { content: a.content, isError: a.isError === true } : out);
+      } catch (err) {
+        return text(err instanceof Error ? err.message : String(err));
+      }
+  };
   return {
     async tools(sessionId, session): Promise<BridgeToolDef[]> {
       const left: string[] = [];
@@ -226,49 +276,19 @@ export function agentPluginTools(d: AgentPluginReachDeps): BridgeToolSource {
       }
       return parts.join("\n\n");
     },
-    async call(_sessionId, c, ctx) {
-      const s = ctx.session;
-      if (s === undefined) return text(`No tool named ${c.tool} is available to this agent.`);
-      // The listing now, not the one the session started with: a plugin turned off, stopped or refused since is gone.
-      const listed = listing(s).get(c.tool);
-      // A tool the session holds back until it is loaded is not callable before: a stale name an agent made up is refused.
-      const found = listed !== undefined && s.exposure === "list" && listed.tool.load !== "preload" && s.loaded?.has(listed.name) !== true ? undefined : listed;
-      if (found === undefined) {
-        // A tool the user turned off (the tool setting) is not on the listing, but the agent that cached its name is told why.
-        const off = bridgeToolsOf(d.servers(s.kind, s.backend, s.bot, { keepOff: true })).get(c.tool);
-        if (off?.tool.off === true) return text(toolOffMessage(`mcp__${off.server.server}__${off.tool.name}`));
-        return text(`No tool named ${c.tool} is available to this agent.`);
-      }
-      if (c.input !== undefined && (typeof c.input !== "object" || c.input === null || Array.isArray(c.input))) return text(`${c.tool} was refused: its input must be an object.`);
-      const served = `mcp__${found.server.server}__${found.tool.name}`;
-      let input = (c.input ?? {}) as Record<string, unknown>;
-      const hookSession: HookSession = { id: s.id, kind: s.kind, caller: agentCallerOf(s), ...(s.bot === undefined ? {} : { bot: s.bot }), computer: s.computer, backend: s.backend };
-      // The plugins' tool hooks, as a bot's call meets them, under the tool's own name, on every backend (the in-process
-      // one leaves its bridge's plugin tools to this; the manager doesn't run them at the permission request either).
-      const hooks = d.hooks?.() ?? (d.hooks === undefined ? "none" : undefined);
-      if (hooks === undefined) return text(`${c.tool} was refused: MOSS's plugin hooks aren't running yet, so plugin tools are refused until they are; try again in a moment.`);
-      if (hooks !== "none") {
-        const before = await hooks.toolBefore(hookSession, { name: served, callId: c.callId }, input, ctx.signal);
-        if (before.deny !== undefined) return text(`${c.tool} was refused by a plugin's hook: ${before.deny}`);
-        if (before.input !== null && typeof before.input === "object" && !Array.isArray(before.input)) input = before.input as Record<string, unknown>;
-      }
-      const verdict = await d.judge(s, ctx, { served, input, callId: c.callId });
-      if (!verdict.allowed) return text(verdict.message);
+    async call(sessionId, c, ctx) {
+      // Where this call is, for the line a slow one leaves: a call that never answers (the runtime's `sdk_mcp_call` control request timed out after
+      // 120 s: builder-examples row 91, chain row 72) is told apart by the stage it was in, never by its input or any value.
+      let stage = "received";
+      const began = Date.now();
+      d.log?.(`${sessionId}: plugin tool call ${c.callId ?? "?"} ${c.tool} received`);
+      const slow = setInterval(() => d.log?.(`${sessionId}: plugin tool call ${c.callId ?? "?"} ${c.tool} still waiting after ${Math.round((Date.now() - began) / 1000)} s, in: ${stage}`), 30_000);
+      slow.unref?.();
       try {
-        const { result } = await d.runner.run(found.server.server, found.tool.name, verdict.input, {
-          session: s.id, as: agentCallerOf(s), callId: c.callId, ...(ctx.signal === undefined ? {} : { signal: ctx.signal }),
-        });
-        const out = { content: Array.isArray(result.content) && result.content.length > 0 ? result.content : [{ type: "text", text: "" }], isError: result.isError === true };
-        try { d.observeResult?.(agentCheckContext(s, ctx.level), served, out, verdict.input); } catch { /* an observer never fails a call */ }
-        // What its successful result shows in the conversation, as a bot's (`ToolDisplays.put`: a success's valid one only).
-        const display = out.isError ? undefined : toolDisplay(result.structuredContent);
-        const shown = <T extends { content: unknown[]; isError: boolean }>(r: T) => (display === undefined || r.isError ? r : { ...r, display });
-        if (hooks === "none") return shown(out);
-        const after = await hooks.toolAfter(hookSession, { name: served, callId: c.callId }, verdict.input, out, ctx.signal);
-        const a = after as { content?: unknown; isError?: unknown } | undefined;
-        return shown(a !== undefined && Array.isArray(a.content) ? { content: a.content, isError: a.isError === true } : out);
-      } catch (err) {
-        return text(err instanceof Error ? err.message : String(err));
+        return await callBody(c, ctx, (x) => { stage = x; });
+      } finally {
+        clearInterval(slow);
+        d.log?.(`${sessionId}: plugin tool call ${c.callId ?? "?"} ${c.tool} ended after ${Date.now() - began} ms (last stage: ${stage})`);
       }
     },
   };

@@ -302,6 +302,20 @@ describe("a plugin's tools on an agent's bridge", () => {
     expect(denied).toEqual({ content: [{ type: "text", text: `${TOOL} was refused by a plugin's hook: not today` }], isError: true });
   });
 
+  test("a call leaves two lines, received and ended with its last stage, and never its input", async () => {
+    const { p } = await setup();
+    const lines: string[] = [];
+    const hooks = { toolBefore: async (_s: unknown, _t: unknown, input: unknown) => ({ input }), toolAfter: async (_s: unknown, _t: unknown, _i: unknown, r: unknown) => r } as unknown as TurnHooks;
+    const tools = agentPluginTools({ ...p.deps, hooks: () => hooks, log: (l) => lines.push(l) });
+    const r = await tools.call("s_code", { callId: "c-log", tool: TOOL, input: { secret: "hunter2-dummy" } }, { computer: "Studio", origin: "user", session: facts() });
+    expect(r.isError).toBe(false);
+    expect(lines.filter((l) => l.includes("plugin tool call c-log")).map((l) => l.replace(/ after \d+ ms/, " after N ms"))).toEqual([
+      `s_code: plugin tool call c-log ${TOOL} received`,
+      `s_code: plugin tool call c-log ${TOOL} ended after N ms (last stage: the plugins' tool hooks (after))`,
+    ]);
+    expect(lines.join("\n")).not.toContain("hunter2-dummy");
+  });
+
   test("a call's result reaches the observer as the tool returned it, before any hook, in the session's own context; a refused call's never does", async () => {
     const { p } = await setup();
     const seen: { session: string; kind: string; backend: string | undefined; served: string; text: string }[] = [];

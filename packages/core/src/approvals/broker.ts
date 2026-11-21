@@ -388,6 +388,7 @@ export class MossApprovalBroker implements ApprovalBroker {
     return new Promise<ApprovalDecision>((resolve) => {
       const p: Pending = { card, req, resolve, done: false };
       this.#pending.set(card.id, p);
+      this.#log(`[approvals] card ${card.id} (${card.kind}${card.session === undefined ? "" : `, session ${card.session}`}) raised`);
       if (card.expiresAt !== null) {
         p.timer = this.#clock.setTimeout(() => this.#settle(p, "expired", { allowed: false, by: "expired", cardId: card.id }), UNATTENDED_CARD_TIMEOUT_MS);
       }
@@ -459,6 +460,8 @@ export class MossApprovalBroker implements ApprovalBroker {
     p.done = true;
     if (p.timer) this.#clock.clearTimeout(p.timer);
     this.#pending.delete(p.card.id);
+    // One line a card, so a call that waited on it is told by whether and how it ended (a tool call that timed out after 120 s with its card gone).
+    this.#log(`[approvals] card ${p.card.id} (${p.card.kind}${p.card.session === undefined ? "" : `, session ${p.card.session}`}) settled: ${outcome}`);
     const how = {
       ...(optionId === undefined ? {} : { optionId }), ...(device === undefined ? {} : { device }),
       ...(children === undefined || children.length === 0 ? {} : { children }),
