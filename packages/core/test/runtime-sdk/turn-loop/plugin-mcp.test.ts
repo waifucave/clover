@@ -1014,3 +1014,39 @@ test("a server that names a key or setting the user hasn't set waits for it: its
     mcp.close();
   }
 });
+
+test("a key just set starts its server and a turn that begins now is offered the tools: settled waits for that listing though the server's last one failed (examples step 53: save_place not offered)", async () => {
+  const registry = fakeRegistry([entry("acme", "forecast", { type: "host" })], { acme: "/nonexistent" });
+  const fake = fakeHost();
+  let keySet = false;
+  let releaseStart: () => void = () => {};
+  const starting = new Promise<void>((r) => { releaseStart = r; });
+  // Before the key: "secret WEATHER_KEY is not set". After it, the server takes a moment to start (a loaded runner: seconds).
+  fake.gate((_p, server) => (server === "forecast" ? (keySet ? starting : Promise.reject(new Error("secret WEATHER_KEY is not set"))) : undefined));
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", log: () => {}, listTimeoutMs: 2_000 });
+  try {
+    await mcp.refresh();
+    expect(names(mcp)).toEqual([]);
+    // Nothing is being listed: a turn now has nothing to wait for.
+    const t0 = Date.now();
+    await mcp.settled(2_000);
+    expect(Date.now() - t0).toBeLessThan(50);
+    // The key is saved: its server is listed again, and a turn starting during that waits for it, then sees its tools.
+    keySet = true;
+    const relisted = mcp.relist("acme", ["forecast"]);
+    await Bun.sleep(20);
+    const t1 = Date.now();
+    const waited = mcp.settled(2_000);
+    setTimeout(releaseStart, 120);
+    await waited;
+    expect(Date.now() - t1).toBeGreaterThanOrEqual(90);
+    expect(names(mcp)).toEqual(["acme-forecast"]);
+    await relisted;
+    // Done: nothing pending, immediate again.
+    const t2 = Date.now();
+    await mcp.settled(2_000);
+    expect(Date.now() - t2).toBeLessThan(50);
+  } finally {
+    mcp.close();
+  }
+}, 15_000);

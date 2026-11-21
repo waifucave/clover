@@ -319,6 +319,8 @@ export class PluginMcp {
   readonly #o: PluginMcpOptions;
   readonly #clients = new Map<string, { plugin: string; name: string; client: ChannelClient }>();
   #listed = new Map<string, Listed>();
+  /** Servers a setting's or key's change is listing again now (`relist`): `settled` waits for these even when their last listing failed. */
+  readonly #relisting = new Set<string>();
   /** The servers wanted now, by key, with their latest contribution: what each server's listing task reads. */
   #want = new Map<string, Contribution>();
   /** Each server's listing in flight (one per server at a time, so a slow one holds up only itself). */
@@ -578,8 +580,9 @@ export class PluginMcp {
     for (const key of keys) {
       this.#clients.get(key)?.client.close();
       this.#clients.delete(key);
+      this.#relisting.add(key);
     }
-    return Promise.all(keys.map((key) => this.#listOne(key))).then(() => {});
+    return Promise.all(keys.map((key) => this.#listOne(key).finally(() => { this.#relisting.delete(key); }))).then(() => {});
   }
 
   /** Whether a server can't work in this build (`notServed`): logged once per reason, here and in its plugin's log. */
@@ -684,7 +687,10 @@ export class PluginMcp {
    *  or enabled), so a turn that starts right after it sees its tools. A server whose last listing failed isn't
    *  waited for. */
   async settled(timeoutMs: number): Promise<void> {
-    const pending = [...this.#inflight].filter(([key]) => !this.#listed.has(key) && !this.#failed.has(key)).map(([, p]) => p);
+    // A server that failed is not waited for (one that never answers would hold every turn), except while the user's own setting or
+    // key is starting it: it failed because that was not set (`waits for the user to set …`), they have just set it, and a turn
+    // sent now is theirs, offered its tools (`relist`).
+    const pending = [...this.#inflight].filter(([key]) => !this.#listed.has(key) && (!this.#failed.has(key) || this.#relisting.has(key))).map(([, p]) => p);
     if (pending.length === 0) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([Promise.all(pending), new Promise<void>((r) => { timer = setTimeout(r, timeoutMs); })]);
