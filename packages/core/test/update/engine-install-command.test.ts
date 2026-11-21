@@ -152,3 +152,18 @@ describe("the home's engine is checked before the app starts it, and engine rese
     expect((await run(home, app("1.0.0"), "1.0.0")).out[0]).toMatchObject({ installed: true });
   });
 });
+
+describe("a build is digits only", () => {
+  test("a marker whose build is not digits reads as a copy with no build, so a stamped copy replaces it", async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { readEngineMarker, isNewerCopy } = await import("../../src/update/engine-copy");
+    const home = mkdtempSync(join(tmpdir(), "moss-build-digits-"));
+    mkdirSync(join(home, "bin"), { recursive: true });
+    writeFileSync(join(home, "bin", "engine.json"), JSON.stringify({ release: "1.2.3", build: "dev", from: "/Applications/MOSS.app" }));
+    const marker = readEngineMarker(home);
+    expect(marker).toEqual({ release: "1.2.3", from: "/Applications/MOSS.app" });
+    expect(isNewerCopy({ release: "1.2.3", build: "20261121000000", from: "/x" }, marker)).toBe(true);
+  });
+});

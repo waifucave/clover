@@ -45,7 +45,7 @@ export interface EngineInstallEnv {
 export async function runEngineInstall(argv: readonly string[], env: EngineInstallEnv): Promise<number> {
   const at = (flag: string) => { const i = argv.indexOf(flag); return i < 0 ? undefined : argv[i + 1]; };
   const app = at("--app"), asked = at("--build"), build = asked ?? ENGINE_BUILD;
-  if (app === undefined || !isAbsolute(app) || (argv.includes("--build") && (asked === undefined || asked === "" || asked.length > 64))) { env.err(ENGINE_INSTALL_USAGE); return 2; }
+  if (app === undefined || !isAbsolute(app) || (argv.includes("--build") && (asked === undefined || !/^\d{1,20}$/.test(asked)))) { env.err(ENGINE_INSTALL_USAGE); return 2; }
   const release = env.release ?? CORE_VERSION;
   const platform = env.platform ?? process.platform;
   const exec = realpathSync(env.execPath ?? process.execPath);

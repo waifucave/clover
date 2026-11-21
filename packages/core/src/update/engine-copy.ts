@@ -62,7 +62,8 @@ export function readEngineMarker(home: string): EngineCopy | undefined {
     if (raw === null || typeof raw !== "object" || typeof raw.release !== "string" || typeof raw.from !== "string") return undefined;
     compareReleases(raw.release, raw.release);
     if (raw.build !== undefined && typeof raw.build !== "string") return undefined;
-    return { release: raw.release, from: raw.from, ...(typeof raw.build === "string" ? { build: raw.build } : {}) };
+    // A build is digits only (a stamp): anything else would sort above every stamp and hold its release for ever, so it reads as none.
+    return { release: raw.release, from: raw.from, ...(typeof raw.build === "string" && /^\d{1,20}$/.test(raw.build) ? { build: raw.build } : {}) };
   } catch {
     return undefined;
   }
