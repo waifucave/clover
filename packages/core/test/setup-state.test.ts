@@ -2,27 +2,42 @@ import { describe, expect, test } from "bun:test";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { SetupState } from "@waifucave/moss-protocol";
 import { defaultEffortFor, recommended, recommendedModel } from "../src/default-model";
-import { SetupService } from "../src/setup-state";
+import { readProviders, SetupService } from "../src/setup-state";
 
 const catalog = loadCatalog();
 
-function world(start: { stored?: string; present?: string[]; failRead?: boolean } = {}) {
-  const s = { effort: undefined as string | undefined, stored: start.stored, present: new Set(start.present ?? []), dismissed: false, failRead: start.failRead === true, writes: [] as string[], events: [] as SetupState[] };
+// The world a boot sees: keychain slots (one may throw), and the plugins (absent until they open; their sign-ins and
+// keyless providers once the model plugins have started). The service reads it the daemon's way (`readProviders`).
+function world(start: { stored?: string; present?: string[]; failRead?: boolean; plugins?: "closed" | "opening" | "started"; pluginSignedIn?: string[]; keyless?: string[]; failedSlots?: number } = {}) {
+  const s = {
+    effort: undefined as string | undefined, stored: start.stored, present: new Set(start.present ?? []), dismissed: false, failRead: start.failRead === true,
+    plugins: start.plugins ?? "started", pluginSignedIn: new Set(start.pluginSignedIn ?? []), keyless: new Set(start.keyless ?? []), failedSlots: start.failedSlots ?? 0,
+    writes: [] as string[], clears: 0, events: [] as SetupState[], logs: [] as string[],
+  };
+  const auth = {
+    signedInProviders: async () => new Set(s.pluginSignedIn),
+    keylessProviders: () => new Set(s.keyless),
+    modelPluginsReady: () => s.plugins === "started",
+  };
   const service = new SetupService({
     readPresent: async () => {
       if (s.failRead) throw new Error("locked");
-      return new Set(s.present);
+      return readProviders({
+        presence: async () => ({ byProvider: Object.fromEntries([...s.present].map((p) => [p, "keychain" as const])), ...(s.failedSlots > 0 ? { failedProbes: s.failedSlots } : {}) }),
+        auth: () => (s.plugins === "closed" ? undefined : auth),
+      });
     },
     storedModel: () => s.stored,
     storedEffort: () => s.effort,
     recommend: (p) => recommended(catalog, p),
     effortFor: (m) => defaultEffortFor(catalog, m),
     writeModel: (m, e) => { s.stored = m; s.effort = e; s.writes.push(m); },
+    clearModel: () => { s.stored = undefined; s.effort = undefined; s.clears++; },
     dismissed: () => s.dismissed,
     writeDismissed: (d) => { s.dismissed = d; },
     offered: (m) => catalog.models.some((r) => r.key === m),
     emit: (state) => s.events.push(state),
-    log: () => {},
+    log: (line) => s.logs.push(line),
   });
   return { s, service };
 }
@@ -82,6 +97,81 @@ describe("SetupService", () => {
     const st = await service.refresh();
     expect(st.providers).toEqual(["anthropic", "openai"]);
     expect(s.writes).toEqual([]);
+  });
+
+  // The reviewer's boot sequences: what an existing home sees at its first boot on this build.
+  test("(a) a default on a plugin-served provider and one keychain key: nothing written before the plugins' read or after", async () => {
+    const { s, service } = world({ stored: "acme/acme-large", present: ["anthropic"], plugins: "closed", pluginSignedIn: ["acme"] });
+    const boot = await service.refresh();
+    expect(boot).toMatchObject({ ready: true, default: { model: "acme/acme-large", source: "chosen" } });
+    s.plugins = "opening";
+    await service.refresh();
+    s.plugins = "started";
+    const after = await service.refresh();
+    expect(after).toMatchObject({ ready: true, default: { model: "acme/acme-large", source: "chosen" } });
+    expect(s.writes).toEqual([]);
+    expect(s.stored).toBe("acme/acme-large");
+  });
+
+  test("(a') the plugin's sign-in really gone, on a complete read: kept on disk, not ready, signed out; back when it is", async () => {
+    const { s, service } = world({ stored: "acme/acme-large", present: ["anthropic"] });
+    const st = await service.refresh();
+    expect(st).toMatchObject({ ready: false, missing: ["default-provider"], signedOut: "acme/acme-large" });
+    expect(st.default).toBeUndefined();
+    expect(service.defaultModel()).toBeUndefined();
+    s.pluginSignedIn.add("acme");
+    expect(await service.refresh()).toMatchObject({ ready: true, default: { model: "acme/acme-large", source: "chosen" } });
+    expect(s.writes).toEqual([]);
+  });
+
+  test("(b) a default on a keyless local provider with no keys: ready, no guide, nothing written", async () => {
+    const { s, service } = world({ stored: "ollama-local/llama3", keyless: ["ollama-local"] });
+    const st = await service.refresh();
+    expect(st).toMatchObject({ ready: true, missing: [], providers: [], default: { model: "ollama-local/llama3", source: "chosen" } });
+    expect(service.defaultModel()).toBe("ollama-local/llama3");
+    expect(s.writes).toEqual([]);
+  });
+
+  test("(c) one slot's probe failing: the read isn't complete, nothing is written, one log line with no secret", async () => {
+    const { s, service } = world({ stored: "openai/gpt-4.1", present: ["anthropic"], failedSlots: 1 });
+    const st = await service.refresh();
+    await service.refresh();
+    expect(s.writes).toEqual([]);
+    expect(st).toMatchObject({ ready: true, default: { model: "openai/gpt-4.1" } });
+    expect(s.logs.filter((l) => l.includes("isn't complete"))).toEqual(["[setup] the providers' read isn't complete (1 credential slot probe(s) failed): the default model is left as it is"]);
+    // A fresh home in the same state: computed in memory, not written until a read is complete.
+    const fresh = world({ present: ["anthropic"], failedSlots: 1 });
+    expect((await fresh.service.refresh()).default).toMatchObject({ model: recommendedModel(catalog, "anthropic")!, source: "computed" });
+    expect(fresh.s.writes).toEqual([]);
+    fresh.s.failedSlots = 0;
+    await fresh.service.refresh();
+    expect(fresh.s.writes).toEqual([recommendedModel(catalog, "anthropic")!]);
+  });
+
+  test("(iii) the person removes the default's provider: the one left recommends the new default; with several, none", async () => {
+    const { s, service } = world({ stored: "openai/gpt-4.1", present: ["openai", "anthropic"] });
+    await service.refresh();
+    s.present.delete("openai");
+    await service.refresh();
+    expect(s.stored).toBe("openai/gpt-4.1");
+    await service.providerRemoved("openai");
+    expect(s.stored).toBe(recommendedModel(catalog, "anthropic")!);
+    const two = world({ stored: "openai/gpt-4.1", present: ["openai", "anthropic", "google"] });
+    await two.service.refresh();
+    two.s.present.delete("openai");
+    const st = await two.service.providerRemoved("openai");
+    expect(two.s.stored).toBeUndefined();
+    expect(two.s.clears).toBe(1);
+    expect(st).toMatchObject({ ready: false, missing: ["model"] });
+  });
+
+  test("a removal seen while the read isn't complete waits for the complete read", async () => {
+    const { s, service } = world({ stored: "openai/gpt-4.1", present: ["anthropic"], plugins: "opening" });
+    await service.providerRemoved("openai");
+    expect(s.writes).toEqual([]);
+    s.plugins = "started";
+    await service.refresh();
+    expect(s.stored).toBe(recommendedModel(catalog, "anthropic")!);
   });
 
   test("skipping is remembered and can be undone", async () => {

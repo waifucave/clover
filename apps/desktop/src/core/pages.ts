@@ -69,7 +69,7 @@ function frame(host: HTMLElement, title: string, onClose: (() => void) | undefin
 
 interface SetupView {
   ready: boolean;
-  missing: ("provider" | "model")[];
+  missing: ("provider" | "model" | "default-provider")[];
   providers: string[];
   default?: { model: string; source: "chosen" | "computed"; effort?: string };
   recommended?: Record<string, { model: string; effort?: string }>;

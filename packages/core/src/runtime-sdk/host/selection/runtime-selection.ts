@@ -152,6 +152,8 @@ export interface CredentialPresence {
   readonly byProvider: Readonly<Record<string, CredentialRef["kind"]>>;
   /** Per-provider auth family + wire dialects, where the host knows them. See `ProviderAuthView`. */
   readonly authByProvider?: Readonly<Record<string, ProviderAuthView>>;
+  /** How many slots' probes failed (a locked or denied store): the set is partial then. Absent: none failed. */
+  readonly failedProbes?: number;
 }
 
 /**

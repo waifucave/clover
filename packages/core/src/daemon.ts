@@ -141,9 +141,9 @@ import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
-import { SetupService, setupMethods } from "./setup-state";
+import { readProviders, SetupService, setupMethods } from "./setup-state";
 import { defaultEffortFor, recommended } from "./default-model";
-import { loadSettings, saveSettings, setupDismissedFrom, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
+import { clearProviderModel, loadSettings, saveSettings, setupDismissedFrom, providerBaseUrlFor, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, mossOptionsFromSettings, ownProviderFor, pinsFor, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
 import { ProjectSettingsResolver } from "./project-settings";
 import { memoryDirFor, globalMemoryDirFor, assistantMemoryDirFor, memoryProjectKeyFor } from "./agent/memory-dir";
 import { migrateMemoryStore } from "./agent/memory-migrate";
@@ -3419,16 +3419,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const setup = new SetupService({
     seed: presentProviders,
-    readPresent: async () => new Set([
-      ...Object.keys((await credentialPresenceFrom(secrets)).byProvider),
-      ...(await pluginAuth?.signedInProviders().catch(() => new Set<string>()) ?? []),
-    ]),
+    // Complete only once the plugins' sign-ins can be read (the registry open, the model plugins started), that read
+    // worked, and no slot's probe failed: only a complete read may change the default on disk (setup-state.ts).
+    readPresent: () => readProviders({ presence: () => credentialPresenceFrom(secrets), auth: () => pluginAuth }),
     storedModel: () => settings?.provider?.model,
     storedEffort: () => settings?.provider?.reasoningEffort,
     recommend: (provider) => recommended(activeCatalog(), provider),
     effortFor: (model) => defaultEffortFor(activeCatalog(), model),
     // The model and the effort written together: a new default never keeps the old one's effort.
     writeModel: (model, effort) => writeSettings((s) => ({ ...s, provider: { model: model as ModelTag, ...(effort !== undefined ? { reasoningEffort: effort as NonNullable<Settings["provider"]>["reasoningEffort"] } : {}) } })),
+    clearModel: () => writeSettings((s) => clearProviderModel(s)),
     dismissed: () => setupDismissedFrom(settings),
     writeDismissed: (dismissed) => writeSettings((s) => ({ ...s, setup: { ...s.setup, dismissed } })),
     offered: (model) => catalogModelListings(activeCatalog(), new Set()).some((m) => m.id === model),
@@ -3746,7 +3746,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   });
   const server: IpcServer = startIpcServer({
     // The bots' view of the stored keys, refreshed at once on `credential.set` and the sign-in doors.
-    credentialChanged: () => botKeys?.refresh(),
+    credentialChanged: async () => { await botKeys?.refresh(); if (settings) await setup.refresh(); },
+    // `credential.remove`, the person's own act: a default model on that provider is replaced or taken away.
+    credentialRemoved: async (provider) => { if (settings) await setup.providerRemoved(provider); },
     mossConnections: mossServer,
     socketPath: dirs.socketPath,
     serverVersion: CORE_VERSION,
@@ -4295,7 +4297,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       }).then(
         (started) => {
           if (partsStopping || pluginHost !== host) started.stop();
-          else modelPlugins = started;
+          else {
+            modelPlugins = started;
+            // The plugins' providers can be read in full now: the setup's read is complete from here on.
+            void setup.refresh();
+          }
         },
         (err: unknown) => { console.error(`[model-plugins] not started: ${err instanceof Error ? err.name : typeof err}; sessions use the SDK's compiled catalog`); },
       );
@@ -4312,6 +4318,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         await setup.refresh();
         mossServer?.coreEvent({ type: "plugin_auth_changed", id, auth });
       },
+      // The person signed out: a default model on what the sign-in covered is replaced or taken away (setup-state.ts).
+      signedOut: async (providers) => { for (const p of providers) await setup.providerRemoved(p); },
       credentialChanged: async (provider) => {
         // The bots' view of the stored keys first, so the next bot turn runs on the key just added or removed.
         await botKeys?.refresh();

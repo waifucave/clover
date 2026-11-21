@@ -343,7 +343,7 @@ export async function credentialPresenceFrom(
   if (failures.length > 0) {
     console.warn(`[keychain] ${failures.length} of ${probed.length} presence probe(s) failed (${[...new Set(failures)].join(", ")})`);
   }
-  return { byProvider, ...(Object.keys(authByProvider).length === 0 ? {} : { authByProvider }) };
+  return { byProvider, ...(Object.keys(authByProvider).length === 0 ? {} : { authByProvider }), ...(failures.length > 0 ? { failedProbes: failures.length } : {}) };
 }
 
 /**

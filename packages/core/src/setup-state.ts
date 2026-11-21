@@ -4,17 +4,48 @@
 // window, an app or a plugin.
 //
 // The providers the person has are read from the credential store and the plugins' sign-ins (`readPresent`), once at
-// boot and again whenever a key or a sign-in changes (`refresh`). After each read the default is settled: with exactly
-// one provider and no usable named model, its recommended model is written down as the default, so a second provider
-// added later never takes it away. A read that fails keeps the last set, so a locked store never wipes anything.
+// boot, again once the plugins have started, and whenever a key or a sign-in changes (`refresh`). After each read the
+// default is settled by `settledDefault` (default-model.ts has the rule): a named model is never changed by the engine
+// on its own except when none is named, when it is the untouched older default, or when the person removed its
+// provider (`providerRemoved`), and then only after a COMPLETE read. A read that isn't complete, or that fails, writes
+// nothing.
 import { SESSIONS_METHODS, type SetupState } from "@waifucave/moss-protocol";
 import { ContractError } from "./contracts/common";
-import { effectiveDefault, hasProviderOf, settledDefault, setupMissing, type Recommendation } from "./default-model";
+import { effectiveDefault, hasProviderOf, settledDefault, setupMissing, type DefaultAnswer, type ProvidersRead, type Recommendation } from "./default-model";
 import { handler, type MethodHandler } from "./rpc/handler";
+import type { CredentialPresence } from "./runtime-sdk/host/selection/runtime-selection";
+import type { PluginAuth } from "./runtime-sdk/plugin-auth";
+
+/** The daemon's read of the providers: the credential slots, then the plugins' sign-ins and keyless providers. It is
+ *  complete only once the plugins' sign-ins can be read (the registry open, the model plugins started), that read
+ *  worked, and no slot's probe failed. */
+export async function readProviders(deps: {
+  presence(): Promise<Pick<CredentialPresence, "byProvider" | "failedProbes">>;
+  auth(): Pick<PluginAuth, "signedInProviders" | "keylessProviders" | "modelPluginsReady"> | undefined;
+}): Promise<ProvidersRead & { incomplete?: string }> {
+  const presence = await deps.presence();
+  const present = new Set(Object.keys(presence.byProvider));
+  let incomplete: string | undefined;
+  if (presence.failedProbes !== undefined && presence.failedProbes > 0) incomplete = `${presence.failedProbes} credential slot probe(s) failed`;
+  const auth = deps.auth();
+  let keyless: Set<string> | undefined;
+  if (auth === undefined) incomplete ??= "the plugins haven't opened yet";
+  else {
+    if (!auth.modelPluginsReady()) incomplete ??= "the model plugins haven't started yet";
+    try {
+      for (const p of await auth.signedInProviders()) present.add(p);
+    } catch (err) {
+      incomplete ??= `the plugins' sign-ins weren't read (${err instanceof Error ? err.name : typeof err})`;
+    }
+    keyless = auth.keylessProviders();
+  }
+  return { present, complete: incomplete === undefined, ...(incomplete !== undefined ? { incomplete } : {}), ...(keyless !== undefined ? { keyless } : {}) };
+}
 
 export interface SetupDeps {
-  /** The providers the person added now (a stored key or a plugin sign-in), by catalog provider id. */
-  readPresent(): Promise<ReadonlySet<string>>;
+  /** The providers the person added now (a stored key or a plugin sign-in), by catalog provider id; whether the read
+   *  is complete (`incomplete` says why not, an error's class at most), and the keyless providers. */
+  readPresent(): Promise<ProvidersRead & { incomplete?: string }>;
   /** The model the settings name as the default, if any, and its effort. */
   storedModel(): string | undefined;
   storedEffort(): string | undefined;
@@ -24,23 +55,40 @@ export interface SetupDeps {
   effortFor(model: string): string | undefined;
   /** Writes the default model and its effort (absent: none) into the settings. */
   writeModel(model: string, effort: string | undefined): void;
+  /** Takes the default model (and its effort) out of the settings. */
+  clearModel(): void;
   dismissed(): boolean;
   writeDismissed(dismissed: boolean): void;
   /** Whether a model is one a picker offers (`models.list`'s rows), for `models.setDefault`. */
   offered(model: string): boolean;
   emit(state: SetupState): void;
   log(line: string): void;
-  /** The first set, from the boot's own presence read. */
+  /** The first set, from the boot's own presence read (never complete: the plugins haven't started). */
   seed?: ReadonlySet<string>;
 }
 
 export class SetupService {
-  #present: ReadonlySet<string>;
+  #read: ProvidersRead;
   #last: string | undefined;
+  #lastIncomplete: string | undefined;
   #reading: Promise<void> | undefined;
+  /** Providers the person removed in this run, until a complete read settles the default for it (exception iii). */
+  readonly #removed = new Set<string>();
 
   constructor(private readonly deps: SetupDeps) {
-    this.#present = deps.seed ?? new Set();
+    this.#read = { present: deps.seed ?? new Set(), complete: false };
+  }
+
+  get #present(): ReadonlySet<string> {
+    return this.#read.present;
+  }
+
+  #answer(): DefaultAnswer {
+    return effectiveDefault(this.deps.storedModel(), this.#present, (p) => this.deps.recommend(p), {
+      ...(this.deps.storedEffort() !== undefined ? { storedEffort: this.deps.storedEffort()! } : {}),
+      complete: this.#read.complete,
+      ...(this.#read.keyless !== undefined ? { keyless: this.#read.keyless } : {}),
+    });
   }
 
   /** The providers as last read. */
@@ -50,11 +98,16 @@ export class SetupService {
 
   /** The default model now, or none. */
   defaultModel(): string | undefined {
-    return effectiveDefault(this.deps.storedModel(), this.#present, (p) => this.deps.recommend(p)).model;
+    return this.#answer().model;
+  }
+
+  /** Whether the last read was complete. */
+  complete(): boolean {
+    return this.#read.complete;
   }
 
   state(): SetupState {
-    const answer = effectiveDefault(this.deps.storedModel(), this.#present, (p) => this.deps.recommend(p), this.deps.storedEffort());
+    const answer = this.#answer();
     const providers = [...this.#present].sort();
     const recommended: Record<string, Recommendation> = {};
     for (const p of providers) {
@@ -67,6 +120,7 @@ export class SetupService {
       missing,
       providers,
       ...(answer.model !== undefined && answer.source !== undefined ? { default: { model: answer.model, source: answer.source, ...(answer.effort !== undefined ? { effort: answer.effort } : {}) } } : {}),
+      ...(answer.signedOut !== undefined ? { signedOut: answer.signedOut } : {}),
       ...(Object.keys(recommended).length > 0 ? { recommended } : {}),
       dismissed: this.deps.dismissed(),
     };
@@ -76,7 +130,7 @@ export class SetupService {
    *  asked while one runs waits for it and reads again, so it never misses the change it is for. */
   async refresh(): Promise<SetupState> {
     if (this.#reading !== undefined) await this.#reading.catch(() => undefined);
-    this.#reading = this.#read();
+    this.#reading = this.#readNow();
     try {
       await this.#reading;
     } finally {
@@ -85,22 +139,41 @@ export class SetupService {
     return this.state();
   }
 
-  async #read(): Promise<void> {
+  async #readNow(): Promise<void> {
     try {
-      this.#present = new Set(await this.deps.readPresent());
+      const read = await this.deps.readPresent();
+      this.#read = { present: new Set(read.present), complete: read.complete, ...(read.keyless !== undefined ? { keyless: new Set(read.keyless) } : {}) };
+      const why = read.complete ? undefined : read.incomplete;
+      if (why !== undefined && why !== this.#lastIncomplete) this.deps.log(`[setup] the providers' read isn't complete (${why}): the default model is left as it is`);
+      this.#lastIncomplete = why;
     } catch (err) {
+      // The last set is kept, and it no longer counts as complete: nothing is written from it.
+      this.#read = { ...this.#read, complete: false };
       this.deps.log(`[setup] the providers weren't read (${err instanceof Error ? err.name : typeof err}); keeping the last set`);
     }
     this.settle();
   }
 
-  /** Writes the one provider's recommended model when the named one isn't usable, then says what changed. */
+  /** The person removed a provider (`credential.remove`, a plugin's sign-out): when it served the named default, the
+   *  next complete read replaces it (the one provider's recommended model) or takes it away. */
+  async providerRemoved(provider: string): Promise<SetupState> {
+    this.#removed.add(provider);
+    return this.refresh();
+  }
+
+  /** Writes what `settledDefault` says after a complete read, then says what changed. */
   settle(): void {
-    const write = settledDefault(this.deps.storedModel(), this.#present, (p) => this.deps.recommend(p));
-    if (write !== undefined) {
+    const action = settledDefault(this.deps.storedModel(), this.#read, (p) => this.deps.recommend(p), this.#removed);
+    if (this.#read.complete) this.#removed.clear();
+    if (action !== undefined) {
       try {
-        this.deps.writeModel(write.model, write.effort);
-        this.deps.log(`[setup] the default model is now ${write.model}${write.effort !== undefined ? ` at ${write.effort}` : ""}, the one provider's recommended model`);
+        if (action.kind === "write") {
+          this.deps.writeModel(action.model, action.effort);
+          this.deps.log(`[setup] the default model is now ${action.model}${action.effort !== undefined ? ` at ${action.effort}` : ""}, the one provider's recommended model`);
+        } else {
+          this.deps.clearModel();
+          this.deps.log("[setup] the default model's provider was removed: there is no default model until one is picked");
+        }
       } catch (err) {
         this.deps.log(`[setup] the default model wasn't written (${err instanceof Error ? err.name : typeof err})`);
       }

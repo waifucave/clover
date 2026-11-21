@@ -58,7 +58,7 @@ export interface MossView {
 /** The engine's answer to "is this home set up for a first reply" (`setup.state`). */
 export interface SetupRow {
   ready: boolean;
-  missing: ("provider" | "model")[];
+  missing: ("provider" | "model" | "default-provider")[];
   /** The providers the person added, by catalog id. */
   providers: string[];
   default?: { model: string; source: "chosen" | "computed"; effort?: string };

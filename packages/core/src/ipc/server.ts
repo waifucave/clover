@@ -351,6 +351,9 @@ export interface IpcServerOptions {
   /** A stored credential changed (`credential.set`, a sign-in or sign-out): what the daemon refreshes besides the live
    *  sessions (the bots' view of the stored keys, so a bot's next turn runs on it). Never throws into the caller. */
   credentialChanged?(providerId: string): Promise<void> | void;
+  /** The person removed a provider's credential (`credential.remove`): the setup's default is settled again for it.
+   *  Never throws into the caller. */
+  credentialRemoved?(providerId: string): Promise<void> | void;
   // session-activity-hygiene T8: hands the caller THE bound activity derivation this server stamps
   // `session.list` with, once, at construction. Called exactly once, synchronously, from inside
   // startIpcServer.
@@ -5070,6 +5073,7 @@ export function startIpcServer(opts: IpcServerOptions): IpcServer {
         // 2026-09-19: the mirror of `credential.set`'s own refresh — removing the LAST credential a
         // MOSS job could run on must make those jobs inert on the next call, cleanly and at once.
         await refreshInternalProvidersAfterCredentialChange();
+        if (outcome.removed) { try { await opts.credentialRemoved?.(p.providerId); } catch { /* settled at the next read */ } }
         return { ok: true, removed: outcome.removed };
       }
 

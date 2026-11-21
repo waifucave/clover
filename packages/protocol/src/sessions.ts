@@ -267,8 +267,9 @@ export const ModelListing = z.object({
 export type ModelListing = z.infer<typeof ModelListing>;
 
 /** What a first working reply still needs (the setup guide, 2026-11-20): a model provider (a key or a sign-in), then a
- *  default model. Engine state, so every client asks the same question and gets the same answer. */
-export const SetupMissing = z.enum(["provider", "model"]);
+ *  default model; or (`default-provider`) the default model the settings name is kept but its provider isn't signed in
+ *  now. Engine state, so every client asks the same question and gets the same answer. */
+export const SetupMissing = z.enum(["provider", "model", "default-provider"]);
 export type SetupMissing = z.infer<typeof SetupMissing>;
 
 export const SetupState = z.object({
@@ -280,6 +281,9 @@ export const SetupState = z.object({
   /** The default model now, if any: `chosen` when the settings name it (picked, or written by the engine for the one
    *  provider added), `computed` when it is the one provider's recommended model and not written yet. */
   default: z.object({ model: utf16(200, 1), source: z.enum(["chosen", "computed"]), effort: utf16(32, 1).optional() }).optional(),
+  /** The default model the settings name, kept while its provider isn't signed in (`missing` has `default-provider`):
+   *  it is the default again once the key or the sign-in is back. */
+  signedOut: utf16(200, 1).optional(),
   /** Each added provider's recommended default, its family's (a model and its effort), where it has one (the guide's
    *  pre-filled pick). */
   recommended: z.record(utf16(128, 1), z.object({ model: utf16(200, 1), effort: utf16(32, 1).optional() })).optional(),

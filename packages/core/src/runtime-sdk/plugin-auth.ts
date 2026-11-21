@@ -41,6 +41,7 @@ import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { credentialValueRefusal, removeCredential } from "./credentials";
 import { bundledModelProviderOf, modelPluginSlotFor } from "./model-plugins/keychain-tokens";
 import { installedModelPlugins } from "./model-plugins";
+import { MOSS_CREDENTIAL_INVENTORY } from "./keychain";
 import { onCardYes, type CardYesOutput } from "../plugin-host/card-yes";
 import type { OAuthRenewal } from "./model-plugins/oauth-renewal";
 
@@ -105,6 +106,8 @@ export interface PluginAuthDeps {
   changed?(id: string, auth: PluginAuthView): Promise<void> | void;
   /** After a provider slot's key changed (a bundled plugin's): what the daemon refreshes. */
   credentialChanged?(provider: string): Promise<void> | void;
+  /** After the person signed out (an explicit removal): the providers the sign-in covered. */
+  signedOut?(providers: readonly string[]): Promise<void> | void;
   /** The model plugins' providers and the plugin serving each (the installed model plugins by default). */
   modelProviders?(): Iterable<{ provider: string; pluginId: string }>;
   /** Test seams: the OAuth flow (production: `runLoginFlow` on Codex's loopback port), xAI's device grant, the clock. */
@@ -162,6 +165,11 @@ export interface PluginAuth {
    *  sign-in at all (a local model): what `models.list`'s `signedIn` adds to the providers' keychain slots. A bundled
    *  plugin's provider is its slot's, so it is never here. */
   signedInProviders(): Promise<Set<string>>;
+  /** The bundled model plugins' providers that take no key at all (a local model server: no sign-in of its own and no
+   *  credential slot). Usable with nothing stored, so a default model on one is had; never an "added" provider. */
+  keylessProviders(): Set<string>;
+  /** Whether the model plugins have started, so `signedInProviders` and `keylessProviders` answer for all of them. */
+  modelPluginsReady(): boolean;
   signIn(id: string, index: number, key?: string): Promise<{ state: PluginAuthView["state"]; authorizeUrl?: string }>;
   signOut(id: string, index: number): Promise<void>;
   /** Tells the app and the CLI each of a plugin's sign-ins as it stands now (a renewal signed it out). */
@@ -273,6 +281,22 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       return out;
     },
 
+    keylessProviders() {
+      const out = new Set<string>();
+      for (const { provider, pluginId } of servedProviders()) {
+        const r = deps.registry.get(pluginId);
+        if (r === undefined || bundledModelProviderOf(r) === undefined) continue;
+        if (MOSS_CREDENTIAL_INVENTORY.some((s) => s.provider === provider)) continue;
+        if (authEntriesOf(r).some((n) => n.provider === provider || n.provider === undefined)) continue;
+        out.add(provider);
+      }
+      return out;
+    },
+
+    modelPluginsReady() {
+      return deps.modelProviders !== undefined || installedModelPlugins()?.snapshot !== undefined;
+    },
+
     async list(id) {
       const r = record(id);
       const bundled = bundledModelProviderOf(r);
@@ -355,6 +379,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       }
       // The live sessions on what the key covered are replaced: none goes on with a key the user took back.
       await afterKeyChange(covers);
+      try { await deps.signedOut?.(covers); } catch (err) { deps.log?.(`[plugin-auth] after a sign-out (${errorClass(err)})`); }
       await announce(id, index);
     },
   };
