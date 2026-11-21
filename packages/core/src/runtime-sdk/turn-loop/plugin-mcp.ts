@@ -321,6 +321,9 @@ export class PluginMcp {
   #listed = new Map<string, Listed>();
   /** Servers a setting's or key's change is listing again now (`relist`): `settled` waits for these even when their last listing failed. */
   readonly #relisting = new Set<string>();
+  /** Servers a setting's or key's change was heard for whose `relist` has not run yet (the daemon gathers a burst for a moment before it
+   *  calls it): `expectRelist`. Each holds what `settled` waits on until its relist has listed it, or `cancelExpected` let it go. */
+  readonly #expected = new Map<string, { done: Promise<void>; resolve: () => void }>();
   /** The servers wanted now, by key, with their latest contribution: what each server's listing task reads. */
   #want = new Map<string, Contribution>();
   /** Each server's listing in flight (one per server at a time, so a slow one holds up only itself). */
@@ -571,18 +574,50 @@ export class PluginMcp {
     return Promise.all([...want.keys()].map((key) => this.#listOne(key))).then(() => {});
   }
 
+  /** A change to a setting or key that these servers of `pluginId` name was heard: their `relist` is about to come (after the
+   *  daemon's gathering time). From now, until it has listed them, `settled` waits for them, so a turn the person sends right after
+   *  saving the key is offered the plugin's tools, not only one that starts after the gathering time. */
+  expectRelist(pluginId: string, servers: readonly string[]): void {
+    if (this.#closed) return;
+    for (const [key, c] of this.#want) {
+      if (c.pluginId !== pluginId || !servers.includes(this.#nameOf(c)) || this.#expected.has(key)) continue;
+      let resolve: () => void = () => {};
+      const done = new Promise<void>((r) => { resolve = r; });
+      this.#expected.set(key, { done, resolve });
+    }
+  }
+
+  /** What `expectRelist` held for these servers, let go (the daemon stopped watching, or their relist found them gone). */
+  cancelExpected(pluginId: string, servers?: readonly string[]): void {
+    for (const [key] of [...this.#expected]) if (this.#keyOf(key, pluginId, servers)) this.#release(key);
+  }
+
+  #keyOf(key: string, pluginId: string, servers: readonly string[] | undefined): boolean {
+    const c = this.#want.get(key);
+    return c === undefined || (c.pluginId === pluginId && (servers === undefined || servers.includes(this.#nameOf(c))));
+  }
+
+  #release(key: string): void {
+    const e = this.#expected.get(key);
+    if (e === undefined) return;
+    this.#expected.delete(key);
+    e.resolve();
+  }
+
   /** Lists again the servers of `pluginId` named in `servers` (its manifest's names): a server whose arguments or
    *  environment name a setting or a secret that just changed. Its open channel closes first, so a stdio process starts
    *  again with the new value. Only servers this computer serves now; nothing else is touched. */
   relist(pluginId: string, servers: readonly string[]): Promise<void> {
-    if (this.#closed || servers.length === 0) return Promise.resolve();
+    if (this.#closed || servers.length === 0) { this.cancelExpected(pluginId, servers); return Promise.resolve(); }
     const keys = [...this.#want].filter(([, c]) => c.pluginId === pluginId && servers.includes(this.#nameOf(c))).map(([key]) => key);
+    // What was expected and is not listed again here (its server left meanwhile) is let go; the rest is let go as its listing ends.
+    for (const [key] of [...this.#expected]) if (!keys.includes(key) && this.#keyOf(key, pluginId, servers)) this.#release(key);
     for (const key of keys) {
       this.#clients.get(key)?.client.close();
       this.#clients.delete(key);
       this.#relisting.add(key);
     }
-    return Promise.all(keys.map((key) => this.#listOne(key).finally(() => { this.#relisting.delete(key); }))).then(() => {});
+    return Promise.all(keys.map((key) => this.#listOne(key).finally(() => { this.#relisting.delete(key); this.#release(key); }))).then(() => {});
   }
 
   /** Whether a server can't work in this build (`notServed`): logged once per reason, here and in its plugin's log. */
@@ -691,6 +726,7 @@ export class PluginMcp {
     // key is starting it: it failed because that was not set (`waits for the user to set …`), they have just set it, and a turn
     // sent now is theirs, offered its tools (`relist`).
     const pending = [...this.#inflight].filter(([key]) => !this.#listed.has(key) && (!this.#failed.has(key) || this.#relisting.has(key))).map(([, p]) => p);
+    for (const e of this.#expected.values()) pending.push(e.done);
     if (pending.length === 0) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([Promise.all(pending), new Promise<void>((r) => { timer = setTimeout(r, timeoutMs); })]);
@@ -978,6 +1014,7 @@ export class PluginMcp {
 
   close(): void {
     this.#closed = true;
+    for (const [key] of [...this.#expected]) this.#release(key);
     this.#off();
     for (const c of this.#clients.values()) c.client.close();
     this.#clients.clear();

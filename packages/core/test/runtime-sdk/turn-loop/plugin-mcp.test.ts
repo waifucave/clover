@@ -1050,3 +1050,40 @@ test("a key just set starts its server and a turn that begins now is offered the
     mcp.close();
   }
 }, 15_000);
+
+test("a turn that begins after the key was saved but before the gathered relist runs waits for it too (expectRelist; the daemon's 500 ms gathering time)", async () => {
+  const registry = fakeRegistry([entry("acme", "forecast", { type: "host" })], { acme: "/nonexistent" });
+  const fake = fakeHost();
+  let keySet = false;
+  fake.gate((_p, server) => (server === "forecast" ? (keySet ? Bun.sleep(60) : Promise.reject(new Error("secret WEATHER_KEY is not set"))) : undefined));
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", log: () => {}, listTimeoutMs: 2_000 });
+  try {
+    await mcp.refresh();
+    expect(names(mcp)).toEqual([]);
+    // The key is saved: the change is heard now, its relist comes 150 ms later (the daemon's gathering time, shortened).
+    keySet = true;
+    mcp.expectRelist("acme", ["forecast"]);
+    setTimeout(() => { void mcp.relist("acme", ["forecast"]); }, 150);
+    await Bun.sleep(100);
+    // A turn begins now, before relist has run: it waits for the relist and the listing, and sees the tools.
+    const t0 = Date.now();
+    await mcp.settled(2_000);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(90);
+    expect(names(mcp)).toEqual(["acme-forecast"]);
+    // Nothing expected any more: immediate.
+    const t1 = Date.now();
+    await mcp.settled(2_000);
+    expect(Date.now() - t1).toBeLessThan(50);
+    // An expectation whose relist never comes is let go by cancelExpected, and is bounded by the wait's own limit anyway.
+    mcp.expectRelist("acme", ["forecast"]);
+    const t2 = Date.now();
+    await mcp.settled(120);
+    expect(Date.now() - t2).toBeLessThan(250);
+    mcp.cancelExpected("acme");
+    const t3 = Date.now();
+    await mcp.settled(2_000);
+    expect(Date.now() - t3).toBeLessThan(50);
+  } finally {
+    mcp.close();
+  }
+}, 15_000);

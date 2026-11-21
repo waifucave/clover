@@ -4415,6 +4415,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       const due = relistDue.get(c.pluginId) ?? new Set<string>();
       for (const s of servers) due.add(s);
       relistDue.set(c.pluginId, due);
+      // A turn the person sends before the gathering time ends waits for these servers too (`settled`).
+      pluginMcp?.expectRelist(c.pluginId, servers);
       relistTimer ??= setTimeout(() => {
         relistTimer = undefined;
         const batch = [...relistDue];
@@ -4424,6 +4426,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     stopMcpSettings = () => {
       offWatch();
+      for (const pluginId of relistDue.keys()) pluginMcp?.cancelExpected(pluginId);
+      relistDue.clear();
       if (relistTimer !== undefined) clearTimeout(relistTimer);
       relistTimer = undefined;
     };
