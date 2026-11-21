@@ -82,6 +82,25 @@ export function guideOpens(state: Pick<SetupState, "ready" | "dismissed">): bool
   return !state.ready && !state.dismissed;
 }
 
+/** Whether the core's page (the setup guide) steps aside: a pending card the engine's router placed in this program's main
+ *  window (its conversation or its strip), or the old home's copy card waiting. A card placed elsewhere (the island,
+ *  another app) leaves it where it is. */
+export function guideStepsAside(o: {
+  places: Iterable<readonly [string, { kind: string; program?: string; window?: string } | undefined]>;
+  pending(cardId: string): boolean;
+  program: string;
+  window?: string;
+  copyWaits: boolean;
+}): boolean {
+  if (o.copyWaits) return true;
+  const window = o.window ?? "main";
+  for (const [id, p] of o.places) {
+    if (p === undefined || (p.kind !== "conversation" && p.kind !== "strip")) continue;
+    if (p.program === o.program && p.window === window && o.pending(id)) return true;
+  }
+  return false;
+}
+
 export interface ManagedPlugin {
   id: string;
   name: string;

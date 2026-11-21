@@ -446,3 +446,10 @@ export async function showKey(host: HTMLElement, t: Translate, call: Call, close
   page.actions.append(remove, save);
   draw(view);
 }
+
+/** The core's page steps aside for a card waiting in this window, or comes back: kept as it is (its step, what was typed),
+ *  only not drawn (root.css: `#moss-page[data-aside]`). */
+export function stepAside(host: HTMLElement, aside: boolean): void {
+  if (aside) host.dataset.aside = "yes";
+  else delete host.dataset.aside;
+}

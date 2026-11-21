@@ -39,7 +39,7 @@ import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } f
 import { daemonEndpoint, dial as dialDaemon, RpcCallError, type DaemonClient } from "./protocol/client";
 import { FileGrants, answersFor } from "./ui/file-grants";
 import { OptionalCalls } from "./pair/optional-calls";
-import { anyReady, guideOpens, listProviders, pageCall, type CorePage } from "./core-pages";
+import { anyReady, guideOpens, guideStepsAside, listProviders, pageCall, type CorePage } from "./core-pages";
 import type { KeyTarget } from "./ui/tree-calls";
 import { AnswerKey, KeyRegistration, fileVault, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
@@ -1112,6 +1112,7 @@ function enginePlaced(cardId: string, place: CardPlacement, from: "event" | "sna
   if (!fallbackHere(cardId)) { if (fallbacks.has(cardId)) { disarmFallback(cardId); heldOffFallbacks.add(cardId); } }
   else if (heldOffFallbacks.delete(cardId) && sealed.isPending(cardId)) void armFallback(cardId);
   if (cardPlaces.has(cardId)) placeCardNow(cardId);
+  tellGuideAside();
   // The surfaces hear it only when the island's hold changes (their `mainFront`): a message on every placement made the
   // island measure itself again under the pointer.
   if (was !== islandHoldsCard()) {
@@ -1165,7 +1166,7 @@ function movePendingCards(): void {
  *  store's copy, its fallback timer and its place, once. Its id and kind only in the log (no text): the acceptance run
  *  checks the app was told of each card it answers. */
 function cardArrivedNow(card: { id: string; kind: string; change?: string }, waiting = false): void {
-  if (card.change === "home-copy") homeCopyCards.add(card.id);
+  if (card.change === "home-copy") { homeCopyCards.add(card.id); queueMicrotask(tellGuideAside); }
   if (cardArrived.has(card.id)) return;
   sealed.fromCore(card);
   if (!sealed.isPending(card.id)) return;
@@ -1206,12 +1207,25 @@ const stoodDown = new Set<string>();
 /** Every surface follows the stacking rule again (a card came, was answered, or its own card showed or went). */
 function restack(): void {
   for (const s of surfaces.values()) applyVisibility(s);
+  tellGuideAside();
   // lane HS (the reviewer's S): decided again at the earliest expiry, when a card stops being pending with no event.
   clearTimeout(expiryRestack);
   const next = sealed.nextExpiry();
   if (next !== undefined) { expiryRestack = setTimeout(restack, Math.min(Math.max(0, next - Date.now()) + 50, 2 ** 31 - 1)); expiryRestack.unref?.(); }
 }
 let expiryRestack: ReturnType<typeof setTimeout> | undefined;
+/** The setup guide steps aside while a card waits in this window (or the old home's copy does), and is back after. */
+let guideAsideNow = false;
+function tellGuideAside(): void {
+  if (program !== "code") return;
+  const aside = guideStepsAside({
+    places: enginePlaces.entries(), pending: (id) => sealed.isPending(id), program,
+    copyWaits: [...homeCopyCards].some((id) => cardArrived.has(id)),
+  });
+  if (aside === guideAsideNow) return;
+  guideAsideNow = aside;
+  if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "core-page-aside", aside });
+}
 let surfacesTimer: ReturnType<typeof setTimeout> | undefined;
 let lastSurfaces = "";
 function scheduleSurfacesReport(): void {
@@ -1550,6 +1564,7 @@ function makePair(): Pair {
         cardArrived.delete(parsed.data.id);
         cardPlaces.delete(parsed.data.id);
         windowDraws.delete(parsed.data.id);
+        tellGuideAside();
         // A replacement of this desktop's answer key waits on its card: on the yes, the app keeps the new key.
         const client = pair.client;
         if (client !== undefined && signedDevice !== undefined && answerKeyValue?.pendingCard === parsed.data.id) {
@@ -1868,6 +1883,7 @@ async function openPage(page: CorePage): Promise<void> {
   corePage = page;
   const win = await openMainWindow();
   if (win !== undefined) runtime.rootMessage(win.id, { type: "core-page", page });
+  if (win !== undefined) runtime.rootMessage(win.id, { type: "core-page-aside", aside: guideAsideNow });
 }
 
 /** A later look while the engine's home-copy offer waits for its answer. */

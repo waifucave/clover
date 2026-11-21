@@ -2,7 +2,7 @@
 // `app.root` (a surface window: its one `app.surface` entry) as a frame from that plugin's own layer, and owns what
 // the core draws around it: the safe-mode banner (§5.8), the note when nothing fills the window, and the placeholder
 // with a reload when the shell's layer stops (S9: detected by the main process's census).
-import { showKey, showPlugins, showWelcome } from "./pages";
+import { showKey, showPlugins, showWelcome, stepAside } from "./pages";
 import { EMPTY_STRINGS, translate, type LayerBridge, type LayerMessage, type MountInfo, type SpotView, type StringTable } from "@waifucave/moss-plugin-sdk/ui/bridge";
 
 interface RootBridge {
@@ -234,6 +234,8 @@ function onMessage(m: LayerMessage): void {
     if (page !== null) void showPage(page);
   }
   if (m.type === "core-page") void showPage(m.page);
+  // A card waits in this window: the page steps aside (kept, at its step) and is back once none waits.
+  if (m.type === "core-page-aside") { stepAside(pageHost, m.aside); syncDrag(); }
   // A reload's new document drew: it takes the old one's place (the old one is let go in main, so this is the new one's).
   if (m.type === "child-size") rendered.get(m.child)?.();
   if (m.type === "child-reload" && m.child === shown?.mount) {
