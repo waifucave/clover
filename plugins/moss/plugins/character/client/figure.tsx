@@ -64,9 +64,10 @@ function useActivity(bots: boolean): ActivityView[] {
     const kinds = bots ? (["sessions", "bots"] as const) : (["sessions"] as const);
     const stops: (() => void)[] = [];
     for (const kind of kinds) {
-      void api.activity?.list(kind).then((list) => live && setAll((was) => (list as unknown as ActivityView[]).reduce(merge, was)), () => undefined);
+      // Subscribe first, then list: a change between the list's answer and the subscription taking effect would be lost.
       const stop = api.activity?.watch(kind, (a) => live && setAll((was) => merge(was, a as unknown as ActivityView)));
       if (stop !== undefined) stops.push(stop);
+      void api.activity?.list(kind).then((list) => live && setAll((was) => (list as unknown as ActivityView[]).reduce(merge, was)), () => undefined);
     }
     return () => { live = false; for (const s of stops) s(); };
   }, [api, bots]);

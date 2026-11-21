@@ -134,9 +134,10 @@ export function TalkButton({ props }: EntryProps<{ bot: BotRef; session: string 
     const read = (): void => {
       void Promise.resolve(api.host.call<boolean>("listens", { bot, session: props.session })).then((on) => { if (live) setListens(on === true); }, () => { if (live) setListens(false); });
     };
-    read();
     // What decides it is this plugin's own: its settings, the voice picked, its providers. No window focus needed.
+    // Subscribe first, then read (a change between the read's answer and the subscription taking effect would be lost).
     const offs = [api.settings.watch(null, read), api.points.onActive(MODES, read), api.points.watch(PROVIDERS, read), api.points.watch(MODES, read)];
+    read();
     return () => {
       live = false;
       for (const off of offs) void Promise.resolve(off).then((f) => (typeof f === "function" ? f() : undefined), () => undefined);

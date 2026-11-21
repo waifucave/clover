@@ -192,8 +192,9 @@ export function AlphaScene({ props }: { props: { bot: { id: string; name: string
       live.current.effects = v === "off" || v === "subtle" ? v : "full";
       live.current.kick();
     }, () => undefined);
-    read();
+    // Subscribe first, then read: a change between the read's answer and the subscription taking effect would be lost.
     const stop = api.settings.watch("effects", read);
+    read();
     return () => { on = false; stop(); };
   }, [api]);
 
