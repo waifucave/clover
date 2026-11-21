@@ -326,7 +326,7 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   const beatEvery = deps.heartbeat?.intervalMs ?? 5_000;
   const beatTimeout = deps.heartbeat?.timeoutMs ?? 15_000;
   const now = deps.heartbeat?.now ?? Date.now;
-  const beats = new Map<number, { timer: ReturnType<typeof setInterval>; heard: number; pid: number | null; handle?: PeerHandle; pending: Set<string> }>();
+  const beats = new Map<number, { timer: ReturnType<typeof setInterval>; heard: number; pid: number | null; handle?: PeerHandle; pending: Set<string>; warned?: boolean }>();
   const killApp = deps.killApp ?? ((pid: number, handle?: PeerHandle) => {
     if (handle) { if (!handle.kill()) deps.log?.(`[moss] the app's process ${pid} had already gone`); return; }
     try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
@@ -337,13 +337,19 @@ export function createMossServer(deps: MossServerDeps): MossServer {
   const beatGap = Math.max(beatEvery * 2, beatEvery + 2_000);
   const startBeat = (conn: MossConn, pid: number | null, handle?: PeerHandle) => {
     let ticked = now();
-    const beat = { heard: now(), pid, ...(handle ? { handle } : {}), pending: new Set<string>(), timer: setInterval(() => {
+    const beat = { heard: now(), pid, warned: false, ...(handle ? { handle } : {}), pending: new Set<string>(), timer: setInterval(() => {
       const t = now();
       // After a sleep the first tick used to find the last answer older than the timeout and end the app at once, with
       // no ping sent since the wake: every wake restarted it in safe mode (85 times in one night on the owner's Mac).
       // The count starts again from the wake, and the app gets a ping and its full time to answer it.
-      if (t - ticked > beatGap) beat.heard = t;
+      if (t - ticked > beatGap) { beat.heard = t; beat.warned = false; }
       ticked = t;
+      // A third of the time it has: one line, so what the app is doing (its main thread, the machine's load) can be looked at while it is
+      // still there to look at. It changes nothing about when the app is ended.
+      if (t - beat.heard > beatTimeout / 3 && t - beat.heard <= beatTimeout && beat.warned !== true) {
+        beat.warned = true;
+        deps.log?.(`[moss] the app (connection ${conn.connId}) has not answered app.ping for ${t - beat.heard} ms`);
+      }
       if (t - beat.heard > beatTimeout) {
         stopBeat(conn.connId);
         deps.log?.(`[moss] the app (connection ${conn.connId}) didn't answer app.ping for ${beatTimeout} ms`);
@@ -806,11 +812,11 @@ export function createMossServer(deps: MossServerDeps): MossServer {
     // Any answer to a ping, a result or an error, shows the app's main process is responsive.
     response(conn, msg) {
       const b = beats.get(conn.connId);
-      if (b && typeof msg.id === "string" && b.pending.delete(msg.id)) b.heard = now();
+      if (b && typeof msg.id === "string" && b.pending.delete(msg.id)) { b.heard = now(); b.warned = false; }
       // An answer to an `ask`, from the connection it was sent to only.
       if (typeof msg.id === "string" && asked.get(msg.id)?.connId === conn.connId) {
         // Any answer also shows the app's main process is responsive.
-        if (b) b.heard = now();
+        if (b) { b.heard = now(); b.warned = false; }
         settleAsked(msg.id, (w) => {
           if (msg.error !== undefined) {
             const e = msg.error;

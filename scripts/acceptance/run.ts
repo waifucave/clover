@@ -81,7 +81,7 @@ import { NOT_AVAILABLE_YET } from "../../packages/protocol/src/plugins";
 import { MossClient, RpcError, hello } from "./client";
 import { BRIDGE_ECHO, CHILD_REPORT, netCommand, newestDirective as newestDirectiveOf, REVIEW_MARK, startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
 import { Cdp } from "./cdp";
-import { diagnosing, runnerState, stallReportsDone, startRunnerLog, watchAppStall } from "./stall-watch";
+import { diagnosing, runnerState, stallReportsDone, startRunnerLog, watchAppStall, watchPingLines } from "./stall-watch";
 // lane HS
 import { BROWSER_HOST_STEP, HOST_GAVE_UP_STEP, HOST_STEP, SURFACE_COPY_HOST_STEP, backgroundPart, hostLockPid, islandTarget, onscreenWindows, processAlive, readyCount } from "./host-step";
 import { BACKGROUND_IDS, writeBackground } from "./manifest-fields-step";
@@ -2070,7 +2070,7 @@ async function cards(c: MossClient): Promise<Card[]> {
 async function main(): Promise<void> {
   if (shards > 1) return orchestrate();
   console.error(`acceptance: target ${target}${appBundle ? ` (${appBundle})` : ` (${REPO})`}; temp folder ${root}${shardUnits !== undefined ? `; units ${shardUnits.join(", ")}` : ""}`);
-  if (diagnosing()) { startRunnerLog(logs); say(`the machine at the start: ${runnerState().split("\n").join("; ")}`); }
+  if (diagnosing()) { startRunnerLog(logs); watchPingLines({ logs, say, apps: () => children.filter((c) => /app$/.test(c.name) && c.proc.pid !== undefined).map((c) => ({ name: c.name, pid: c.proc.pid!, alive: () => alive(c.proc) })) }); say(`the machine at the start: ${runnerState().split("\n").join("; ")}`); }
   if (target === "packaged") {
     const refused = checkTestBuild();
     if (refused !== "") {

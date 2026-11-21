@@ -13,7 +13,7 @@
 // about one run in three, and nothing kept said whether the app or the runner stopped. Nothing here changes what a row
 // does; every command it runs reads state (`ps` names, never arguments or environments).
 import { execFile, spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadavg } from "node:os";
 
@@ -167,4 +167,44 @@ export function startRunnerLog(logs: string): () => void {
   const t = setInterval(line, 10_000);
   t.unref?.();
   return () => clearInterval(t);
+}
+
+/** The daemon's own word that an app has not answered `app.ping` for a while (packages/core/src/ipc/moss.ts, a third of the way to the 15 s
+ *  after which it ends the app): read from the run's daemon logs, and at that moment each running app is looked at (its machine state, its
+ *  processes, a `sample` of its main thread), because the app is ended 10 s later. This is the signal the engine itself acts on, so it
+ *  catches the stall that the DevTools list (`watchAppStall`) did not (run 44851355486: the daemon ended the app, the list had answered). */
+export function watchPingLines(o: { logs: string; apps(): { name: string; pid: number; alive(): boolean }[]; say(line: string): void }): () => void {
+  const offsets = new Map<string, number>();
+  let n = 0;
+  const timer = setInterval(() => {
+    let files: string[] = [];
+    try { files = readdirSync(o.logs).filter((f) => /^daemon-\d+\.log$/.test(f)); } catch { return; }
+    for (const f of files) {
+      const file = join(o.logs, f);
+      let size = 0;
+      try { size = statSync(file).size; } catch { continue; }
+      const from = offsets.get(f) ?? 0;
+      if (size <= from) { offsets.set(f, size); continue; }
+      offsets.set(f, size);
+      let text = "";
+      try { text = readFileSync(file, "utf8").slice(from); } catch { continue; }
+      for (const m of text.matchAll(/the app \(connection (\d+)\) has not answered app\.ping for (\d+) ms/g)) {
+        if (n >= MAX_REPORTS) return;
+        n++;
+        const apps = o.apps().filter((a) => a.alive());
+        o.say(`STALL: the daemon (${f}) says the app (connection ${m[1]}) has not answered app.ping for ${m[2]} ms; looking at ${apps.map((a) => `${a.name} (pid ${a.pid})`).join(", ") || "no running app"}. ${runnerState().split("\n").slice(0, 4).join("; ")}`);
+        for (const a of apps) {
+          const base = join(o.logs, `stall-ping-${n}-${a.name}-${a.pid}`);
+          writeFileSync(`${base}.txt`, `${runnerState()}\n\nthe app's processes (pid ppid %cpu rss state elapsed cputime command):\n${processTree(a.pid)}\n`);
+          const job = sampleTo(a.pid, 3, `${base}.sample.txt`).then(() => {
+            try { writeFileSync(`${base}.after.txt`, `${runnerState()}\n\nthe app's processes:\n${processTree(a.pid)}\nalive: ${a.alive()}\n`); } catch { /* the folder is gone */ }
+          });
+          pending.add(job);
+          void job.finally(() => pending.delete(job));
+        }
+      }
+    }
+  }, 500);
+  timer.unref?.();
+  return () => clearInterval(timer);
 }

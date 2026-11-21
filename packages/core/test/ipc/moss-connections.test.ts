@@ -173,15 +173,16 @@ describe("MOSS connections (C-M1)", () => {
       }),
     });
     // The test process says hello as the app: no peer-image check unless a test asks for one (`opts.appPeer`).
+    const logs: string[] = [];
     const appPeer = opts.appPeer === "default" ? {} : { appPeer: opts.appPeer ?? ("none" as const) };
     moss = createMossServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken, ...appPeer,
       ...(opts.grants || opts.records ? { pluginCapabilities: (id: string) => grantsInForce(records[id]) } : {}),
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers, "app.capture": appCaptureHandler({ connections: () => moss.connections(), ask: (conn, method, params, ms) => moss.ask(conn, method, params, ms) }), ...appOpenHandlers({ connections: () => moss.connections(), ask: (conn, method, params, ms) => moss.ask(conn, method, params, ms) }) },
-      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
+      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); }, log: (l) => logs.push(l) });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, mossConnections: moss });
     stop = () => { moss.dispose(); pair.dispose(); server.stop(); store.close(); };
-    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, killedVia, calls, unfollowed, moss, setPeer: (p: PeerFacts) => { peer = p; } };
+    return { logs, socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, killedVia, calls, unfollowed, moss, setPeer: (p: PeerFacts) => { peer = p; } };
   }
 
   test("command.run over the socket: args that fit reach the handler; args that don't answer invalid_args with the path", async () => {
@@ -843,6 +844,9 @@ describe("MOSS connections (C-M1)", () => {
     hung.close(); // what the kill does
     for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
     expect(b.pair.status().safeMode).toBe(true);
+    // One line while the app can still be looked at (a third of the way to the end), and one at the end; never twice for one silence.
+    expect(b.logs.filter((l) => /has not answered app\.ping for \d+ ms/.test(l))).toHaveLength(1);
+    expect(b.logs.filter((l) => /didn't answer app\.ping for 150 ms/.test(l))).toHaveLength(1);
   });
 
   test("the heartbeat after a sleep: the time the computer slept is not the app's silence; a real hang after the wake still ends it", async () => {
